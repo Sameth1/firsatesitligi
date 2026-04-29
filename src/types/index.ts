@@ -39,6 +39,7 @@ export type MatchParams = {
   p_citizenship?: string
   p_age?: number | null
   p_study_level?: string | null
+  p_highest_edu?: string | null
   p_field?: string | null
   p_language?: string | null
 }
