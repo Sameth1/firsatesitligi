@@ -34,6 +34,14 @@ const STUDY_LEVELS = [
   { value: 'any',      label: 'Fark etmez' },
 ]
 
+const HIGHEST_EDU_LEVELS = [
+  { value: 'lise',          label: 'Lise' },
+  { value: 'on_lisans',     label: 'Ön Lisans' },
+  { value: 'lisans',        label: 'Lisans' },
+  { value: 'yuksek_lisans', label: 'Yüksek Lisans' },
+  { value: 'doktora',       label: 'Doktora' },
+]
+
 const CEFR_LEVELS = [
   { value: 'A1', label: 'A1 — Başlangıç' },
   { value: 'A2', label: 'A2 — Temel' },
@@ -150,6 +158,7 @@ export default function Home() {
   const [citizenship, setCitizenship] = useState('TR')
   const [age, setAge] = useState('')
   const [studyLevel, setStudyLevel] = useState<string | null>(null)
+  const [highestEdu, setHighestEdu] = useState<string | null>(null)
   const [field, setField] = useState<string | null>(null)
   const [languageLevel, setLanguageLevel] = useState<string | null>(null)
 
@@ -170,6 +179,7 @@ export default function Home() {
       p_citizenship:   citizenship || 'TR',
       p_age:           age ? parseInt(age) : null,
       p_study_level:   studyLevel || null,
+      p_highest_edu:   highestEdu || null,
       p_field:         field || null,
       p_language:      languageLevel && languageLevel !== 'none' ? targetLanguage : null,
     }
@@ -181,6 +191,7 @@ export default function Home() {
       { key: 'p_field',         label: 'Bölüm' },
       { key: 'p_language',      label: 'Dil seviyesi' },
       { key: 'p_age',           label: 'Yaş' },
+      { key: 'p_highest_edu',   label: 'En yüksek eğitim' },
       { key: 'p_study_level',   label: 'Eğitim kademesi' },
       { key: 'p_category_slug', label: 'Kategori' },
     ]
@@ -207,7 +218,7 @@ export default function Home() {
     setResults(data ?? [])
     setRelaxedFilters(relaxed)
     setActiveCategory(null)
-    setSearchSnapshot({ country, category, citizenship, studyLevel, field, targetLanguage, languageLevel })
+    setSearchSnapshot({ country, category, citizenship, studyLevel, highestEdu, field, targetLanguage, languageLevel })
     setStep('results')
     setLoading(false)
   }
@@ -272,7 +283,21 @@ export default function Home() {
             </Field>
           </div>
 
-          <Field label="Eğitim kademesi" style={{ marginBottom: 16 }}>
+          <Field label="Halihazırdaki en yüksek eğitim seviyeniz" style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {HIGHEST_EDU_LEVELS.map(l => (
+                <Tag
+                  key={l.value}
+                  label={l.label}
+                  selected={highestEdu === l.value}
+                  onClick={() => setHighestEdu(highestEdu === l.value ? null : l.value)}
+                  color="#1a6b5a"
+                />
+              ))}
+            </div>
+          </Field>
+
+          <Field label="Başvurmak istediğiniz eğitim kademesi" style={{ marginBottom: 16 }}>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {STUDY_LEVELS.map(l => (
                 <Tag
@@ -417,6 +442,7 @@ export default function Home() {
           {filtered.length} fırsat bulundu
           {country && ` · ${COUNTRIES.find(c => c.code === country)?.label}`}
           {category && ` · ${CATEGORIES.find(c => c.slug === category)?.label}`}
+          {(searchSnapshot.highestEdu as string | null) && ` · Mevcut: ${HIGHEST_EDU_LEVELS.find(l => l.value === searchSnapshot.highestEdu)?.label}`}
           {targetLanguage && languageLevel && languageLevel !== 'none' && ` · ${targetLanguage} ${languageLevel}`}
         </div>
 
