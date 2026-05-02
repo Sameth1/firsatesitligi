@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { Opportunity, MatchParams } from '@/types'
 import OpportunityCard from '@/components/OpportunityCard'
 import EmailCapture from '@/components/EmailCapture'
+import AppHeader from '@/components/AppHeader'
 
 const COUNTRIES: { code: string; label: string; language: string | null }[] = [
   { code: 'DE', label: '🇩🇪 Almanya',     language: 'Almanca' },
@@ -165,10 +166,10 @@ export default function Home() {
   const selectedCountry = COUNTRIES.find(c => c.code === country) ?? null
   const targetLanguage = selectedCountry?.language ?? null
 
-  // Ülke değişince dil seviyesini sıfırla
-  useEffect(() => {
+  function handleCountryChange(newCountry: string | null) {
+    setCountry(newCountry)
     setLanguageLevel(null)
-  }, [country])
+  }
 
   async function handleSearch() {
     setLoading(true)
@@ -237,14 +238,10 @@ export default function Home() {
     <main style={{ minHeight: '100vh', background: '#fafaf9', padding: '40px 16px' }}>
       <div style={{ maxWidth: 600, margin: '0 auto' }}>
 
-        {/* Logo */}
-        <div style={{ marginBottom: 32 }}>
-          <div style={{ fontSize: 22, fontWeight: 500, color: '#1a1a1a' }}>
-            <span style={{ color: '#534AB7' }}>fırsat</span>eşitliği
-          </div>
-          <div style={{ fontSize: 13, color: '#888', marginTop: 4 }}>
-            Burs, gönüllülük, staj — bedava yurt dışı fırsatları
-          </div>
+        {/* Header */}
+        <AppHeader />
+        <div style={{ fontSize: 13, color: '#888', marginBottom: 12 }}>
+          Burs, gönüllülük, staj — bedava yurt dışı fırsatları
         </div>
 
         {/* Step pills */}
@@ -335,7 +332,7 @@ export default function Home() {
               value={country}
               valueLabel={selectedCountry?.label ?? null}
               options={COUNTRIES.map(c => ({ value: c.code, label: c.label }))}
-              onChange={setCountry}
+              onChange={handleCountryChange}
             />
           </Field>
 
@@ -397,21 +394,21 @@ export default function Home() {
       <div style={{ maxWidth: 680, margin: '0 auto' }}>
 
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-          <div style={{ fontSize: 22, fontWeight: 500, color: '#1a1a1a' }}>
-            <span style={{ color: '#534AB7' }}>fırsat</span>eşitliği
-          </div>
-          <button
-            onClick={() => setStep('form')}
-            style={{
-              fontSize: 12, color: '#534AB7', background: 'none',
-              border: '0.5px solid #AFA9EC', borderRadius: 8,
-              padding: '6px 12px', cursor: 'pointer',
-            }}
-          >
-            ← Aramayı düzenle
-          </button>
-        </div>
+        <AppHeader
+          searchSnapshot={searchSnapshot}
+          rightSlot={
+            <button
+              onClick={() => setStep('form')}
+              style={{
+                fontSize: 12, color: '#534AB7', background: 'none',
+                border: '0.5px solid #AFA9EC', borderRadius: 8,
+                padding: '6px 12px', cursor: 'pointer',
+              }}
+            >
+              ← Aramayı düzenle
+            </button>
+          }
+        />
 
         {/* Step pills */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 20 }}>

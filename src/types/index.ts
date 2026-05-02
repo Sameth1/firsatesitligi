@@ -31,6 +31,7 @@ export type Opportunity = {
   documents: Document[]
   is_featured: boolean
   days_until_deadline: number | null
+  submitted_by_nickname: string | null
 }
 
 export type MatchParams = {
