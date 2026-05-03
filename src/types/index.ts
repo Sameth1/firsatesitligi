@@ -32,6 +32,9 @@ export type Opportunity = {
   is_featured: boolean
   days_until_deadline: number | null
   submitted_by_nickname: string | null
+  /** 090 SQL sonrası: son sunucu tarafı URL kontrolü (yoksa null) */
+  last_url_check_at?: string | null
+  last_url_check_status?: number | null
 }
 
 export type MatchParams = {

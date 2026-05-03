@@ -152,6 +152,7 @@ export default function Home() {
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const [searchSnapshot, setSearchSnapshot] = useState<Record<string, unknown>>({})
   const [relaxedFilters, setRelaxedFilters] = useState<string[]>([])
+  const [searchError, setSearchError] = useState<string | null>(null)
 
   // Form state
   const [country, setCountry] = useState<string | null>(null)
@@ -173,6 +174,7 @@ export default function Home() {
 
   async function handleSearch() {
     setLoading(true)
+    setSearchError(null)
 
     const baseParams: MatchParams = {
       p_host_country:  country || null,
@@ -203,17 +205,36 @@ export default function Home() {
 
     const run = async (p: MatchParams) => {
       const res = await supabase.rpc('match_opportunities', p)
-      return (res.error ? null : (res.data as Opportunity[])) ?? []
+      if (res.error) {
+        return { ok: false as const, error: res.error.message, rows: [] as Opportunity[] }
+      }
+      return { ok: true as const, rows: ((res.data as Opportunity[]) ?? []) }
     }
 
-    data = await run(params)
+    const first = await run(params)
+    if (!first.ok) {
+      setSearchError(first.error)
+      setResults([])
+      setRelaxedFilters([])
+      setLoading(false)
+      return
+    }
+    data = first.rows
 
     for (const f of fallbackOrder) {
       if (data && data.length > 0) break
       if (params[f.key] == null) continue
       ;(params as Record<string, unknown>)[f.key as string] = null
       relaxed.push(f.label)
-      data = await run(params)
+      const next = await run(params)
+      if (!next.ok) {
+        setSearchError(next.error)
+        setResults([])
+        setRelaxedFilters(relaxed)
+        setLoading(false)
+        return
+      }
+      data = next.rows
     }
 
     setResults(data ?? [])
@@ -250,6 +271,28 @@ export default function Home() {
           <span style={{ color: '#ccc', fontSize: 12 }}>›</span>
           <StepPill label="2 · Sonuçlar" />
         </div>
+
+        {searchError && (
+          <div
+            style={{
+              marginBottom: 16,
+              padding: '12px 14px',
+              borderRadius: 10,
+              background: '#FDE8E8',
+              border: '0.5px solid #E8A8A8',
+              fontSize: 13,
+              color: '#A32D2D',
+              lineHeight: 1.45,
+            }}
+          >
+            <strong>Arama yapılamadı.</strong> {searchError}
+            <div style={{ marginTop: 8, fontSize: 12, color: '#633806' }}>
+              Veritabanında güncel SQL yoksa:{' '}
+              <code style={{ fontSize: 11 }}>docs/sql/090_one_shot_after_006.sql</code> dosyasını Supabase SQL
+              Editor’da bir kez çalıştırın.
+            </div>
+          </div>
+        )}
 
         {/* Form card */}
         <div style={{

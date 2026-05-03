@@ -39,6 +39,9 @@ supabase/.temp/
 # vercel
 .vercel
 
+# claude code local settings (per-machine)
+/.claude/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

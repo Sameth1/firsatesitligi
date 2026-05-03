@@ -1,7 +1,25 @@
 const https = require("https");
 
-const SERVICE_KEY =
-  "REDACTED_LEAKED_SERVICE_ROLE_KEY_REGENERATED_IN_DASHBOARD";
+const SUPABASE_URL =
+  process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!SUPABASE_URL || !SERVICE_KEY) {
+  console.error(
+    "Eksik ortam değişkeni: SUPABASE_URL (veya NEXT_PUBLIC_SUPABASE_URL) ve SUPABASE_SERVICE_ROLE_KEY gerekli.\n" +
+      "Örnek: scripts/env.example — anahtar repoda tutulmaz.\n" +
+      "Eski anahtar sızdıysa: Supabase Dashboard → Settings → API → service_role → Regenerate."
+  );
+  process.exit(1);
+}
+
+let restHost;
+try {
+  restHost = new URL(SUPABASE_URL).hostname;
+} catch {
+  console.error("Geçersiz SUPABASE_URL:", SUPABASE_URL);
+  process.exit(1);
+}
 
 const PROGRAMS = [
   {
@@ -163,7 +181,7 @@ const PROGRAMS = [
 
 const body = JSON.stringify(PROGRAMS);
 const options = {
-  hostname: "REDACTED_PROJECT_REF.supabase.co",
+  hostname: restHost,
   path: "/rest/v1/opportunities",
   method: "POST",
   headers: {
