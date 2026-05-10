@@ -42,6 +42,11 @@ supabase/.temp/
 # claude code local settings (per-machine)
 /.claude/
 
+# python (scrapers)
+__pycache__/
+*.pyc
+*.pyo
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
