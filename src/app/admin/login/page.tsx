@@ -8,25 +8,42 @@ type Status = 'idle' | 'loading' | 'sent' | 'error'
 export default function AdminLogin() {
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<Status>('idle')
+  const [errorDetail, setErrorDetail] = useState<string | null>(null)
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     if (!email.includes('@')) return
 
     setStatus('loading')
+    setErrorDetail(null)
     const origin = getPublicSiteOrigin()
     if (!origin) {
       setStatus('error')
+      setErrorDetail(
+        'Site adresi (origin) alınamadı. Sayfayı yenileyin. Vercel’de eski deploy kullanıyorsan yeni sürümü bekleyin.'
+      )
       return
     }
+    const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent('/admin')}`
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent('/admin')}`,
+        emailRedirectTo: redirectTo,
       },
     })
 
-    setStatus(error ? 'error' : 'sent')
+    if (error) {
+      setStatus('error')
+      setErrorDetail(
+        error.message +
+          (error.message.toLowerCase().includes('redirect') || error.message.includes('URI')
+            ? ' — Supabase Dashboard → Authentication → URL Configuration içinde Redirect URLs listesine şunu ekleyin: ' +
+                redirectTo
+            : '')
+      )
+    } else {
+      setStatus('sent')
+    }
   }
 
   return (
@@ -58,7 +75,10 @@ export default function AdminLogin() {
             <input
               type="email"
               value={email}
-              onChange={e => setEmail(e.target.value)}
+              onChange={e => {
+                setEmail(e.target.value)
+                if (errorDetail) setErrorDetail(null)
+              }}
               placeholder="admin@example.com"
               required
               style={{
@@ -81,8 +101,8 @@ export default function AdminLogin() {
               {status === 'loading' ? 'Gönderiliyor...' : 'Magic Link Gönder'}
             </button>
             {status === 'error' && (
-              <div style={{ fontSize: 11, color: '#A32D2D', marginTop: 8 }}>
-                Giriş başarısız, tekrar dene.
+              <div style={{ fontSize: 11, color: '#A32D2D', marginTop: 8, lineHeight: 1.45 }}>
+                <strong>Giriş başarısız.</strong> {errorDetail ?? 'Tekrar dene.'}
               </div>
             )}
           </form>
