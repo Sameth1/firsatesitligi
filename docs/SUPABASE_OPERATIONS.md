@@ -28,6 +28,8 @@ Aşağıdaki dosyaları `docs/sql/` altından **bu sırayla** Supabase Dashboard
 
 `redirect_to` bu listede yoksa Supabase linki **Site URL**’e (çoğu zaman eski localhost) düşürür; bu adım kodla otomatik yapılamaz.
 
+**`otp_expired` / “Email link is invalid or has expired”:** Magic link tek kullanımlıdır; e-posta güvenli önizlemesi linki önce açtıysa veya iki kez tıkladıysan bu hata gelir — yeni link iste, web postadan tek tıkla aç. Kök URL’ye (`/?error=...`) düşerse uygulama seni `/admin/login` ekranına yönlendirir.
+
 ## 006 sonrası: admin kaydı
 
 `006_submissions_v2.sql` sonrası kendi kullanıcınızı `public.admins` tablosuna ekleyin:
