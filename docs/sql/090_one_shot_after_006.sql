@@ -339,7 +339,7 @@ begin
     array['all']::text[],   -- bilinmiyor → tüm vatandaşlıklar
     array['all']::text[],   -- bilinmiyor → tüm bölümler
     array['any']::text[],   -- bilinmiyor → tüm eğitim kademeleri
-    sub.funding_type,
+    coalesce(sub.funding_type, 'free'),
     sub.funding_notes,
     sub.eligibility_notes,
     sub.language_requirement,

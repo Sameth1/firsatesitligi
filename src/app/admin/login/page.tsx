@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { getPublicSiteOrigin } from '@/lib/site-origin'
 
 type Status = 'idle' | 'loading' | 'sent' | 'error'
 
@@ -13,10 +14,15 @@ export default function AdminLogin() {
     if (!email.includes('@')) return
 
     setStatus('loading')
+    const origin = getPublicSiteOrigin()
+    if (!origin) {
+      setStatus('error')
+      return
+    }
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback?next=/admin`,
+        emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent('/admin')}`,
       },
     })
 

@@ -103,8 +103,10 @@ export default function SubmissionDetailPage({
     setTimeout(() => setToast(null), 3000)
   }
 
-  async function saveEdits() {
-    await supabase
+  async function saveEdits(options?: { quietSuccess?: boolean }): Promise<boolean> {
+    const { quietSuccess = false } = options ?? {}
+
+    const { error } = await supabase
       .from('submissions')
       .update({
         title,
@@ -121,11 +123,17 @@ export default function SubmissionDetailPage({
       })
       .eq('id', id)
 
-    showToast('Kaydedildi')
+    if (error) {
+      showToast('Hata: ' + error.message)
+      return false
+    }
+    if (!quietSuccess) showToast('Kaydedildi')
+    return true
   }
 
   async function handleApprove() {
-    await saveEdits()
+    const saved = await saveEdits({ quietSuccess: true })
+    if (!saved) return
     setActionLoading(true)
     const { error } = await supabase.rpc('approve_submission', { p_id: id })
     setActionLoading(false)
@@ -320,7 +328,7 @@ export default function SubmissionDetailPage({
           {/* Save button */}
           {isPending && (
             <button
-              onClick={saveEdits}
+              onClick={() => { void saveEdits() }}
               style={{
                 width: '100%', padding: '10px', borderRadius: 8,
                 background: '#f5f5f5', color: '#333', border: '0.5px solid #e0e0e0',
