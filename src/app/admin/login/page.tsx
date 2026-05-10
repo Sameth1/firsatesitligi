@@ -1,14 +1,40 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getPublicSiteOrigin } from '@/lib/site-origin'
 
 type Status = 'idle' | 'loading' | 'sent' | 'error'
 
+const OTP_EXPIRED_HINT =
+  'Magic link süresi doldu veya zaten kullanıldı. Bazı e-posta uygulamaları (Outlook, Gmail güvenli tarama vb.) linki önizleyerek kodu tek kullanımlık hale getirir — mümkünse web postadan tıkla veya yeni link iste.'
+
 export default function AdminLogin() {
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<Status>('idle')
   const [errorDetail, setErrorDetail] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const q = new URLSearchParams(window.location.search)
+    if (q.get('auth') === 'otp_expired') {
+      setErrorDetail(OTP_EXPIRED_HINT)
+      setStatus('error')
+      window.history.replaceState(null, '', '/admin/login')
+      return
+    }
+    if (q.get('error') === 'auth') {
+      setErrorDetail('Oturum doğrulanamadı. Yeni magic link iste.')
+      setStatus('error')
+      window.history.replaceState(null, '', '/admin/login')
+      return
+    }
+    const h = window.location.hash
+    if (h.includes('otp_expired') || h.includes('error_code=otp_expired')) {
+      setErrorDetail(OTP_EXPIRED_HINT)
+      setStatus('error')
+      window.history.replaceState(null, '', '/admin/login')
+    }
+  }, [])
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -61,7 +87,7 @@ export default function AdminLogin() {
             fontSize: 14, color: '#085041', lineHeight: 1.6,
           }}>
             <strong>Magic link gönderildi.</strong><br />
-            E-posta kutunu kontrol et ve linke tıkla.
+            E-posta kutunu kontrol et ve linke <strong>bir kez</strong> tıkla. Uygulama önizlemesi linki önce açarsa kod geçersiz olabilir; o zaman buradan yeni link iste.
           </div>
         ) : (
           <form onSubmit={handleLogin} style={{
