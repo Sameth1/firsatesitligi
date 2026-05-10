@@ -30,6 +30,16 @@ Aşağıdaki dosyaları `docs/sql/` altından **bu sırayla** Supabase Dashboard
 
 **`otp_expired` / “Email link is invalid or has expired”:** Magic link tek kullanımlıdır; e-posta güvenli önizlemesi linki önce açtıysa veya iki kez tıkladıysan bu hata gelir — yeni link iste, web postadan tek tıkla aç. Kök URL’ye (`/?error=...`) düşerse uygulama seni `/admin/login` ekranına yönlendirir.
 
+## Auth rate limit (magic link çok sık → 429)
+
+Magic link **`signInWithOtp`** Supabase Auth limitine tabidir; Next.js kodunda ayrı bir “2 kere” sınırı yok.
+
+**Barındırılan proje (supabase.com):** [Dashboard → Authentication → Rate limits](https://supabase.com/dashboard/project/_/auth/rate-limits) sayfasından özellikle **OTP / magic link** ve gerekirse **email sent** değerlerini yükselt (ör. saatte 10+ veya planının izin verdiği üst sınır). Tamamen limitsiz değildir (kötüye kullanım koruması).
+
+**Management API** ile toplu ayar için resmi örnek: [Rate limits](https://supabase.com/docs/guides/auth/rate-limits) (`rate_limit_otp`, `rate_limit_email_sent` vb.).
+
+**Yerel `supabase start`:** [`supabase/config.toml`](../supabase/config.toml) içinde `[auth.rate_limit]` → `email_sent` (ve diğerleri) — bu repoda `email_sent` varsayılanı **10** / saat olacak şekilde güncellendi; dosyayı değiştirip `supabase stop` / `start` ile uygularsın.
+
 ## 006 sonrası: admin kaydı
 
 `006_submissions_v2.sql` sonrası kendi kullanıcınızı `public.admins` tablosuna ekleyin:
