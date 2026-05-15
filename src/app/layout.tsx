@@ -15,9 +15,48 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "fırsat eşitliği — yurt dışı burs ve fırsatlar",
+  title: "fırsateşitliği — Türkiye'den Yurt Dışı Burs, Staj ve Gönüllülük Fırsatları",
   description:
-    "Burs, gönüllülük, staj ve değişim programlarını profiline göre keşfet. Resmi kaynaklara yönlendirir.",
+    "Türkiye'deki gençler için ücretsiz yurt dışı fırsat arama platformu. Burs, gönüllülük, staj, yaz okulu ve değişim programlarını yaşına, bölümüne ve hedef ülkene göre filtrele.",
+  keywords: [
+    "yurt dışı burs",
+    "Türkiye burs",
+    "ücretsiz burs",
+    "yurt dışı staj",
+    "gönüllülük programı",
+    "yaz okulu",
+    "değişim programı",
+    "Erasmus",
+    "gençlik projesi",
+    "scholarship Turkey",
+  ],
+  authors: [{ name: "fırsateşitliği" }],
+  openGraph: {
+    title: "fırsateşitliği — Yurt Dışı Burs ve Fırsatlar",
+    description:
+      "Türkiye'deki gençler için ücretsiz yurt dışı fırsat arama platformu. Profiline göre burs, staj ve gönüllülük fırsatlarını keşfet.",
+    url: "https://firsatesitligi.com",
+    siteName: "fırsateşitliği",
+    locale: "tr_TR",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "fırsateşitliği — Yurt Dışı Burs ve Fırsatlar",
+    description:
+      "Türkiye'deki gençler için ücretsiz yurt dışı fırsat arama platformu.",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+    },
+  },
+  alternates: {
+    canonical: "https://firsatesitligi.com",
+  },
 };
 
 export default function RootLayout({
