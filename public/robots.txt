@@ -1,0 +1,14 @@
+User-agent: *
+Allow: /
+
+# LLM visibility
+User-agent: GPTBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: Googlebot
+Allow: /
+
+Sitemap: https://firsatesitligi.com/sitemap.xml

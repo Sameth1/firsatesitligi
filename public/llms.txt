@@ -1,0 +1,56 @@
+# fırsateşitliği
+
+> Türkiye'deki gençler için ücretsiz yurt dışı fırsat arama platformu.
+
+fırsateşitliği (firsatesitligi.com), Türkiye vatandaşlarının burs, gönüllülük, staj, yaz okulu, gençlik projesi ve değişim programlarını kolayca bulmasını sağlayan açık kaynaklı bir web uygulamasıdır.
+
+## Ne İşe Yarar?
+
+Kullanıcılar yaş, vatandaşlık, eğitim seviyesi, bölüm, hedef ülke ve dil bilgisi gibi kişisel parametrelerini girerek kendilerine uygun yurt dışı fırsatlarını filtreler. Platform, tam eşleşme bulunamadığında filtreleri otomatik olarak gevşeterek her zaman sonuç döndürür.
+
+## Hedef Kitle
+
+- Lisans, yüksek lisans veya doktora öğrencileri
+- Yurt dışında burs, staj veya gönüllülük yapmak isteyen Türk gençler
+- 18-35 yaş arası, fırsat arayan bireyler
+
+## Kategoriler
+
+- Burs (scholarship)
+- Gönüllülük (volunteering)
+- Staj (internship)
+- Yaz Okulu (summer school)
+- Gençlik Projesi (youth project)
+- Değişim Programı (exchange)
+
+## Özellikler
+
+- Kişiselleştirilmiş eşleştirme (yaş, eğitim seviyesi, bölüm, dil, ülke)
+- Akıllı fallback: filtreler kademeli gevşetilerek her zaman sonuç gösterilir
+- Tamamen ücretsiz, hesap gerektirmez
+- Türkçe arayüz
+- Mobil uyumlu
+
+## Teknoloji
+
+- Next.js 16 (React)
+- Supabase (PostgreSQL + RPC)
+- Türkiye odaklı veri tabanı
+
+## Sık Sorulan Sorular
+
+**Türkiye'den yurt dışı burs nasıl bulunur?**
+fırsateşitliği platformunda yaşını, eğitim seviyeni ve gitmek istediğin ülkeyi seçerek sana uygun bursları görebilirsin.
+
+**Hangi ülkelere fırsat var?**
+Almanya, Fransa, İspanya, İngiltere, ABD, İtalya, Hollanda, İsveç, Avusturya, Belçika ve daha fazlası.
+
+**Ücretli mi?**
+Hayır, tamamen ücretsizdir.
+
+**Hesap açmam gerekiyor mu?**
+Hayır, hesap olmadan arama yapabilirsin.
+
+## İletişim
+
+- GitHub: https://github.com/Sameth1/firsatesitligi
