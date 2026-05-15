@@ -10,7 +10,7 @@ Kullanım:
 
 Ortam değişkenleri (.env dosyası):
   SUPABASE_URL=https://xxx.supabase.co
-  SUPABASE_SERVICE_KEY=eyJ...
+  SUPABASE_SERVICE_ROLE_KEY=eyJ...
 """
 
 import os
@@ -25,7 +25,7 @@ load_dotenv()
 # ─── Ayarlar ─────────────────────────────────────────────────────────────────
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://hxwhelhcrynqatadijxz.supabase.co")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")  # .env'e koy
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")  # .env'e koy
 
 # idealist'in arka planda kullandığı JSON endpoint
 # (F12 > Network > Fetch/XHR yaparak bulundu)
@@ -174,7 +174,7 @@ def run():
     print()
 
     if not SUPABASE_KEY:
-        print("❌ SUPABASE_SERVICE_KEY bulunamadı. .env dosyasını kontrol et.")
+        print("❌ SUPABASE_SERVICE_ROLE_KEY bulunamadı. .env dosyasını kontrol et.")
         return
 
     added   = 0

@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://hxwhelhcrynqatadijxz.supabase.co")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
 HEADERS_SB = {
     "apikey": SUPABASE_KEY,
@@ -91,7 +91,7 @@ def write_result(opp_id, http_status, error, final_url):
 
 def run():
     if not SUPABASE_KEY:
-        print("❌ SUPABASE_SERVICE_KEY yok"); return
+        print("❌ SUPABASE_SERVICE_ROLE_KEY yok"); return
 
     targets = fetch_targets(only_unchecked=True)
     print(f"🔎 {len(targets)} kayıt kontrol edilecek (last_url_check_at=null)")
