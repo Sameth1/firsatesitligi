@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 
 interface Submission {
@@ -22,7 +23,11 @@ interface Submission {
 interface Stats {
   pending_count: number
   approved_this_week: number
-  total: number
+  submissions_total: number
+  opportunities_total: number
+  subscribers_total: number
+  never_url_checked: number
+  never_verified: number
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -53,17 +58,35 @@ export default function AdminPage() {
   useEffect(() => {
     let active = true
     async function load() {
-      const [{ data: subs }, { data: statsData }] = await Promise.all([
+      const [{ data: subs }, statsRes] = await Promise.all([
         supabase
           .from('submissions')
           .select('*')
           .eq('status', filter)
           .order('created_at', { ascending: false }),
-        supabase.rpc('get_submission_stats'),
+        // Yeni RPC: 090 sonrası genişletilmiş istatistikler.
+        // Eski deploylar için fallback: yoksa get_submission_stats'e düş.
+        supabase.rpc('get_admin_stats'),
       ])
+      let statsData = statsRes.data as Stats | null
+      if (statsRes.error) {
+        const legacy = await supabase.rpc('get_submission_stats')
+        const legacyData = legacy.data as { pending_count: number; approved_this_week: number; total: number } | null
+        if (legacyData) {
+          statsData = {
+            pending_count: legacyData.pending_count ?? 0,
+            approved_this_week: legacyData.approved_this_week ?? 0,
+            submissions_total: legacyData.total ?? 0,
+            opportunities_total: 0,
+            subscribers_total: 0,
+            never_url_checked: 0,
+            never_verified: 0,
+          }
+        }
+      }
       if (!active) return
       setSubmissions((subs as Submission[]) ?? [])
-      setStats(statsData as Stats | null)
+      setStats(statsData)
       setLoading(false)
     }
     // Use queueMicrotask to avoid synchronous setState in effect body
@@ -139,16 +162,32 @@ export default function AdminPage() {
             <span style={{ color: '#534AB7' }}>fırsat</span>eşitliği
             <span style={{ fontSize: 12, color: '#999', marginLeft: 8 }}>Admin</span>
           </div>
-          <button
-            onClick={handleLogout}
-            style={{
-              fontSize: 12, color: '#999', background: 'none',
-              border: '0.5px solid #e0e0e0', borderRadius: 8,
-              padding: '6px 12px', cursor: 'pointer',
-            }}
-          >
-            Çıkış
-          </button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <Link
+              href="/admin/link-audit"
+              style={{
+                fontSize: 12,
+                color: '#534AB7',
+                textDecoration: 'none',
+                padding: '6px 12px',
+                border: '0.5px solid #e0e0e0',
+                borderRadius: 8,
+                background: '#fff',
+              }}
+            >
+              Bağlantı denetimi
+            </Link>
+            <button
+              onClick={handleLogout}
+              style={{
+                fontSize: 12, color: '#999', background: 'none',
+                border: '0.5px solid #e0e0e0', borderRadius: 8,
+                padding: '6px 12px', cursor: 'pointer',
+              }}
+            >
+              Çıkış
+            </button>
+          </div>
         </div>
 
         {/* Stats */}
@@ -156,7 +195,25 @@ export default function AdminPage() {
           <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
             <StatPill label="Bekleyen" value={stats.pending_count} color="#FAEEDA" textColor="#633806" />
             <StatPill label="Bu hafta onay" value={stats.approved_this_week} color="#E1F5EE" textColor="#085041" />
-            <StatPill label="Toplam" value={stats.total} color="#f0f0f0" textColor="#666" />
+            <StatPill label="Aktif fırsat" value={stats.opportunities_total} color="#EEEDFE" textColor="#3C3489" />
+            <StatPill label="Aboneler" value={stats.subscribers_total} color="#E6F1FB" textColor="#0C447C" />
+            <StatPill label="Tüm öneri" value={stats.submissions_total} color="#f0f0f0" textColor="#666" />
+            {stats.never_verified > 0 && (
+              <StatPill label="Manuel doğrulanmamış" value={stats.never_verified} color="#FAEEDA" textColor="#633806" />
+            )}
+          </div>
+        )}
+
+        {/* Visitor analytics hint */}
+        {!process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN && (
+          <div style={{
+            background: '#fff', border: '0.5px solid #e0e0e0', borderRadius: 10,
+            padding: '10px 14px', fontSize: 11, color: '#888', marginBottom: 16, lineHeight: 1.5,
+          }}>
+            Ziyaretçi/sayfa görüntüleme sayısı için <strong>Plausible Analytics</strong> entegre değil.
+            <br />
+            <code>.env.local</code> içine <code>NEXT_PUBLIC_PLAUSIBLE_DOMAIN=firsatesitligi.com</code>
+            ekleyip yeniden başlat — script otomatik yüklenir, sayım dashboard.plausible.io üzerinden takip edilir.
           </div>
         )}
 

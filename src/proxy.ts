@@ -3,7 +3,24 @@ import type { NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
 export async function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl
+  const { pathname, searchParams } = request.nextUrl
+
+  /** Supabase magic link hataları Site URL olarak köke düşerse → admin girişi */
+  if (pathname === '/') {
+    const error = searchParams.get('error')
+    const errorCode = searchParams.get('error_code')
+    if (errorCode || error === 'access_denied') {
+      const url = request.nextUrl.clone()
+      url.pathname = '/admin/login'
+      url.search = ''
+      url.searchParams.set(
+        'auth',
+        errorCode === 'otp_expired' ? 'otp_expired' : error ?? 'unknown'
+      )
+      return NextResponse.redirect(url)
+    }
+    return NextResponse.next({ request: { headers: request.headers } })
+  }
 
   // Only guard /admin routes (except login)
   const isAdminRoute = pathname.startsWith('/admin') && pathname !== '/admin/login'
@@ -60,5 +77,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/auth/:path*'],
+  matcher: ['/', '/admin/:path*', '/auth/:path*'],
 }

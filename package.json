@@ -9,7 +9,12 @@
     "lint": "eslint",
     "supabase:login": "npx supabase login",
     "supabase:link": "npx supabase link",
-    "db:006": "npx supabase db query --linked -f docs/sql/006_submissions_v2.sql"
+    "db:006": "npx supabase db query --linked -f docs/sql/006_submissions_v2.sql",
+    "db:007": "npx supabase db query --linked -f docs/sql/007_opportunity_url_health.sql",
+    "db:090": "npx supabase db query --linked -f docs/sql/090_one_shot_after_006.sql",
+    "db:091": "npx supabase db query --linked -f docs/sql/091_admin_rpc_grants.sql",
+    "db:092": "npx supabase db query --linked -f docs/sql/092_approve_submission_funding_default.sql",
+    "db:insert-programs": "node scripts/insert_programs.js"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.2",

@@ -72,7 +72,28 @@ export default function OpportunityCard({ opp }: { opp: Opportunity }) {
         <span style={{ fontSize: 14, fontWeight: 500, color: '#1a1a1a', lineHeight: 1.4 }}>
           {opp.title}
         </span>
-        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {opp.last_url_check_status != null &&
+            (opp.last_url_check_status < 200 || opp.last_url_check_status >= 400) && (
+            <span
+              title={
+                opp.last_url_check_at
+                  ? `Son kontrol: ${new Date(opp.last_url_check_at).toLocaleString('tr-TR')}`
+                  : undefined
+              }
+              style={{
+                fontSize: 10,
+                fontWeight: 500,
+                padding: '3px 8px',
+                borderRadius: 20,
+                background: '#FAEEDA',
+                color: '#633806',
+                border: '0.5px solid #E6C79A',
+              }}
+            >
+              Resmi link sorunlu olabilir (HTTP {opp.last_url_check_status})
+            </span>
+          )}
           <span style={{
             fontSize: 10, fontWeight: 500, padding: '3px 8px', borderRadius: 20,
             background: opp.category_color + '22',

@@ -1,7 +1,34 @@
-import urllib.request, json, ssl
+import json
+import os
+import ssl
+import sys
+import urllib.error
+import urllib.request
+from urllib.parse import urlparse
 
-SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh4d2hlbGhjcnlucWF0YWRpanh6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjYwMjM0NiwiZXhwIjoyMDkyMTc4MzQ2fQ.Bg1taaSk5IDZ5McOP8eRc6l2hVW9nQrwMMqj2sRwQb4"
-URL = "https://hxwhelhcrynqatadijxz.supabase.co/rest/v1/opportunities"
+SUPABASE_URL = os.environ.get("SUPABASE_URL") or os.environ.get(
+    "NEXT_PUBLIC_SUPABASE_URL"
+)
+SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+
+if not SUPABASE_URL or not SERVICE_KEY:
+    print(
+        "Eksik ortam degiskeni: SUPABASE_URL (veya NEXT_PUBLIC_SUPABASE_URL) ve "
+        "SUPABASE_SERVICE_ROLE_KEY gerekli.\n"
+        "Ornek: scripts/env.example — anahtar repoda tutulmaz.\n"
+        "Eski anahtar sizdiysa: Supabase Dashboard → Settings → API → service_role → Regenerate.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+try:
+    parsed = urlparse(SUPABASE_URL)
+    if not parsed.scheme or not parsed.netloc:
+        raise ValueError("invalid url")
+    URL = f"{parsed.scheme}://{parsed.netloc}/rest/v1/opportunities"
+except Exception:
+    print("Gecersiz SUPABASE_URL:", SUPABASE_URL, file=sys.stderr)
+    sys.exit(1)
 
 PROGRAMS = [
     {

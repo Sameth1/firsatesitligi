@@ -1,26 +1,75 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { getPublicSiteOrigin } from '@/lib/site-origin'
 
 type Status = 'idle' | 'loading' | 'sent' | 'error'
+
+const OTP_EXPIRED_HINT =
+  'Magic link süresi doldu veya zaten kullanıldı. Bazı e-posta uygulamaları (Outlook, Gmail güvenli tarama vb.) linki önizleyerek kodu tek kullanımlık hale getirir — mümkünse web postadan tıkla veya yeni link iste.'
 
 export default function AdminLogin() {
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<Status>('idle')
+  const [errorDetail, setErrorDetail] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const q = new URLSearchParams(window.location.search)
+    if (q.get('auth') === 'otp_expired') {
+      setErrorDetail(OTP_EXPIRED_HINT)
+      setStatus('error')
+      window.history.replaceState(null, '', '/admin/login')
+      return
+    }
+    if (q.get('error') === 'auth') {
+      setErrorDetail('Oturum doğrulanamadı. Yeni magic link iste.')
+      setStatus('error')
+      window.history.replaceState(null, '', '/admin/login')
+      return
+    }
+    const h = window.location.hash
+    if (h.includes('otp_expired') || h.includes('error_code=otp_expired')) {
+      setErrorDetail(OTP_EXPIRED_HINT)
+      setStatus('error')
+      window.history.replaceState(null, '', '/admin/login')
+    }
+  }, [])
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     if (!email.includes('@')) return
 
     setStatus('loading')
+    setErrorDetail(null)
+    const origin = getPublicSiteOrigin()
+    if (!origin) {
+      setStatus('error')
+      setErrorDetail(
+        'Site adresi (origin) alınamadı. Sayfayı yenileyin. Vercel’de eski deploy kullanıyorsan yeni sürümü bekleyin.'
+      )
+      return
+    }
+    const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent('/admin')}`
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback?next=/admin`,
+        emailRedirectTo: redirectTo,
       },
     })
 
-    setStatus(error ? 'error' : 'sent')
+    if (error) {
+      setStatus('error')
+      setErrorDetail(
+        error.message +
+          (error.message.toLowerCase().includes('redirect') || error.message.includes('URI')
+            ? ' — Supabase Dashboard → Authentication → URL Configuration içinde Redirect URLs listesine şunu ekleyin: ' +
+                redirectTo
+            : '')
+      )
+    } else {
+      setStatus('sent')
+    }
   }
 
   return (
@@ -38,7 +87,7 @@ export default function AdminLogin() {
             fontSize: 14, color: '#085041', lineHeight: 1.6,
           }}>
             <strong>Magic link gönderildi.</strong><br />
-            E-posta kutunu kontrol et ve linke tıkla.
+            E-posta kutunu kontrol et ve linke <strong>bir kez</strong> tıkla. Uygulama önizlemesi linki önce açarsa kod geçersiz olabilir; o zaman buradan yeni link iste.
           </div>
         ) : (
           <form onSubmit={handleLogin} style={{
@@ -52,7 +101,10 @@ export default function AdminLogin() {
             <input
               type="email"
               value={email}
-              onChange={e => setEmail(e.target.value)}
+              onChange={e => {
+                setEmail(e.target.value)
+                if (errorDetail) setErrorDetail(null)
+              }}
               placeholder="admin@example.com"
               required
               style={{
@@ -75,8 +127,8 @@ export default function AdminLogin() {
               {status === 'loading' ? 'Gönderiliyor...' : 'Magic Link Gönder'}
             </button>
             {status === 'error' && (
-              <div style={{ fontSize: 11, color: '#A32D2D', marginTop: 8 }}>
-                Giriş başarısız, tekrar dene.
+              <div style={{ fontSize: 11, color: '#A32D2D', marginTop: 8, lineHeight: 1.45 }}>
+                <strong>Giriş başarısız.</strong> {errorDetail ?? 'Tekrar dene.'}
               </div>
             )}
           </form>
