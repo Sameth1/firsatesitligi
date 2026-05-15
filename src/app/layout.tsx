@@ -57,6 +57,9 @@ export const metadata: Metadata = {
   alternates: {
     canonical: "https://firsatesitligi.com",
   },
+  verification: {
+    google: "CCtWFTzsam76Ve-zq4EGmiZLMCCbCmqAxKaEvs8ISn0",
+  },
 };
 
 export default function RootLayout({
