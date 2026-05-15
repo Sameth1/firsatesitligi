@@ -74,6 +74,38 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <RootAuthHashRedirect />
+        <Script
+          id="schema-org"
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "WebApplication",
+              "name": "fırsateşitliği",
+              "url": "https://firsatesitligi.vercel.app",
+              "description": "Türkiye'deki gençler için ücretsiz yurt dışı fırsat arama platformu. Burs, gönüllülük, staj, yaz okulu ve değişim programlarını yaşına, bölümüne ve hedef ülkene göre filtrele.",
+              "applicationCategory": "EducationalApplication",
+              "operatingSystem": "Web",
+              "offers": {
+                "@type": "Offer",
+                "price": "0",
+                "priceCurrency": "TRY"
+              },
+              "audience": {
+                "@type": "Audience",
+                "audienceType": "Turkish students seeking international opportunities"
+              },
+              "inLanguage": "tr",
+              "keywords": "yurt dışı burs, Türkiye burs, staj, gönüllülük, yaz okulu, değişim programı, scholarship Turkey",
+              "isAccessibleForFree": true,
+              "creator": {
+                "@type": "Organization",
+                "name": "fırsateşitliği",
+                "url": "https://github.com/Sameth1/firsatesitligi"
+              }
+            })
+          }}
+        />
         {process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN ? (
           <Script
             defer
