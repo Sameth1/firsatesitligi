@@ -10,7 +10,7 @@ Kullanım:
 
 .env dosyasında olması gerekenler:
   SUPABASE_URL=https://xxx.supabase.co
-  SUPABASE_SERVICE_KEY=eyJ...
+  SUPABASE_SERVICE_ROLE_KEY=eyJ...
 """
 
 import os
@@ -26,7 +26,7 @@ load_dotenv()
 # ─── Ayarlar ──────────────────────────────────────────────────────────────────
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://hxwhelhcrynqatadijxz.supabase.co")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
 # Kategori slug → DB category_id eşlemesi
 # Supabase'den: SELECT slug, id FROM categories;
@@ -48,7 +48,12 @@ SITE_CATEGORIES = {
 }
 
 # Ülke adı → ISO kodu
+# Sıra önemli: önce çok-kelimeli/uzun isimler, sonra kısa olanlar.
+# Kısa kodlar (uk, abd) word-boundary ile aranır — false-positive engelleme.
 COUNTRY_MAP = {
+    "kuzey makedonya": "MK", "north macedonia": "MK", "makedonya": "MK",
+    "güney kore": "KR", "south korea": "KR", "korea": "KR",
+    "kuzey kıbrıs": "CY", "kıbrıs": "CY", "cyprus": "CY",
     "portekiz": "PT", "portugal": "PT",
     "italya": "IT", "italy": "IT",
     "almanya": "DE", "germany": "DE",
@@ -73,16 +78,19 @@ COUNTRY_MAP = {
     "danimarka": "DK", "denmark": "DK",
     "norveç": "NO", "norway": "NO",
     "malta": "MT",
-    "kıbrıs": "CY", "cyprus": "CY",
     "slovenya": "SI", "slovenia": "SI",
     "bosna": "BA", "bosnia": "BA",
     "sırbistan": "RS", "serbia": "RS",
+    "ukrayna": "UA", "ukraine": "UA",
     "japonya": "JP", "japan": "JP",
-    "güney kore": "KR", "korea": "KR",
     "türkiye": "TR", "turkey": "TR",
-    "ingiltere": "GB", "uk": "GB",
-    "abd": "US", "usa": "US",
+    "ingiltere": "GB", "united kingdom": "GB",
+    "abd": "US", "amerika": "US", "usa": "US",
+    # Kısa kodlar — word-boundary ile aranıyor (extract_country bk.):
+    "uk": "GB",
 }
+
+SHORT_COUNTRY_KEYS = {"uk", "abd", "usa"}  # word-boundary gerektirenler
 
 HEADERS = {
     "User-Agent": (
@@ -119,44 +127,117 @@ def insert(record):
 
 # ─── Yardımcı fonksiyonlar ────────────────────────────────────────────────────
 
+import unicodedata as _unicodedata
+
+def _tr_lower(s: str) -> str:
+    """Türkçe-uyumlu lowercase. Python'un .lower()'ı 'İ' → 'i\\u0307' yapar
+    ve 'italya' string'iyle eşleşmez. Burada manuel mapliyoruz."""
+    return s.replace("İ", "i").replace("I", "ı").lower()
+
+
+def _ascii_lower(s: str) -> str:
+    """Diakritikleri at + lowercase. 'Italya' / 'İsveç' gibi yanlış-doğru yazım
+    farklarına çift güvence olsun diye TR fold'a ek olarak kullanılır."""
+    nf = _unicodedata.normalize("NFKD", s)
+    return "".join(c for c in nf if not _unicodedata.combining(c)).lower()
+
+
 def extract_country(text):
-    """Metinden ülke kodu çıkar."""
-    text_lower = text.lower()
+    """Metinde EN ERKEN konumda geçen ülkeyi seç. Eski sürüm COUNTRY_MAP sözlük
+    sırasına göre ilk eşleşeni dönüyordu; bu yüzden içerikte geçen alakasız bir
+    ülke, başlıktaki doğru ülkeyi gölgeleyebiliyordu. parse_post combined_text'i
+    'başlık + içerik' verdiği için en-erken-konum başlığı otomatik önceler.
+    Kısa kodlar (uk/abd/usa) kelime sınırıyla aranır ('ukrayna' false-positive
+    olmaz). Hem TR fold hem ASCII fold ile bakılır: 'İtalya'/'Italya' eşit."""
+    text_tr = _tr_lower(text)
+    text_ascii = _ascii_lower(text)
+    best_pos, best_code = None, None
     for name, code in COUNTRY_MAP.items():
-        if name in text_lower:
-            return code
-    return "*"
+        name_tr = _tr_lower(name)
+        name_ascii = _ascii_lower(name)
+        if name in SHORT_COUNTRY_KEYS:
+            m = (re.search(r"\b" + re.escape(name_tr) + r"\b", text_tr)
+                 or re.search(r"\b" + re.escape(name_ascii) + r"\b", text_ascii))
+            pos = m.start() if m else -1
+        else:
+            cands = [p for p in (text_tr.find(name_tr), text_ascii.find(name_ascii))
+                     if p != -1]
+            pos = min(cands) if cands else -1
+        if pos != -1 and (best_pos is None or pos < best_pos):
+            best_pos, best_code = pos, code
+    return best_code or "*"
+
+# Tarih çıkarımında kullanılan ay haritası ve 'deadline' etiketleri.
+_AY_MAP = {
+    "ocak": "01", "şubat": "02", "mart": "03", "nisan": "04",
+    "mayıs": "05", "haziran": "06", "temmuz": "07", "ağustos": "08",
+    "eylül": "09", "ekim": "10", "kasım": "11", "aralık": "12",
+}
+# Son başvuru etiketi varyantları. 'application deadline' 'deadline'den ÖNCE —
+# alternation soldan denendiği için uzun olan önce gelmeli.
+_DEADLINE_KW = (
+    r"son\s+başvuru|başvuru\s+tarih[ıi]|başvuru\s+son"
+    r"|application\s+deadline|deadline"
+)
+_DEADLINE_KW_RE = re.compile(_DEADLINE_KW, re.I)
+# Etiketten sonraki ~45 karakterlik pencere. re.DOTALL şart: clean_content metni
+# \n ile birleştirdiği için etiket ile tarih ayrı satırlarda olabiliyor; eski
+# regex'te '.' newline eşleşmediğinden tarih hiç yakalanamıyordu (Bug A).
+_DEADLINE_AFTER_RE = re.compile(
+    r"(?:" + _DEADLINE_KW + r")(.{0,45})", re.I | re.DOTALL
+)
+
+
+def _find_dates_with_pos(text):
+    """Metindeki tüm GEÇERLİ tarihleri [(konum, 'YYYY-MM-DD'), ...] olarak,
+    konuma göre sıralı döndürür. Üç format: ISO, Türkçe ay adı, noktalı."""
+    found = []
+    low = text.lower()
+    for m in re.finditer(r"\d{4}-\d{2}-\d{2}", text):
+        found.append((m.start(), m.group(0)))
+    ay = "|".join(_AY_MAP)
+    for m in re.finditer(r"(\d{1,2})\s+(" + ay + r")\s+(\d{4})", low):
+        g, a, y = m.group(1), m.group(2), m.group(3)
+        found.append((m.start(), f"{y}-{_AY_MAP[a]}-{g.zfill(2)}"))
+    for m in re.finditer(r"\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b", text):
+        d, mo, y = m.group(1), m.group(2), m.group(3)
+        found.append((m.start(), f"{y}-{mo.zfill(2)}-{d.zfill(2)}"))
+    valid = []
+    for pos, iso in found:
+        try:
+            date.fromisoformat(iso)
+            valid.append((pos, iso))
+        except ValueError:
+            pass  # 31.02.2026 gibi geçersiz tarihleri ele
+    valid.sort(key=lambda pd: pd[0])
+    return valid
+
 
 def extract_deadline(text):
-    """
-    Metinden son başvuru tarihini çıkar.
-    Örnek: '27 Nisan 2026', '15.05.2026', '2026-04-27'
-    """
-    # ISO format: 2026-04-27
-    m = re.search(r"(\d{4}-\d{2}-\d{2})", text)
-    if m:
-        return m.group(1)
+    """Metindeki ilk geçerli tarihi 'YYYY-MM-DD' döndürür (yoksa None)."""
+    dates = _find_dates_with_pos(text)
+    return dates[0][1] if dates else None
 
-    # Türkçe ay isimleri
-    ay_map = {
-        "ocak": "01", "şubat": "02", "mart": "03", "nisan": "04",
-        "mayıs": "05", "haziran": "06", "temmuz": "07", "ağustos": "08",
-        "eylül": "09", "ekim": "10", "kasım": "11", "aralık": "12",
-    }
-    m = re.search(
-        r"(\d{1,2})\s+(" + "|".join(ay_map.keys()) + r")\s+(\d{4})",
-        text.lower()
-    )
-    if m:
-        gun, ay, yil = m.group(1), m.group(2), m.group(3)
-        return f"{yil}-{ay_map[ay]}-{gun.zfill(2)}"
 
-    # Noktalı format: 27.04.2026
-    m = re.search(r"(\d{2})\.(\d{2})\.(\d{4})", text)
+def find_deadline(content):
+    """Son başvuru tarihini bulur.
+    Aşama 1 — bir 'deadline' etiketinin (son başvuru / başvuru tarihi / başvuru
+    son / application deadline / deadline) hemen ardındaki tarih; re.DOTALL
+    sayesinde etiket ile tarih ayrı satırlarda olsa da yakalanır (Bug A).
+    Aşama 2 — aşama 1 boşsa: içerikteki tüm tarihler arasından bir etikete EN
+    YAKIN olanı seçilir, ilk-rastgele-tarih alınmaz (Bug B). Hiç etiket yoksa
+    güvenilir deadline yok kabul edilir (None) — yanlış 'geçmiş' filtrelemesi
+    yapılmasın diye."""
+    m = _DEADLINE_AFTER_RE.search(content)
     if m:
-        return f"{m.group(3)}-{m.group(2)}-{m.group(1)}"
-
-    return None
+        d = extract_deadline(m.group(1))
+        if d:
+            return d
+    kw = [mm.start() for mm in _DEADLINE_KW_RE.finditer(content)]
+    dates = _find_dates_with_pos(content)
+    if not kw or not dates:
+        return None
+    return min(dates, key=lambda pd: min(abs(pd[0] - k) for k in kw))[1]
 
 def extract_age_range(text):
     """18-30 yaş gibi aralıkları çıkar."""
@@ -174,6 +255,21 @@ def slug_to_funding_type(category_slug):
         "exchange":      "free",
     }
     return mapping.get(category_slug, "free")
+
+
+def truncate_at_word(text, limit=600):
+    """Metni limit karakterde değil, son tam cümlede (yoksa kelimede) keser —
+    eligibility_notes'un kelime ortasında kesilmesini engeller."""
+    if not text or len(text) <= limit:
+        return text
+    cut = text[:limit]
+    for sep in (". ", "! ", "? ", "\n"):
+        idx = cut.rfind(sep)
+        if idx > limit * 0.6:
+            return cut[:idx + 1].strip()
+    sp = cut.rfind(" ")
+    cut = cut[:sp] if sp > limit * 0.6 else cut
+    return cut.rstrip(" ,;:") + "…"
 
 # ─── Sayfa çekici ─────────────────────────────────────────────────────────────
 
@@ -208,6 +304,14 @@ JUNK_LINE_PATTERNS = [
     re.compile(r"^\s*add\s+comment(s)?\s*$", re.I),
     re.compile(r"^\s*no\s+comments?\s*$", re.I),
     re.compile(r"^\s*(facebook|twitter|whatsapp|telegram|linkedin|share|paylaş)\s*$", re.I),
+    # Tek başına kategori etiketi bir satırda gelirse içerikten say (başlık tekrar değil)
+    re.compile(r"^\s*(staj|burs|burslar|gönüllülük|gönülluluk|erasmus|esc|exchange|değişim)\s*$", re.I),
+    # WordPress yorum formu / ilgili yazılar / breadcrumb artıkları
+    re.compile(r"^\s*(yorum(lar)?|yorum\s+yap|bir\s+cevap\s+yazın|cevabı\s+iptal\s+et)\s*$", re.I),
+    re.compile(r"^\s*e-?posta\b.*yayı[mn]lan", re.I),
+    re.compile(r"^\s*(adınız|e-?posta|web\s+sitesi|isim)\s*\*?\s*$", re.I),
+    re.compile(r"^\s*(ilgili|önerilen|benzer|popüler)\s+yazılar\s*$", re.I),
+    re.compile(r"^\s*anasayfa\s*[»>›/].*", re.I),
 ]
 
 def normalize_title(t: str) -> str:
@@ -277,38 +381,30 @@ def parse_post(url, category_slug):
     country_code = extract_country(combined_text)
     host_countries = [country_code]
 
-    # Deadline
-    deadline = None
-    # Önce "Son Başvuru" satırını bul
-    deadline_match = re.search(
-        r"son\s+başvuru[:\s]+(.{5,30})",
-        content.lower()
-    )
-    if deadline_match:
-        deadline = extract_deadline(deadline_match.group(1))
-    if not deadline:
-        deadline = extract_deadline(content)
-
-    # Deadline geçmişse ekleme
-    if deadline:
-        try:
-            if date.fromisoformat(deadline) < date.today():
-                return None  # geçmiş fırsat
-        except Exception:
-            pass
+    # Deadline — find_deadline: etiket sonrası tarih (Bug A), yoksa etikete en
+    # yakın tarih (Bug B). _find_dates_with_pos yalnızca geçerli tarih döndürdüğü
+    # için fromisoformat burada hata vermez.
+    deadline = find_deadline(content)
+    if deadline and date.fromisoformat(deadline) < date.today():
+        return None  # geçmiş fırsat — ekleme
 
     # Yaş aralığı
     age_min, age_max = extract_age_range(content)
 
-    # Eligibility notes — ilk 600 karakter
-    eligibility_notes = content[:600] if content else None
+    # Eligibility notes — ilk ~600 karakter, cümle/kelime sınırında kesilir
+    eligibility_notes = truncate_at_word(content, 600) if content else None
 
-    # Başvuru linki — "tıklayınız" veya "başvur" linklerini bul
+    # Başvuru linki — link metni şu kelimelerden birini içeren ilk dış linki al.
+    # _tr_lower: büyük harfli buton metinleri ("BAŞVUR", "TIKLA", "KAYIT OL") de
+    # eşleşsin — Python'un .lower()'ı 'I'yı 'i' yapıp dotless-ı'lı kelimeleri
+    # kaçırıyordu.
     apply_url = url  # default olarak yazının kendi URL'si
+    apply_keywords = ("tıkla", "başvur", "apply", "form",
+                      "detaylar", "resmi site", "buradan", "kayıt ol")
     for a in (content_el or soup).find_all("a") if content_el else soup.find_all("a"):
         href = a.get("href", "")
-        text = a.get_text(strip=True).lower()
-        if any(k in text for k in ["tıkla", "başvur", "apply", "form"]):
+        text = _tr_lower(a.get_text(strip=True))
+        if any(k in text for k in apply_keywords):
             if href.startswith("http") and "nasilgitmis.com" not in href:
                 apply_url = href
                 break
@@ -389,7 +485,7 @@ def run():
     print(f"   Supabase: {SUPABASE_URL}\n")
 
     if not SUPABASE_KEY:
-        print("❌ SUPABASE_SERVICE_KEY bulunamadı. .env dosyasını kontrol et.")
+        print("❌ SUPABASE_SERVICE_ROLE_KEY bulunamadı. .env dosyasını kontrol et.")
         return
 
     total_added = total_skipped = total_errors = 0
