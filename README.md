@@ -76,6 +76,70 @@ npm run dev
 
 ---
 
+## Otonom Fırsat Keşif Ajanı
+
+Bu proje kapsamında, web'i otonom olarak tarayan bir yapay zeka ajanı geliştirilmiştir. Ajan; arama sorguları üretmek, web sayfalarını analiz etmek ve fırsat içeren kaynakları tespit etmek için büyük dil modellerinden (LLM) yararlanmaktadır.
+
+### Nasıl Çalışır?
+
+```
+1. LLM → Arama sorguları üretir
+         ("scholarships for Turkish students apply 2025" vb.)
+         ↓
+2. DuckDuckGo → Sorgularla web'de arama yapılır
+         ↓
+3. Her sayfa ziyaret edilir → LLM analiz eder:
+   "Bu sayfada Türklerin başvurabileceği uluslararası fırsat var mı? Kaç tane?"
+         ↓
+4. Fırsat içeren sayfalar siteler_sayili.txt'e kaydedilir
+   (fırsat sayısına göre sıralı)
+```
+
+### Kullanılan Teknolojiler
+
+| Bileşen | Teknoloji | Açıklama |
+|---|---|---|
+| LLM | Groq API (Llama 4) | Sorgu üretimi ve sayfa analizi |
+| Arama | DuckDuckGo (ddgs) | Ücretsiz, API key gerektirmez |
+| Web scraping | requests + BeautifulSoup | Sayfa içeriği çekme |
+| Çıktı | siteler_sayili.txt | Fırsat sayısına göre sıralı URL listesi |
+
+### Örnek Çıktı
+
+Tek çalıştırmada (5 tur, ~140 URL taranarak) elde edilen sonuçlar:
+
+```
+59 firsat -- https://www.rit.edu/studyabroad/international-fellowship-search
+23 firsat -- https://freevolunteering.net/
+19 firsat -- https://scholarships.af/82555/opportunities-apply-february/
+14 firsat -- https://uniplusglobal.com/blog/507/list-of-fully-funded-summer-programs/
+11 firsat -- https://scholarshipexpo.com/list-of-summer-programs-in-the-world-2026/
+...
+Toplam: 31 sayfa, ~184 tahmini fırsat
+```
+
+### Çalıştırma
+
+```bash
+# Gerekli paketler
+pip3 install groq requests beautifulsoup4 python-dotenv ddgs
+
+# .env dosyasına ekle
+GROQ_API_KEY=gsk_...
+
+# Yeni siteler bul
+python3 site_bulucu.py --rounds 5
+
+# Bulunan sitelerdeki fırsat sayısını say
+python3 say_firsatlari.py
+```
+
+### Akademik Bağlam
+
+Bu ajan, GEO (Generative Engine Optimization) tez çalışmasının veri toplama altyapısını oluşturmaktadır. LLM'lerin yapılandırılmamış web içeriğini anlayıp sınıflandırabilmesi, geleneksel kural tabanlı scraperların yetersiz kaldığı senaryolarda belirgin bir avantaj sağlamaktadır. Ajan, her çalıştırmada farklı arama sorguları üreterek keşif kapsamını genişletmekte; bu sayede önceden bilinmeyen fırsat kaynaklarına ulaşılabilmektedir.
+
+---
+
 ## Katkı
 
 PR ve issue'lar hoş karşılanır. Yeni fırsat eklemek veya hata bildirmek için GitHub Issues kullanabilirsiniz.
