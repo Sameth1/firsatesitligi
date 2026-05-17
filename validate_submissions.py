@@ -61,8 +61,9 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 # Ücretsiz tier flash modeli. Güncel modeli doğrulamak / değiştirmek için:
 #   GET https://generativelanguage.googleapis.com/v1beta/models?key=API_KEY
-# gemini-2.0-flash de çalışır; daha yeni gemini-3-*-flash modelleri de var.
-GEMINI_MODEL = "gemini-2.5-flash"
+# Not: gemini-2.5-flash / 2.0-flash ücretsiz tier kotaları ayrı ayrı tükenebilir;
+# flash-lite-latest kendi kotasına sahip ve genelde müsait.
+GEMINI_MODEL = "gemini-flash-lite-latest"
 GEMINI_ENDPOINT = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
     f"{GEMINI_MODEL}:generateContent"
@@ -89,12 +90,14 @@ TR_AYLAR = {
 
 SYSTEM_PROMPT = """Sen "Fırsat Eşitliği" platformunun submission doğrulama ajanısın. Bu platform Türkiye'deki gençlere yurt dışı burs, staj, gönüllülük, yaz okulu, gençlik projesi ve değişim programı gibi ÜCRETSİZ veya FONLU fırsatları toplar.
 
-Sana bir submission'ın bilgileri ve orijinal sayfasının metni verilir. Üç şeyi değerlendirirsin:
+Sana bir submission'ın bilgileri, BUGÜNÜN TARİHİ ve orijinal sayfasının metni verilir. Üç şeyi değerlendirirsin:
 
 1) durum — Fırsat hâlâ başvuruya açık mı?
-   - "acik": Gelecekte bir son başvuru tarihi, aktif başvuru formu/linki ya da "başvurular devam ediyor / applications open / now accepting applications" benzeri ifade var.
-   - "kapali": "Başvurular kapandı", "son başvuru tarihi geçti", "applications closed", "deadline has passed", "this programme has ended" benzeri net ifade var; VEYA sayfadaki tek tarih(ler) açıkça geçmişte ve yeni dönem duyurulmamış; VEYA sayfa fırsatın artık mevcut olmadığını gösteriyor.
+   - "acik": Son başvuru tarihi BUGÜNDEN SONRA; ya da aktif başvuru formu/linki ya da "başvurular devam ediyor / applications open / now accepting applications" benzeri ifade var.
+   - "kapali": "Başvurular kapandı", "son başvuru tarihi geçti", "applications closed", "deadline has passed", "this programme has ended" benzeri net ifade var; VEYA sayfadaki son başvuru / etkinlik / proje tarihi BUGÜNDEN ÖNCE ve yeni dönem duyurulmamış; VEYA sayfa fırsatın artık mevcut olmadığını gösteriyor.
    - "belirsiz": Sayfa açıldı ama açık mı kapalı mı metinden çıkmıyor.
+
+TARİH KURALI: Açık/kapalı kararını yalnızca sana verilen "BUGÜNÜN TARİHİ"ne göre ver — kendi tarih bilgine GÜVENME. Sayfadaki son başvuru tarihi, etkinlik tarihi veya proje tarihi bu tarihten önceyse fırsat GEÇMİŞTİR → durum="kapali". Tarihi bütün olarak (gün-ay-yıl) bugünle karşılaştır; yıl tek başına yeterli ipucu değildir.
 
 2) kategori_uygun — Sayfa gerçekten bu fırsatı anlatıyor mu ve platforma uygun mu?
    - true: Gerçek bir fırsat ilanı, belirtilen kategoriyle makul örtüşüyor ve gencin ücret ödemesini gerektirmiyor.
@@ -298,6 +301,8 @@ def _parse_verdict(text):
 def judge_with_gemini(sub, url, http_note, page_text):
     """Gemini'ye sorar, karar dict'i döndürür (hata → None)."""
     user_text = (
+        f"BUGÜNÜN TARİHİ: {date.today().isoformat()}\n"
+        "(Fırsatın açık/kapalı olduğunu bu tarihe göre belirle; kendi tarih bilgine güvenme.)\n\n"
         "SUBMISSION\n"
         f"Başlık: {sub.get('title') or '(yok)'}\n"
         f"Kategori slug: {sub.get('category_slug') or '(belirtilmemiş)'}\n"
