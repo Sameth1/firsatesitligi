@@ -1,8 +1,12 @@
 """
 nasilgitmis.com Scraper
 ========================
-nasilgitmis.com'dan Erasmus+, ESC, Burs ve Staj fırsatlarını
-çekip Supabase opportunities tablosuna yazar.
+nasilgitmis.com'dan Erasmus+, ESC, Burs ve Staj fırsatlarını çekip
+Supabase 'submissions' tablosuna status='pending' olarak yazar.
+
+Doğrudan 'opportunities'e (canlı site) YAZMAZ — kayıtlar öneri olarak
+eklenir; validate_submissions.py incelemesinden geçip onaylanınca
+agent_approve_submission RPC'si bunları opportunities'e taşır.
 
 Kullanım:
   pip install requests python-dotenv beautifulsoup4
@@ -15,11 +19,17 @@ Kullanım:
 
 import os
 import re
+import sys
 import time
 import requests
 from bs4 import BeautifulSoup
 from datetime import date
 from dotenv import load_dotenv
+
+# Windows konsolu (cp1254) emoji/Türkçe karakterde UnicodeEncodeError verir;
+# çıktıyı UTF-8'e sabitle.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 load_dotenv()
 
@@ -28,18 +38,9 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://hxwhelhcrynqatadijxz.supabase.co")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
-# Kategori slug → DB category_id eşlemesi
-# Supabase'den: SELECT slug, id FROM categories;
-CATEGORY_IDS = {
-    "volunteering":  "dfe93634-98a2-48d7-b486-73b8c9631bcc",
-    "scholarship":   "c492a2d8-04fe-42f4-bbe7-a1dfb703d1df",
-    "internship":    "2db63ccc-3cf2-4659-90f6-f8b799559cfe",
-    "youth_project": "89b79136-7e5d-4602-837c-c8af353e6b9d",
-    "exchange":      "a002a2b8-d3e0-4778-848f-a73ed0bc3571",
-    "summer_school": "00bf6fed-dfe6-40a3-b63a-795fa74c6741",
-}
-
 # nasilgitmis.com kategori URL → DB slug eşlemesi
+# Not: submissions tablosu category_slug (id değil) tutar; slug→id eşlemesi
+# gerekmez — agent_approve_submission RPC'si onay anında kategoriyi çözer.
 SITE_CATEGORIES = {
     "https://nasilgitmis.com/category/esc/":          "volunteering",
     "https://nasilgitmis.com/category/erasmus/":      "youth_project",
@@ -110,20 +111,31 @@ def sb_headers():
     }
 
 def url_exists(url):
-    res = requests.get(
-        f"{SUPABASE_URL}/rest/v1/opportunities",
-        headers=sb_headers(),
-        params={"official_url": f"eq.{url}", "select": "id", "limit": 1},
-    )
-    return len(res.json()) > 0
+    """URL zaten yayında (opportunities.official_url) ya da öneri olarak
+    bekliyor (submissions.url) mu? İkisinden birinde varsa kopya say —
+    aynı fırsatı tekrar pending'e eklemeyelim."""
+    for table, col in (("opportunities", "official_url"), ("submissions", "url")):
+        res = requests.get(
+            f"{SUPABASE_URL}/rest/v1/{table}",
+            headers=sb_headers(),
+            params={col: f"eq.{url}", "select": "id", "limit": 1},
+            timeout=15,
+        )
+        if res.ok and res.json():
+            return True
+    return False
 
 def insert(record):
+    """Submission'ı 'submissions' tablosuna pending olarak yazar.
+    (ok: bool, detay: str) döndürür — hata varsa detay HTTP gövdesini taşır."""
     res = requests.post(
-        f"{SUPABASE_URL}/rest/v1/opportunities",
-        headers=sb_headers(),
+        f"{SUPABASE_URL}/rest/v1/submissions",
+        headers={**sb_headers(), "Prefer": "return=minimal"},
         json=record,
+        timeout=15,
     )
-    return res.status_code in (200, 201)
+    ok = res.status_code in (200, 201, 204)
+    return ok, ("" if ok else f"HTTP {res.status_code}: {res.text[:160]}")
 
 # ─── Yardımcı fonksiyonlar ────────────────────────────────────────────────────
 
@@ -409,26 +421,24 @@ def parse_post(url, category_slug):
                 apply_url = href
                 break
 
+    # submissions şeması opportunities'ten farklı: url (official_url değil),
+    # category_slug (category_id değil), deadline_text (deadline date değil).
+    # target_countries / study_level / is_active gibi opportunity-özel alanları
+    # onay anında agent_approve_submission RPC'si dolduruyor; burada yok.
     return {
-        "title":               title,
-        "official_url":        url,          # nasilgitmis linki
-        "deadline":            deadline,
-        "deadline_notes":      f"Kaynak: nasilgitmis.com — başvuru: {apply_url}",
-        "host_countries":      host_countries,
-        "target_countries":    ["TR"],        # Türk gençlere yönelik
-        "eligible_citizenships": ["TR"],
-        "target_fields":       ["all"],
-        "study_level":         ["any"],
-        "age_min":             age_min,
-        "age_max":             age_max or 30,
+        "title":                title,
+        "url":                  url,          # nasilgitmis yazı linki (kaynak)
+        "category_slug":        category_slug,
+        "deadline_text":        deadline,      # 'YYYY-MM-DD' ya da None (text)
+        "host_countries":       host_countries,
+        "age_min":              age_min,
+        "age_max":              age_max or 30,
         "language_requirement": "Türkçe / İngilizce",
-        "eligibility_notes":   eligibility_notes,
-        "funding_type":        slug_to_funding_type(category_slug),
-        "funding_notes":       "nasilgitmis.com'dan çekildi — detay için resmi sayfaya bakın",
-        "category_id":         CATEGORY_IDS.get(category_slug),
-        "is_featured":         False,
-        "is_active":           True,
-        "is_verified":         False,
+        "eligibility_notes":    eligibility_notes,
+        "funding_type":         slug_to_funding_type(category_slug),
+        "funding_notes":        f"nasilgitmis.com'dan çekildi — başvuru: {apply_url}",
+        "submitter_nickname":   "nasilgitmis-bot",
+        "status":               "pending",
     }
 
 # ─── Ana akış ─────────────────────────────────────────────────────────────────
@@ -458,18 +468,18 @@ def scrape_category(cat_url, category_slug, max_pages=5):
                 errors += 1
                 continue
 
-            if not record.get("category_id") or "BURAYA" in (record.get("category_id") or ""):
-                print(f"    ⚠ category_id eksik, atlandı: {link}")
+            if not record.get("category_slug"):
+                print(f"    ⚠ category_slug eksik, atlandı: {link}")
                 errors += 1
                 continue
 
-            ok = insert(record)
+            ok, detay = insert(record)
             if ok:
                 added += 1
-                print(f"    ✅ {record['title'][:55]}")
+                print(f"    ✅ pending: {record['title'][:55]}")
             else:
                 errors += 1
-                print(f"    ❌ Hata: {record['title'][:55]}")
+                print(f"    ❌ Hata: {record['title'][:55]} — {detay}")
 
             time.sleep(1)  # sitenin sunucusuna nazik ol
 
@@ -482,7 +492,8 @@ def scrape_category(cat_url, category_slug, max_pages=5):
 
 def run():
     print("🚀 nasilgitmis.com scraper başladı")
-    print(f"   Supabase: {SUPABASE_URL}\n")
+    print(f"   Supabase: {SUPABASE_URL}")
+    print("   Hedef: submissions tablosu (status=pending)\n")
 
     if not SUPABASE_KEY:
         print("❌ SUPABASE_SERVICE_ROLE_KEY bulunamadı. .env dosyasını kontrol et.")
@@ -497,8 +508,8 @@ def run():
         total_errors  += e
 
     print("\n" + "─" * 40)
-    print(f"✅ Eklendi  : {total_added}")
-    print(f"⏭  Atlandı  : {total_skipped} (zaten vardı)")
+    print(f"✅ Eklendi  : {total_added} pending submission")
+    print(f"⏭  Atlandı  : {total_skipped} (opportunities/submissions'ta zaten vardı)")
     print(f"❌ Hata     : {total_errors}")
     print("─" * 40)
     print("Bitti!")
