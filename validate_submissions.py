@@ -29,11 +29,22 @@ Kullanım:
   python validate_submissions.py                # tüm pending'leri işle
   python validate_submissions.py --limit 10     # ilk 10
   python validate_submissions.py --dry-run      # DB'ye yazma, kararı göster
+  python validate_submissions.py --audit-opportunities   # aşağıya bak
+
+AUDIT MODU — --audit-opportunities:
+  Submission yerine YAYINDAKİ fırsatları (opportunities) denetler. Admin
+  panelindeki "Manuel doğrulanmamış" kümesini (last_verified_at IS NULL) çeker;
+  her fırsatın URL'i ölü (HTTP 404/410) ya da son başvuru tarihi (deadline /
+  deadline_notes) geçmişse is_active=false yapar ve last_verified_at'i now()
+  olarak işaretler. Belirsiz sonuçlar (timeout/403/5xx) dokunulmadan bırakılır —
+  sonraki çalıştırmaya kalır. LLM kullanmaz; bu modda GEMINI_API_KEY gerekmez.
+  --limit ve --dry-run bu modda da geçerlidir.
 
 .env:
   SUPABASE_URL=...
   SUPABASE_SERVICE_ROLE_KEY=...
   GEMINI_API_KEY=...        # https://aistudio.google.com/apikey (ücretsiz)
+                            # --audit-opportunities modunda gerekmez
 """
 
 import argparse
@@ -462,17 +473,149 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
     return {"reddet": "gemini_red", "belirsiz": "belirsiz"}[eylem]
 
 
+# ─── Opportunity audit (--audit-opportunities) ────────────────────────────────
+
+def fetch_unverified_opportunities(limit=None):
+    """last_verified_at IS NULL olan fırsatları çeker — admin panelindeki
+    "Manuel doğrulanmamış" kümesi. Service key RLS'i bypass eder."""
+    params = {
+        "last_verified_at": "is.null",
+        "select": "id,title,official_url,deadline,deadline_notes,is_active",
+        "order": "id.asc",
+    }
+    res = requests.get(f"{SUPABASE_URL}/rest/v1/opportunities",
+                       headers=sb_headers(), params=params, timeout=20)
+    res.raise_for_status()
+    rows = res.json()
+    return rows[:limit] if limit else rows
+
+
+def opportunity_deadline(opp):
+    """Fırsatın son başvuru tarihini (date | None) döndürür. Önce yapısal
+    `deadline` kolonu, o boşsa serbest metin `deadline_notes` denenir."""
+    raw = opp.get("deadline")
+    if raw:
+        try:
+            return date.fromisoformat(str(raw)[:10])
+        except ValueError:
+            pass
+    return parse_deadline(opp.get("deadline_notes"))
+
+
+def update_opportunity(opp_id, patch, dry_run):
+    """opportunities satırını PATCH'ler. dry_run'da DB'ye yazmaz."""
+    if dry_run:
+        return
+    res = requests.patch(
+        f"{SUPABASE_URL}/rest/v1/opportunities",
+        headers={**sb_headers(), "Prefer": "return=minimal"},
+        params={"id": f"eq.{opp_id}"},
+        json=patch, timeout=15,
+    )
+    res.raise_for_status()
+
+
+def audit_opportunity(opp, dry_run):
+    """Tek fırsatı denetler. Tally etiketi döndürür:
+    expired | dead | alive | belirsiz.
+      expired/dead -> is_active=false + last_verified_at=now()
+      alive        -> yalnızca last_verified_at=now()
+      belirsiz     -> hiç yazılmaz; sonraki çalıştırmaya kalır."""
+    print(f"\n• {(opp.get('title') or '(başlıksız)')[:60]}")
+    opp_id = opp["id"]
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    # 1) Son başvuru tarihi geçmiş mi? (URL'e gitmeden — istek tasarrufu)
+    dl = opportunity_deadline(opp)
+    if dl is not None and dl < date.today():
+        update_opportunity(opp_id,
+                           {"is_active": False, "last_verified_at": now_iso}, dry_run)
+        print(f"  Son başvuru tarihi geçmiş ({dl}) → PASİFLEŞTİRİLDİ")
+        return "expired"
+
+    # 2) URL canlı mı?
+    url = (opp.get("official_url") or "").strip()
+    if not url:
+        print("  Fırsatta URL yok → BELİRSİZ (dokunulmadı)")
+        return "belirsiz"
+    print(f"  URL: {url}")
+    status, _final_url, _html, err = fetch_page(url)
+    if status in (404, 410):
+        update_opportunity(opp_id,
+                           {"is_active": False, "last_verified_at": now_iso}, dry_run)
+        print(f"  Ölü bağlantı (HTTP {status}) → PASİFLEŞTİRİLDİ")
+        return "dead"
+    if status is None:
+        print(f"  Sayfaya ulaşılamadı ({err}) → BELİRSİZ (dokunulmadı)")
+        return "belirsiz"
+    if status != 200:
+        # 403/429/5xx — geçici ya da bot koruması olabilir; pasifleştirme.
+        print(f"  HTTP {status} (geçici/bot koruması olabilir) → BELİRSİZ (dokunulmadı)")
+        return "belirsiz"
+
+    # 3) URL canlı + son başvuru tarihi geçmemiş → yalnızca doğrulandı işaretle
+    update_opportunity(opp_id, {"last_verified_at": now_iso}, dry_run)
+    print("  URL canlı, son başvuru tarihi geçmemiş → AKTİF KALDI (doğrulandı)")
+    return "alive"
+
+
+def run_audit_opportunities(args):
+    """--audit-opportunities akışı: last_verified_at boş fırsatları denetler."""
+    print("Doğrulanmamış fırsatlar çekiliyor (last_verified_at IS NULL)...")
+    try:
+        opps = fetch_unverified_opportunities(args.limit)
+    except requests.exceptions.RequestException as e:
+        print(f"Supabase'den okuma hatası: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if not opps:
+        print("Doğrulanmamış fırsat yok — hepsi denetlenmiş.")
+        return
+
+    mode = "DRY-RUN — DB'ye yazılmayacak" if args.dry_run else "CANLI — DB'ye yazılacak"
+    print(f"{len(opps)} fırsat denetlenecek · {mode}")
+    print("─" * 64)
+
+    tally = {k: 0 for k in ("expired", "dead", "alive", "belirsiz")}
+    for opp in opps:
+        try:
+            tally[audit_opportunity(opp, args.dry_run)] += 1
+        except requests.exceptions.RequestException as e:
+            print(f"  ! ağ/DB hatası — atlandı: {e}")
+
+    deaktif = tally["expired"] + tally["dead"]
+    print("\n" + "─" * 64)
+    print(f"PASİFLEŞTİRİLDİ : {deaktif}  (is_active=false)")
+    print(f"   süresi geçmiş {tally['expired']} · ölü link {tally['dead']}")
+    print(f"AKTİF KALDI     : {tally['alive']}  (URL canlı, tarih geçmemiş)")
+    print(f"BELİRSİZ        : {tally['belirsiz']}  "
+          f"(denetlenemedi — dokunulmadı, sonraki çalıştırmaya kaldı)")
+    print(f"\nlast_verified_at güncellendi: {deaktif + tally['alive']} fırsat.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Submission doğrulama ajanı")
-    parser.add_argument("--limit", type=int, help="En fazla bu kadar submission işle")
+    parser.add_argument("--limit", type=int, help="En fazla bu kadar kayıt işle")
     parser.add_argument("--dry-run", action="store_true",
                         help="DB'ye yazma, sadece kararı göster")
+    parser.add_argument("--audit-opportunities", action="store_true",
+                        help="Submission yerine yayındaki fırsatları denetle: "
+                             "last_verified_at boş olanların URL'i ölü ya da son "
+                             "başvuru tarihi geçmişse is_active=false yapar")
     args = parser.parse_args()
 
-    missing = [n for n, v in (("SUPABASE_SERVICE_ROLE_KEY", SUPABASE_KEY),
-                              ("GEMINI_API_KEY", GEMINI_API_KEY)) if not v]
-    if missing:
-        print("Eksik ortam değişkeni: " + ", ".join(missing) + " — .env kontrol et.",
+    if not SUPABASE_KEY:
+        print("Eksik ortam değişkeni: SUPABASE_SERVICE_ROLE_KEY — .env kontrol et.",
+              file=sys.stderr)
+        sys.exit(1)
+
+    # Audit modu yalnızca heuristik (URL + tarih) çalışır — LLM yok, GEMINI gerekmez.
+    if args.audit_opportunities:
+        run_audit_opportunities(args)
+        return
+
+    if not GEMINI_API_KEY:
+        print("Eksik ortam değişkeni: GEMINI_API_KEY — .env kontrol et.",
               file=sys.stderr)
         print("Gemini ücretsiz anahtarı: https://aistudio.google.com/apikey",
               file=sys.stderr)
