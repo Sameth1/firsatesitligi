@@ -1,16 +1,21 @@
 """
 Agent Reach — URL → Submission Scraper
 =======================================
-Herhangi bir fırsat URL'sini Jina Reader'dan geçirip submissions tablosuna
+Herhangi bir fırsat URL'sini Scrapling ile çekip submissions tablosuna
 'pending' olarak yazar. Admin panelinde Onayla/Revize/Reddet ile yayına alınır.
 
 Idealist ve nasılgitmiş gibi site-spesifik scraper'ların aksine bu generic —
 ESN, Erasmus+, üniversite burs sayfaları, blog yazıları, Reddit post linki vb.
-hangi URL atılırsa Jina Reader temiz markdown döner, biz de başlık/ülke/deadline
+hangi URL atılırsa Scrapling sayfayı çeker, biz de başlık/ülke/deadline
 heuristikleriyle alanları çıkarırız.
 
+Önce hızlı HTTP isteği (Fetcher) denenir; sayfa bot korumasıyla engellerse ya da
+içerik JS ile geç yükleniyorsa otomatik olarak StealthyFetcher (gizli tarayıcı)
+fallback'ine düşülür — eskiden Jina Reader'ın sunucu tarafında yaptığı işi
+yerelde yaparız.
+
 Kullanım:
-  pip install requests python-dotenv
+  pip install "scrapling[fetchers]" python-dotenv && scrapling install
   python agent_reach_url_scraper.py <URL> [--category=scholarship]
   python agent_reach_url_scraper.py <URL> --dry-run    # DB'ye yazma, sadece göster
 
@@ -31,6 +36,7 @@ import unicodedata
 import requests
 from datetime import date
 from dotenv import load_dotenv
+from scrapling.fetchers import Fetcher, StealthyFetcher
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -40,7 +46,11 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://hxwhelhcrynqatadijxz.supabase.co")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
-JINA_BASE = "https://r.jina.ai/"
+# HTTP isteği için zaman aşımı (sn) ve gizli tarayıcı fallback eşiği.
+FETCH_TIMEOUT = 30
+STEALTH_TIMEOUT_MS = 60_000
+MIN_BODY_CHARS = 200          # bundan azı çıkarsa içerik JS ile geliyor sayılır
+BLOCKED_STATUSES = {403, 429, 503}
 
 VALID_CATEGORIES = {
     "scholarship", "volunteering", "youth_project",
@@ -121,38 +131,24 @@ _MULTI_COUNTRY_RE = re.compile(
     r"|europe-wide|eu-wide|tüm program ülke|avrupa genel|avrupa çap|birçok ülke",
     re.I,
 )
-_MD_IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
-_MD_LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]*\)")
+# get_all_text çıkarımında atlanacak gürültü etiketleri (menü/altbilgi/form/script).
+_NOISE_TAGS = ("script", "style", "noscript", "nav", "header", "footer",
+               "aside", "form", "svg", "button", "template")
+# <title> sonundaki "| Site Adı" / "- Site Adı" eklerini ayıracak ayraçlar.
+_TITLE_SEP_RE = re.compile(r"\s+[|»·–—-]\s+")
 
 
-def clean_markdown_body(md: str) -> str:
-    """Jina Reader markdown'ını okunabilir düz metne indirger: meta header'ı,
-    görselleri, nav/boilerplate satırlarını atar; satır içi markdown işaretlerini
-    (başlık, liste, link, vurgu) söker. Açıklama ve ülke çıkarımı bunun üzerinden
-    yapılır — ham çıktıdaki çerez/menü metni alanlara sızmasın."""
-    if "Markdown Content:" in md:
-        md = md.split("Markdown Content:", 1)[1]
-
+def clean_text_body(text: str) -> str:
+    """Scrapling'in çıkardığı düz metni satır satır temizler: boş satırları,
+    yatay çizgileri ve çerez/menü gibi boilerplate satırlarını atar. Açıklama ve
+    ülke çıkarımı bunun üzerinden yapılır — sayfadaki çerez/menü metni alanlara
+    sızmasın. (HTML zaten _NOISE_TAGS ile budanmış halde gelir; bu son süzgeç.)"""
     out: list[str] = []
-    for raw in md.splitlines():
+    for raw in text.splitlines():
         line = raw.strip()
         if not line:
             continue
-        if line.startswith(("Title:", "URL Source:", "Published Time:")):
-            continue
-        if re.fullmatch(r"[-=*_|\s]+", line):  # yatay çizgi / tablo ayracı
-            continue
-        line = _MD_IMAGE_RE.sub("", line).strip()
-        line = re.sub(r"^#{1,6}\s+", "", line)   # başlık işareti
-        line = re.sub(r"^>\s*", "", line)         # alıntı işareti
-        line = re.sub(r"^[-*+]\s+", "", line)     # liste işareti
-        if line and not _MD_LINK_RE.sub("", line).strip(" -*|·•"):
-            continue  # satır yalnızca link(ler)den ibaret → navigasyon/menü
-        line = _MD_LINK_RE.sub(r"\1", line)       # [metin](url) → metin
-        line = re.sub(r"\*\*([^*]+)\*\*", r"\1", line)
-        line = re.sub(r"(?<!\w)[*_]([^*_\n]+)[*_](?!\w)", r"\1", line)
-        line = line.replace("`", "").strip()
-        if not line:
+        if re.fullmatch(r"[-=*_|\s]+", line):  # yatay çizgi / ayraç
             continue
         if _BOILERPLATE_RE.search(line):
             continue
@@ -160,20 +156,70 @@ def clean_markdown_body(md: str) -> str:
     return "\n".join(out)
 
 
-def fetch_via_jina(url: str) -> str:
-    res = requests.get(f"{JINA_BASE}{url}", timeout=45)
-    res.raise_for_status()
-    return res.text
+def fetch_page(url: str):
+    """Sayfayı çeker. Önce hızlı HTTP (Fetcher); engellenirse ya da içerik JS ile
+    geç geliyorsa gizli tarayıcıya (StealthyFetcher) düşer. Scrapling Response
+    döndürür — başarısızsa None. Eskiden Jina Reader'ın yaptığı işin yereli."""
+    try:
+        page = Fetcher.get(url, timeout=FETCH_TIMEOUT, stealthy_headers=True)
+    except Exception as e:
+        print(f"  ⚠️  HTTP fetch hatası: {e} — gizli tarayıcı deneniyor")
+        page = None
+
+    blocked = page is None or page.status in BLOCKED_STATUSES
+    too_thin = page is not None and len(page.get_all_text(strip=True)) < MIN_BODY_CHARS
+    if blocked or too_thin:
+        try:
+            page = StealthyFetcher.fetch(
+                url, headless=True, network_idle=True, timeout=STEALTH_TIMEOUT_MS)
+        except Exception as e:
+            if page is None:
+                print(f"  ❌ Gizli tarayıcı da başarısız: {e}")
+                return None
+            # HTTP yanıtı vardı ama inceydi — eldekiyle devam et.
+
+    if page is None or page.status >= 400:
+        print(f"  ❌ Sayfa alınamadı (HTTP {getattr(page, 'status', '?')})")
+        return None
+    return page
 
 
-def extract_title(md: str) -> str | None:
-    # Jina çıktısında ilk satırlar genelde: "Title: <başlık>\nURL Source: ..."
-    m = re.search(r"^\s*Title:\s*(.+)$", md, re.MULTILINE)
-    if m:
-        return m.group(1).strip()
-    # Fallback: ilk H1
-    m = re.search(r"^#\s+(.+)$", md, re.MULTILINE)
-    return m.group(1).strip() if m else None
+def _clean_title(raw: str) -> str:
+    """'Başlık | Site Adı' → 'Başlık'. Birden fazla parça varsa ve son parça
+    kısaysa (≤40 char, muhtemelen site adı) onu atar; aksi halde dokunmaz."""
+    parts = _TITLE_SEP_RE.split(raw.strip())
+    if len(parts) >= 2 and len(parts[-1]) <= 40 and len(parts[0]) >= 8:
+        return parts[0].strip()
+    return raw.strip()
+
+
+def page_title(page) -> str | None:
+    """Sayfa başlığı: önce og:title / twitter:title meta'sı (en temiz), sonra
+    <title> (site-adı eki temizlenmiş), en son ilk <h1>."""
+    for sel in ('meta[property="og:title"]::attr(content)',
+                'meta[name="twitter:title"]::attr(content)'):
+        val = page.css(sel).get()
+        if val and val.strip():
+            return val.strip()
+    val = page.css("title::text").get()
+    if val and val.strip():
+        return _clean_title(val)
+    val = page.css("h1::text").get()
+    return val.strip() if val and val.strip() else None
+
+
+def page_text(page) -> str:
+    """Sayfanın ana içeriğini düz metin olarak döndürür. <article>/<main> varsa
+    onu, yoksa <body>'yi alır; _NOISE_TAGS (menü/altbilgi/script…) çıkarılır;
+    ardından satır bazlı boilerplate süzgecinden geçirilir."""
+    container = page
+    for sel in ("article", "main", '[role="main"]', "body"):
+        nodes = page.css(sel)
+        if nodes:
+            container = nodes[0]
+            break
+    text = container.get_all_text(separator="\n", strip=True, ignore_tags=_NOISE_TAGS)
+    return clean_text_body(text)
 
 
 def _find_country_pos(text: str):
@@ -252,19 +298,21 @@ def first_paragraph(body: str, max_chars: int = 600) -> str:
     return cut.rstrip(" ,;:") + "…"
 
 
-def extract_fields(md: str, source_url: str, category: str | None) -> dict | None:
-    title = extract_title(md)
+def extract_fields(page, source_url: str, category: str | None) -> dict | None:
+    title = page_title(page)
     if not title:
         return None
-    body = clean_markdown_body(md)
+    body = page_text(page)
+    # deadline/funding heuristikleri başlık + gövdenin tamamını tarasın.
+    full_text = f"{title}\n{body}"
     country = extract_country(title, body)
     return {
         "title": title,
         "url": source_url,
         "category_slug": category,
         "host_countries": [country] if country else [],
-        "deadline_text": extract_deadline_text(md),
-        "funding_type": extract_funding_type(md),
+        "deadline_text": extract_deadline_text(full_text),
+        "funding_type": extract_funding_type(full_text),
         "eligibility_notes": first_paragraph(body, max_chars=600),
         "description": first_paragraph(body, max_chars=1500),
         "language_requirement": None,
@@ -292,13 +340,11 @@ def submit(record: dict) -> tuple[bool, str]:
 
 def process_url(url: str, category: str | None, dry_run: bool) -> bool:
     print(f"\n🔗 {url}")
-    try:
-        md = fetch_via_jina(url)
-    except Exception as e:
-        print(f"  ❌ Jina fetch hatası: {e}")
+    page = fetch_page(url)
+    if page is None:
         return False
 
-    record = extract_fields(md, url, category)
+    record = extract_fields(page, url, category)
     if not record:
         print("  ❌ Başlık çıkarılamadı, atlandı")
         return False
