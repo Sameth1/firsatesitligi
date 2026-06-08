@@ -89,7 +89,11 @@ COUNTRY_MAP = {
     "slovenya": "SI", "slovenia": "SI",
     "malta": "MT",
     "japonya": "JP", "japan": "JP",
-    "ingiltere": "GB", "united kingdom": "GB",
+    "ingiltere": "GB", "united kingdom": "GB", "uk": "GB",
+    "britain": "GB", "great britain": "GB", "birleşik krallık": "GB",
+    "ireland": "IE", "irlanda": "IE",
+    "switzerland": "CH", "isviçre": "CH", "isvicre": "CH",
+    "iceland": "IS", "izlanda": "IS",
     "abd": "US", "amerika": "US", "usa": "US", "united states": "US",
 }
 
@@ -197,15 +201,12 @@ def page_title(page) -> str | None:
     """Sayfa başlığı: önce og:title / twitter:title meta'sı (en temiz), sonra
     <title> (site-adı eki temizlenmiş), en son ilk <h1>."""
     for sel in ('meta[property="og:title"]::attr(content)',
-                'meta[name="twitter:title"]::attr(content)'):
+                'meta[name="twitter:title"]::attr(content)',
+                "title::text", "h1::text"):
         val = page.css(sel).get()
         if val and val.strip():
-            return val.strip()
-    val = page.css("title::text").get()
-    if val and val.strip():
-        return _clean_title(val)
-    val = page.css("h1::text").get()
-    return val.strip() if val and val.strip() else None
+            return _clean_title(val)
+    return None
 
 
 def page_text(page) -> str:
@@ -220,6 +221,138 @@ def page_text(page) -> str:
             break
     text = container.get_all_text(separator="\n", strip=True, ignore_tags=_NOISE_TAGS)
     return clean_text_body(text)
+
+
+def page_description(page) -> str | None:
+    """Sayfanın kendi özeti: og:description / twitter:description / meta description.
+    Gövde metninden çok daha temiz — editör tarafından yazılmış tek cümlelik özet,
+    carousel/menü gürültüsü içermez. Açıklamanın birincil kaynağı."""
+    for sel in ('meta[property="og:description"]::attr(content)',
+                'meta[name="twitter:description"]::attr(content)',
+                'meta[name="description"]::attr(content)'):
+        val = page.css(sel).get()
+        if val and val.strip() and len(val.strip()) >= 40:
+            return val.strip()
+    return None
+
+
+def _deep_find(obj, key: str):
+    """İç içe JSON-LD yapısında (dict/list, @graph dahil) verilen anahtarın ilk
+    değerini döndürür. addressCountry/validThrough gibi alanlar şemaya göre farklı
+    derinliklerde gömülü olabildiği için özyinelemeli arama şart."""
+    if isinstance(obj, dict):
+        if key in obj:
+            return obj[key]
+        for v in obj.values():
+            found = _deep_find(v, key)
+            if found is not None:
+                return found
+    elif isinstance(obj, list):
+        for item in obj:
+            found = _deep_find(item, key)
+            if found is not None:
+                return found
+    return None
+
+
+def _normalize_country(val) -> str:
+    """JSON-LD addressCountry değerini ISO-2 koda çevirir. Değer ISO kod ('DE'),
+    ülke adı ('Germany') ya da {'@type':'Country','name':'Germany'} olabilir."""
+    if isinstance(val, dict):
+        val = val.get("name") or val.get("addressCountry") or ""
+    if not isinstance(val, str):
+        return ""
+    val = val.strip()
+    if len(val) == 2 and val.upper() in {c for c in COUNTRY_MAP.values()}:
+        return val.upper()
+    hit = _find_country_pos(val)
+    return hit[1] if hit else ""
+
+
+# JSON-LD'de fırsat sayfalarında ana varlık olma olasılığı yüksek @type'lar.
+_JSONLD_PRIMARY_TYPES = {
+    "JobPosting", "Course", "EducationalOccupationalProgram", "ScholarshipGrant",
+    "Event", "Article", "NewsArticle", "WebPage", "Product", "Grant",
+}
+
+
+def extract_jsonld(page) -> dict:
+    """Sayfadaki script[type=application/ld+json] bloklarını ayrıştırıp
+    {name, description, country, deadline} döndürür (bulunamayan alan yok sayılır).
+    Birincil kaynak — heuristiklerden önce buna güvenilir, çünkü site editörünün
+    yapılandırdığı veridir. Hiçbir blok yoksa boş dict döner."""
+    out: dict = {}
+    blocks = page.css('script[type="application/ld+json"]::text').getall()
+    nodes: list[dict] = []
+    for raw in blocks:
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(data, dict) and "@graph" in data:
+            data = data["@graph"]
+        if isinstance(data, list):
+            nodes += [n for n in data if isinstance(n, dict)]
+        elif isinstance(data, dict):
+            nodes.append(data)
+
+    if not nodes:
+        return out
+
+    def _type_of(n):
+        t = n.get("@type", "")
+        return {t} if isinstance(t, str) else set(t or [])
+
+    primary = next((n for n in nodes if _type_of(n) & _JSONLD_PRIMARY_TYPES), None)
+    primary = primary or next((n for n in nodes if n.get("name") or n.get("headline")), None)
+    if primary is None:
+        return out
+
+    name = primary.get("name") or primary.get("headline")
+    if isinstance(name, str) and name.strip():
+        out["name"] = name.strip()
+
+    desc = primary.get("description")
+    if isinstance(desc, str) and desc.strip() and len(desc.strip()) >= 40:
+        out["description"] = " ".join(desc.split())
+
+    country = _normalize_country(_deep_find(primary, "addressCountry"))
+    if country:
+        out["country"] = country
+
+    deadline = (_deep_find(primary, "validThrough")
+                or _deep_find(primary, "applicationDeadline")
+                or _deep_find(primary, "endDate"))
+    if isinstance(deadline, str) and deadline.strip():
+        out["deadline"] = deadline.strip()[:40]
+
+    return out
+
+
+# Uygunluk/başvuru şartı sinyali taşıyan cümle anahtarları (TR + EN).
+_ELIGIBILITY_RE = re.compile(
+    r"eligib|requirement|citizen|nationality|national of|applicants? must|open to"
+    r"|uygun|vatandaş|başvuru koşul|başvuru şart|gerekli|şartlar",
+    re.I,
+)
+
+
+def extract_eligibility(body: str, max_chars: int = 600) -> str:
+    """Gövdeden yalnızca uygunluk/şart sinyali taşıyan cümleleri toplar. Açıklamanın
+    kopyası DEĞİL — eşleşen cümle yoksa boş döner (eskiden description prefix'iydi)."""
+    # Satır ve cümle sınırlarında böl; çok kısa parçaları (menü kalıntısı) ele.
+    chunks = re.split(r"(?<=[.!?])\s+|\n+", body)
+    hits: list[str] = []
+    seen: set[str] = set()
+    for ch in chunks:
+        s = ch.strip()
+        if len(s) < 25 or s in seen:
+            continue
+        if _ELIGIBILITY_RE.search(s):
+            hits.append(s)
+            seen.add(s)
+    joined = " ".join(hits)
+    return joined[:max_chars].rstrip(" ,;:") + ("…" if len(joined) > max_chars else "")
 
 
 def _find_country_pos(text: str):
@@ -287,8 +420,16 @@ def extract_funding_type(md: str) -> str | None:
 
 
 def first_paragraph(body: str, max_chars: int = 600) -> str:
-    """Temizlenmiş gövdeden ilk anlamlı metni, kelime sınırında keserek döndür."""
-    text = " ".join(body.split())
+    """Temizlenmiş gövdeden ilk anlamlı metni döndürür. Önce ardışık yinelenen
+    cümleleri (menü/başlık tekrarı: 'Who can apply? Who can apply?') birleştirir,
+    sonra kelime sınırında keser."""
+    parts = re.split(r"(?<=[.!?])\s+|\n+", body)
+    deduped: list[str] = []
+    for p in parts:
+        p = p.strip()
+        if p and (not deduped or p != deduped[-1]):
+            deduped.append(p)
+    text = " ".join(" ".join(deduped).split())
     if len(text) <= max_chars:
         return text
     cut = text[:max_chars]
@@ -299,22 +440,30 @@ def first_paragraph(body: str, max_chars: int = 600) -> str:
 
 
 def extract_fields(page, source_url: str, category: str | None) -> dict | None:
-    title = page_title(page)
+    # Birincil kaynak: sayfanın yapılandırılmış JSON-LD verisi. Her alan için
+    # bulunamazsa mevcut heuristiklere düşülür.
+    ld = extract_jsonld(page)
+
+    title = ld.get("name") or page_title(page)
     if not title:
         return None
     body = page_text(page)
     # deadline/funding heuristikleri başlık + gövdenin tamamını tarasın.
     full_text = f"{title}\n{body}"
-    country = extract_country(title, body)
+
+    country = ld.get("country") or extract_country(title, body)
+    description = (ld.get("description") or page_description(page)
+                  or first_paragraph(body, max_chars=1500))
+    deadline = ld.get("deadline") or extract_deadline_text(full_text)
     return {
         "title": title,
         "url": source_url,
         "category_slug": category,
         "host_countries": [country] if country else [],
-        "deadline_text": extract_deadline_text(full_text),
+        "deadline_text": deadline,
         "funding_type": extract_funding_type(full_text),
-        "eligibility_notes": first_paragraph(body, max_chars=600),
-        "description": first_paragraph(body, max_chars=1500),
+        "eligibility_notes": extract_eligibility(body),
+        "description": description,
         "language_requirement": None,
         "submitter_nickname": "agent-reach",
         "submitter_email": None,
