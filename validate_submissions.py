@@ -11,8 +11,8 @@ KATMAN 1 — ücretsiz heuristikler (LLM çağrısı YOK):
   • Ölü bağlantı → URL HTTP 404/410 dönüyorsa REDDET.
 
 KATMAN 2 — LLM (yalnızca belirsiz vakalar):
-  Sayfa HTTP 200 dönüyor ama açık/kapalı durumu net değil → Gemini'ye
-  (ücretsiz tier) sorulur. Diğer HTTP durumları (403/429/5xx/timeout) LLM'e
+  Sayfa HTTP 200 dönüyor ama açık/kapalı durumu net değil → LLM'e (DO Inference,
+  OpenAI-uyumlu) sorulur. Diğer HTTP durumları (403/429/5xx/timeout) LLM'e
   gitmez; belirsiz olarak pending bırakılır.
 
 KARAR:
@@ -37,14 +37,14 @@ AUDIT MODU — --audit-opportunities:
   her fırsatın URL'i ölü (HTTP 404/410) ya da son başvuru tarihi (deadline /
   deadline_notes) geçmişse is_active=false yapar ve last_verified_at'i now()
   olarak işaretler. Belirsiz sonuçlar (timeout/403/5xx) dokunulmadan bırakılır —
-  sonraki çalıştırmaya kalır. LLM kullanmaz; bu modda GEMINI_API_KEY gerekmez.
+  sonraki çalıştırmaya kalır. LLM kullanmaz; bu modda LLM anahtarı gerekmez.
   --limit ve --dry-run bu modda da geçerlidir.
 
 .env:
   SUPABASE_URL=...
   SUPABASE_SERVICE_ROLE_KEY=...
-  GEMINI_API_KEY=...        # https://aistudio.google.com/apikey (ücretsiz)
-                            # --audit-opportunities modunda gerekmez
+  DIGITALOCEAN_INFERENCE_KEY=...   # OpenAI-uyumlu DO Inference anahtarı
+                                   # --audit-opportunities modunda gerekmez
 """
 
 import argparse
@@ -68,18 +68,14 @@ SUPABASE_URL = os.getenv(
     "SUPABASE_URL", "https://hxwhelhcrynqatadijxz.supabase.co"
 ).rstrip("/")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
-# Ücretsiz tier flash modeli. Güncel modeli doğrulamak / değiştirmek için:
-#   GET https://generativelanguage.googleapis.com/v1beta/models?key=API_KEY
-# Not: gemini-2.5-flash / 2.0-flash ücretsiz tier kotaları ayrı ayrı tükenebilir;
-# flash-lite-latest kendi kotasına sahip ve genelde müsait.
-GEMINI_MODEL = "gemini-flash-lite-latest"
-GEMINI_ENDPOINT = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    f"{GEMINI_MODEL}:generateContent"
-)
-GEMINI_MIN_INTERVAL = 5.0     # çağrılar arası bekleme — ücretsiz tier RPM sınırı
+# LLM sağlayıcı — OpenAI-uyumlu chat/completions. Varsayılan: DigitalOcean
+# Inference (geniş limit, $ kredi). Azure $100 alternatifi de OpenAI-uyumlu;
+# yalnızca LLM_BASE_URL / LLM_MODEL ve anahtar env'i değişir, kod aynı kalır.
+LLM_API_KEY = os.getenv("DIGITALOCEAN_INFERENCE_KEY", "")
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://inference.do-ai.run/v1").rstrip("/")
+LLM_MODEL = os.getenv("LLM_MODEL", "openai-gpt-oss-120b")
+LLM_MIN_INTERVAL = 1.0        # çağrılar arası bekleme — DO limiti geniş
 
 AGENT_MARKER = "[ajan]"       # admin_note öneki — tekrar çalıştırmada atlamak için
 PAGE_CHAR_LIMIT = 6000
@@ -283,10 +279,10 @@ def page_to_text(html):
     return "\n".join(lines)[:PAGE_CHAR_LIMIT]
 
 
-# ─── LLM katmanı (Gemini, ücretsiz tier) ──────────────────────────────────────
+# ─── LLM katmanı (OpenAI-uyumlu, DO Inference) ────────────────────────────────
 
 def _parse_verdict(text):
-    """Gemini'nin metin yanıtından JSON kararı çıkarır (savunmacı)."""
+    """LLM'in metin yanıtından JSON kararı çıkarır (savunmacı)."""
     t = (text or "").strip()
     if t.startswith("```"):                       # ```json ... ``` sarmalını söker
         t = re.sub(r"^```[a-zA-Z]*\s*", "", t)
@@ -309,8 +305,10 @@ def _parse_verdict(text):
     }
 
 
-def judge_with_gemini(sub, url, http_note, page_text):
-    """Gemini'ye sorar, karar dict'i döndürür (hata → None)."""
+def judge_with_llm(sub, url, http_note, page_text):
+    """LLM'e (OpenAI-uyumlu chat/completions) sorar, karar dict'i döndürür
+    (hata → None). SYSTEM_PROMPT ve user_text sağlayıcıdan bağımsızdır; yalnızca
+    taşıyıcı format OpenAI şemasıdır."""
     user_text = (
         f"BUGÜNÜN TARİHİ: {date.today().isoformat()}\n"
         "(Fırsatın açık/kapalı olduğunu bu tarihe göre belirle; kendi tarih bilgine güvenme.)\n\n"
@@ -324,40 +322,45 @@ def judge_with_gemini(sub, url, http_note, page_text):
         f"SAYFA METNİ (kısaltılmış):\n{page_text}"
     )
     body = {
-        "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-        "contents": [{"parts": [{"text": user_text}]}],
-        "generationConfig": {
-            # responseMimeType: uzun süredir stabil — JSON çıktıyı zorlar.
-            "responseMimeType": "application/json",
-            "temperature": 0,
-            "maxOutputTokens": 600,
-        },
+        "model": LLM_MODEL,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_text},
+        ],
+        "temperature": 0,
+        "max_tokens": 600,
+        # response_format: OpenAI-uyumlu uçlarda JSON çıktıyı zorlar. Onurlanmasa
+        # bile _parse_verdict ```json çitini ve düz metni defansif çözüyor.
+        "response_format": {"type": "json_object"},
+    }
+    headers = {
+        "Authorization": f"Bearer {LLM_API_KEY}",
+        "Content-Type": "application/json",
     }
     res = None
     for attempt in range(3):
         try:
             res = requests.post(
-                GEMINI_ENDPOINT,
-                params={"key": GEMINI_API_KEY},
-                json=body, timeout=45,
+                f"{LLM_BASE_URL}/chat/completions",
+                headers=headers, json=body, timeout=45,
             )
         except requests.exceptions.RequestException as e:
-            print(f"  ! Gemini ağ hatası: {e}")
+            print(f"  ! LLM ağ hatası: {e}")
             return None
-        if res.status_code == 429:               # ücretsiz tier RPM aşıldı
+        if res.status_code == 429:               # rate limit aşıldı
             wait = 20 * (attempt + 1)
-            print(f"  Gemini 429 (rate limit) — {wait}s bekleniyor...")
+            print(f"  LLM 429 (rate limit) — {wait}s bekleniyor...")
             time.sleep(wait)
             continue
         break
     if res is None or res.status_code != 200:
         detail = res.text[:200] if res is not None else "yanıt yok"
-        print(f"  ! Gemini HTTP {getattr(res, 'status_code', '?')}: {detail}")
+        print(f"  ! LLM HTTP {getattr(res, 'status_code', '?')}: {detail}")
         return None
     try:
-        text = res.json()["candidates"][0]["content"]["parts"][0]["text"]
+        text = res.json()["choices"][0]["message"]["content"]
     except (KeyError, IndexError, ValueError):
-        print("  ! Gemini yanıtı beklenen yapıda değil (safety bloğu olabilir)")
+        print("  ! LLM yanıtı beklenen yapıda değil")
         return None
     return _parse_verdict(text)
 
@@ -381,7 +384,7 @@ def decide(verdict):
 # ─── Akış ─────────────────────────────────────────────────────────────────────
 
 def process(sub, dry_run, known_urls, seen_urls, stats):
-    """Tek submission — heuristikler, gerekirse Gemini. Tally etiketi döndürür."""
+    """Tek submission — heuristikler, gerekirse LLM. Tally etiketi döndürür."""
     print(f"\n• {(sub.get('title') or '(başlıksız)')[:60]}")
     url = (sub.get("url") or "").strip()
     if not url:
@@ -441,17 +444,17 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
 
     http_note = "200" + (f" (yönlendirildi: {final_url})"
                          if _norm_url(final_url) != norm else "")
-    print(f"  HTTP 200, durum belirsiz → Gemini ({GEMINI_MODEL}) sorgulanıyor...")
-    stats["gemini_calls"] += 1
-    verdict = judge_with_gemini(sub, url, http_note, page_text)
-    time.sleep(GEMINI_MIN_INTERVAL)                # ücretsiz tier RPM sınırı
+    print(f"  HTTP 200, durum belirsiz → LLM ({LLM_MODEL}) sorgulanıyor...")
+    stats["llm_calls"] += 1
+    verdict = judge_with_llm(sub, url, http_note, page_text)
+    time.sleep(LLM_MIN_INTERVAL)                   # sağlayıcı RPM sınırı
 
     if verdict is None:
-        apply_decision(sub, "belirsiz", "Gemini kararı alınamadı", dry_run)
-        print("  Gemini hatası → BELİRSİZ")
+        apply_decision(sub, "belirsiz", "LLM kararı alınamadı", dry_run)
+        print("  LLM hatası → BELİRSİZ")
         return "belirsiz"
 
-    print(f"  Gemini: durum={verdict['durum']} "
+    print(f"  LLM: durum={verdict['durum']} "
           f"kategori_uygun={verdict['kategori_uygun']} guven={verdict['guven']}")
     eylem, gerekce = decide(verdict)
 
@@ -470,7 +473,7 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
 
     apply_decision(sub, eylem, gerekce, dry_run)
     print(f"  → {eylem.upper()} — {gerekce}")
-    return {"reddet": "gemini_red", "belirsiz": "belirsiz"}[eylem]
+    return {"reddet": "llm_red", "belirsiz": "belirsiz"}[eylem]
 
 
 # ─── Opportunity audit (--audit-opportunities) ────────────────────────────────
@@ -609,15 +612,15 @@ def main():
               file=sys.stderr)
         sys.exit(1)
 
-    # Audit modu yalnızca heuristik (URL + tarih) çalışır — LLM yok, GEMINI gerekmez.
+    # Audit modu yalnızca heuristik (URL + tarih) çalışır — LLM yok, anahtar gerekmez.
     if args.audit_opportunities:
         run_audit_opportunities(args)
         return
 
-    if not GEMINI_API_KEY:
-        print("Eksik ortam değişkeni: GEMINI_API_KEY — .env kontrol et.",
+    if not LLM_API_KEY:
+        print("Eksik ortam değişkeni: DIGITALOCEAN_INFERENCE_KEY — .env kontrol et.",
               file=sys.stderr)
-        print("Gemini ücretsiz anahtarı: https://aistudio.google.com/apikey",
+        print("DO Inference anahtarı: https://cloud.digitalocean.com/gen-ai",
               file=sys.stderr)
         sys.exit(1)
 
@@ -634,9 +637,9 @@ def main():
 
     known_urls = fetch_known_urls()
     seen_urls = set()
-    stats = {"gemini_calls": 0}
+    stats = {"llm_calls": 0}
     tally = {k: 0 for k in
-             ("kopya", "sure_gecti", "olu_link", "gemini_red",
+             ("kopya", "sure_gecti", "olu_link", "llm_red",
               "onaylandi", "oner", "belirsiz")}
 
     mode = "DRY-RUN — DB'ye yazılmayacak" if args.dry_run else "CANLI — DB'ye yazılacak"
@@ -650,17 +653,17 @@ def main():
             print(f"  ! ağ/DB hatası — atlandı: {e}")
 
     reddedildi = (tally["kopya"] + tally["sure_gecti"]
-                  + tally["olu_link"] + tally["gemini_red"])
+                  + tally["olu_link"] + tally["llm_red"])
     print("\n" + "─" * 64)
     print(f"REDDEDİLDİ : {reddedildi}")
     print(f"   kopya {tally['kopya']} · süresi geçmiş {tally['sure_gecti']} · "
-          f"ölü link {tally['olu_link']} · Gemini-red {tally['gemini_red']}")
+          f"ölü link {tally['olu_link']} · LLM-red {tally['llm_red']}")
     print(f"ONAYLANDI  : {tally['onaylandi']}   (otomatik onay — opportunities'e eklendi)")
     print(f"ÖNERİLDİ   : {tally['oner']}   (otomatik onay başarısız — pending; elle onayla)")
     print(f"BELİRSİZ   : {tally['belirsiz']}   (pending kaldı)")
-    heuristik = reddedildi - tally["gemini_red"]
-    print(f"\nGemini çağrısı: {stats['gemini_calls']} / {len(subs)} "
-          f"— heuristikler {heuristik} kararı LLM'siz, ücretsiz çözdü.")
+    heuristik = reddedildi - tally["llm_red"]
+    print(f"\nLLM çağrısı: {stats['llm_calls']} / {len(subs)} "
+          f"— heuristikler {heuristik} kararı LLM'siz çözdü.")
 
 
 if __name__ == "__main__":
