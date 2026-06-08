@@ -164,6 +164,20 @@ export default function AdminPage() {
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <Link
+              href="/admin/grid"
+              style={{
+                fontSize: 12,
+                color: '#534AB7',
+                textDecoration: 'none',
+                padding: '6px 12px',
+                border: '0.5px solid #e0e0e0',
+                borderRadius: 8,
+                background: '#fff',
+              }}
+            >
+              Tablo görünümü (beta)
+            </Link>
+            <Link
               href="/admin/link-audit"
               style={{
                 fontSize: 12,
