@@ -429,7 +429,7 @@ def parse_post(url, category_slug):
     # _tr_lower: büyük harfli buton metinleri ("BAŞVUR", "TIKLA", "KAYIT OL") de
     # eşleşsin — Python'un .lower()'ı 'I'yı 'i' yapıp dotless-ı'lı kelimeleri
     # kaçırıyordu.
-    apply_url = url  # default olarak yazının kendi URL'si
+    apply_url = None  # yalnızca gerçek bir DIŞ başvuru linki bulunursa dolar
     apply_keywords = ("tıkla", "başvur", "apply", "form",
                       "detaylar", "resmi site", "buradan", "kayıt ol")
     nodes = page.css(".entry-content") or page.css("article")
@@ -442,13 +442,22 @@ def parse_post(url, category_slug):
                 apply_url = href
                 break
 
+    # url = orijinal program/başvuru linki (apply_url) varsa o; yoksa nasilgitmis
+    # yazı linkine düş. Böylece onay anında official_url'e taşınan url artık
+    # nasilgitmis blog yazısı değil GERÇEK başvuru adresi olur (official_url bug).
+    # Yazı linki dış link bulunduğunda funding_notes'ta kaynak olarak saklanır —
+    # provenance kaybolmaz.
+    submission_url = apply_url or url
+    funding_notes = (f"nasilgitmis.com'dan çekildi — kaynak yazı: {url}"
+                     if apply_url else "nasilgitmis.com'dan çekildi")
+
     # submissions şeması opportunities'ten farklı: url (official_url değil),
     # category_slug (category_id değil), deadline_text (deadline date değil).
     # target_countries / study_level / is_active gibi opportunity-özel alanları
     # onay anında agent_approve_submission RPC'si dolduruyor; burada yok.
     return {
         "title":                title,
-        "url":                  url,          # nasilgitmis yazı linki (kaynak)
+        "url":                  submission_url,  # dış başvuru linki ya da yazı linki
         "category_slug":        category_slug,
         "deadline_text":        deadline,      # 'YYYY-MM-DD' ya da None (text)
         "host_countries":       host_countries,
@@ -457,7 +466,7 @@ def parse_post(url, category_slug):
         "language_requirement": "Türkçe / İngilizce",
         "eligibility_notes":    eligibility_notes,
         "funding_type":         slug_to_funding_type(category_slug),
-        "funding_notes":        f"nasilgitmis.com'dan çekildi — başvuru: {apply_url}",
+        "funding_notes":        funding_notes,
         "submitter_nickname":   "nasilgitmis-bot",
         "status":               "pending",
     }
