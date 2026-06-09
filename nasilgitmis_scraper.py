@@ -442,14 +442,16 @@ def parse_post(url, category_slug):
                 apply_url = href
                 break
 
-    # url = orijinal program/başvuru linki (apply_url) varsa o; yoksa nasilgitmis
-    # yazı linkine düş. Böylece onay anında official_url'e taşınan url artık
-    # nasilgitmis blog yazısı değil GERÇEK başvuru adresi olur (official_url bug).
-    # Yazı linki dış link bulunduğunda funding_notes'ta kaynak olarak saklanır —
-    # provenance kaybolmaz.
-    submission_url = apply_url or url
-    funding_notes = (f"nasilgitmis.com'dan çekildi — kaynak yazı: {url}"
-                     if apply_url else "nasilgitmis.com'dan çekildi")
+    # Dış başvuru linki ZORUNLU: bulunamadıysa submission'ı hiç ekleme. Aksi halde
+    # url alanına nasilgitmis yazı linki düşer ve onayda official_url kullanıcıyı
+    # blog yazısına yönlendirir (official_url bug). Bulunduğunda url = gerçek
+    # başvuru adresi; yazı linki funding_notes'ta kaynak olarak saklanır.
+    if apply_url is None:
+        print(f"  Dış link bulunamadı, atlandı: {title}")
+        return None
+
+    submission_url = apply_url
+    funding_notes = f"nasilgitmis.com'dan çekildi — kaynak yazı: {url}"
 
     # submissions şeması opportunities'ten farklı: url (official_url değil),
     # category_slug (category_id değil), deadline_text (deadline date değil).
@@ -457,7 +459,7 @@ def parse_post(url, category_slug):
     # onay anında agent_approve_submission RPC'si dolduruyor; burada yok.
     return {
         "title":                title,
-        "url":                  submission_url,  # dış başvuru linki ya da yazı linki
+        "url":                  submission_url,  # gerçek dış başvuru linki (zorunlu)
         "category_slug":        category_slug,
         "deadline_text":        deadline,      # 'YYYY-MM-DD' ya da None (text)
         "host_countries":       host_countries,
