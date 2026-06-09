@@ -76,6 +76,11 @@ LLM_API_KEY = os.getenv("DIGITALOCEAN_INFERENCE_KEY", "")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://inference.do-ai.run/v1").rstrip("/")
 LLM_MODEL = os.getenv("LLM_MODEL", "openai-gpt-oss-120b")
 LLM_MIN_INTERVAL = 1.0        # çağrılar arası bekleme — DO limiti geniş
+# gpt-oss gibi reasoning modelleri akıl yürütmeyi de completion token'ı olarak
+# harcar (boş prompt'ta bile ~270 token). JSON content akıl yürütmeden SONRA
+# gelir; bütçe darsa content yarım/boş kalır (finish_reason='length') → parse
+# edilemez. Bu yüzden geniş tut.
+LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "3000"))
 
 AGENT_MARKER = "[ajan]"       # admin_note öneki — tekrar çalıştırmada atlamak için
 PAGE_CHAR_LIMIT = 6000
@@ -281,15 +286,48 @@ def page_to_text(html):
 
 # ─── LLM katmanı (OpenAI-uyumlu, DO Inference) ────────────────────────────────
 
+def _loads_lenient(t):
+    """JSON'u savunmacı çözer. Düz parse başarısızsa metindeki ilk DENGELİ {...}
+    bloğunu tarar — gpt-oss json_object modu bazen geçerli nesnenin başına çöp
+    ekliyor (ör. '{\"' ön eki). String içi süslü parantezleri saymaz."""
+    if not t:
+        return None
+    try:
+        return json.loads(t)
+    except (json.JSONDecodeError, TypeError):
+        pass
+    for i in range(len(t)):
+        if t[i] != "{":
+            continue
+        depth, in_str, esc = 0, False, False
+        for j in range(i, len(t)):
+            c = t[j]
+            if in_str:
+                esc = (c == "\\" and not esc)
+                if c == '"' and not esc:
+                    in_str = False
+            elif c == '"':
+                in_str, esc = True, False
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(t[i:j + 1])
+                    except json.JSONDecodeError:
+                        break          # bu { başlangıcı tutmadı, sonrakini dene
+    return None
+
+
 def _parse_verdict(text):
     """LLM'in metin yanıtından JSON kararı çıkarır (savunmacı)."""
     t = (text or "").strip()
     if t.startswith("```"):                       # ```json ... ``` sarmalını söker
         t = re.sub(r"^```[a-zA-Z]*\s*", "", t)
         t = re.sub(r"\s*```$", "", t).strip()
-    try:
-        v = json.loads(t)
-    except (json.JSONDecodeError, TypeError):
+    v = _loads_lenient(t)
+    if v is None:
         return None
     durum = v.get("durum")
     if durum not in ("acik", "kapali", "belirsiz"):
@@ -328,10 +366,11 @@ def judge_with_llm(sub, url, http_note, page_text):
             {"role": "user", "content": user_text},
         ],
         "temperature": 0,
-        "max_tokens": 600,
-        # response_format: OpenAI-uyumlu uçlarda JSON çıktıyı zorlar. Onurlanmasa
-        # bile _parse_verdict ```json çitini ve düz metni defansif çözüyor.
-        "response_format": {"type": "json_object"},
+        "max_tokens": LLM_MAX_TOKENS,
+        # response_format json_object KULLANILMIYOR: gpt-oss'ta aralıklı olarak
+        # geçerli nesnenin başına '{"' artefaktı ekleyip JSON'u bozuyordu. Sistem
+        # prompt'u zaten ham JSON dayatıyor; _parse_verdict de dengeli bloğu
+        # ayıklıyor (bkz. _loads_lenient).
     }
     headers = {
         "Authorization": f"Bearer {LLM_API_KEY}",
@@ -358,11 +397,19 @@ def judge_with_llm(sub, url, http_note, page_text):
         print(f"  ! LLM HTTP {getattr(res, 'status_code', '?')}: {detail}")
         return None
     try:
-        text = res.json()["choices"][0]["message"]["content"]
+        choice = res.json()["choices"][0]
+        text = choice["message"]["content"]
+        finish = choice.get("finish_reason")
     except (KeyError, IndexError, ValueError):
         print("  ! LLM yanıtı beklenen yapıda değil")
         return None
-    return _parse_verdict(text)
+    verdict = _parse_verdict(text)
+    if verdict is None:
+        # finish_reason='length' → reasoning max_tokens'ı tüketti, content yarım;
+        # LLM_MAX_TOKENS'ı artır. Sessiz başarısızlığı görünür kıl.
+        snippet = (text or "").strip()[:120] or "(boş content)"
+        print(f"  ! LLM JSON çözülemedi (finish={finish}): {snippet}")
+    return verdict
 
 
 def decide(verdict):
