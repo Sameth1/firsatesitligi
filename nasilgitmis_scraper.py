@@ -4,12 +4,15 @@ nasilgitmis.com Scraper
 nasilgitmis.com'dan Erasmus+, ESC, Burs ve Staj fırsatlarını çekip
 Supabase 'submissions' tablosuna status='pending' olarak yazar.
 
+Sayfa çekme Scrapling ile yapılır (önce hızlı HTTP, gerekirse gizli tarayıcı
+fallback); Supabase REST çağrıları requests ile kalır.
+
 Doğrudan 'opportunities'e (canlı site) YAZMAZ — kayıtlar öneri olarak
 eklenir; validate_submissions.py incelemesinden geçip onaylanınca
 agent_approve_submission RPC'si bunları opportunities'e taşır.
 
 Kullanım:
-  pip install requests python-dotenv beautifulsoup4
+  pip install "scrapling[fetchers]" requests python-dotenv && scrapling install
   python nasilgitmis_scraper.py
 
 .env dosyasında olması gerekenler:
@@ -22,9 +25,9 @@ import re
 import sys
 import time
 import requests
-from bs4 import BeautifulSoup
 from datetime import date
 from dotenv import load_dotenv
+from scrapling.fetchers import Fetcher, StealthyFetcher
 
 # Windows konsolu (cp1254) emoji/Türkçe karakterde UnicodeEncodeError verir;
 # çıktıyı UTF-8'e sabitle.
@@ -93,13 +96,15 @@ COUNTRY_MAP = {
 
 SHORT_COUNTRY_KEYS = {"uk", "abd", "usa"}  # word-boundary gerektirenler
 
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    )
-}
+# Sayfa çekme ayarları (Scrapling). Önce hızlı HTTP; engellenirse ya da içerik
+# JS ile geç geliyorsa gizli tarayıcıya düşülür.
+FETCH_TIMEOUT = 15
+STEALTH_TIMEOUT_MS = 60_000
+MIN_BODY_CHARS = 200
+BLOCKED_STATUSES = {403, 429, 503}
+# get_all_text çıkarımında atlanacak yapısal gürültü etiketleri.
+_NOISE_TAGS = ("script", "style", "noscript", "nav", "header", "footer",
+               "aside", "form", "svg", "button", "template")
 
 # ─── Supabase yardımcıları ────────────────────────────────────────────────────
 
@@ -283,19 +288,44 @@ def truncate_at_word(text, limit=600):
     cut = cut[:sp] if sp > limit * 0.6 else cut
     return cut.rstrip(" ,;:") + "…"
 
-# ─── Sayfa çekici ─────────────────────────────────────────────────────────────
+# ─── Sayfa çekici (Scrapling) ─────────────────────────────────────────────────
+
+def fetch_page(url):
+    """Sayfayı Scrapling ile çeker. Önce hızlı HTTP (Fetcher); engellenirse ya da
+    içerik JS ile geç geliyorsa gizli tarayıcıya (StealthyFetcher) düşer. Scrapling
+    Response döndürür, başarısızsa None. requests+BeautifulSoup'un yerini alır."""
+    try:
+        page = Fetcher.get(url, timeout=FETCH_TIMEOUT, stealthy_headers=True)
+    except Exception as e:
+        print(f"  ⚠️  HTTP fetch hatası: {e} — gizli tarayıcı deneniyor")
+        page = None
+
+    blocked = page is None or page.status in BLOCKED_STATUSES
+    too_thin = page is not None and len(page.get_all_text(strip=True)) < MIN_BODY_CHARS
+    if blocked or too_thin:
+        try:
+            page = StealthyFetcher.fetch(
+                url, headless=True, network_idle=True, timeout=STEALTH_TIMEOUT_MS)
+        except Exception as e:
+            if page is None:
+                print(f"  ❌ Gizli tarayıcı da başarısız: {e}")
+                return None
+            # HTTP yanıtı vardı ama inceydi — eldekiyle devam et.
+
+    if page is None or page.status >= 400:
+        return None
+    return page
+
 
 def get_links_from_list_page(url):
     """Liste sayfasından yazı linklerini topla."""
-    res = requests.get(url, headers=HEADERS, timeout=15)
-    if res.status_code != 200:
+    page = fetch_page(url)
+    if page is None:
         return [], None
 
-    soup = BeautifulSoup(res.text, "html.parser")
     links = []
-
-    for a in soup.select("h2 a, h3 a, .entry-title a"):
-        href = a.get("href", "")
+    for a in page.css(".entry-title a, h2 a, h3 a"):
+        href = (a.attrib.get("href") or "").strip()
         if href.startswith("https://nasilgitmis.com/") and href not in links:
             # kategori ve sayfa linklerini atla
             if "/category/" not in href and "/page/" not in href and "/tag/" not in href:
@@ -303,9 +333,9 @@ def get_links_from_list_page(url):
 
     # Sonraki sayfa
     next_page = None
-    next_btn = soup.select_one("a.next, .nav-next a, a[rel='next']")
-    if next_btn:
-        next_page = next_btn.get("href")
+    nb = page.css("a.next, .nav-next a, a[rel='next']")
+    if nb:
+        next_page = nb[0].attrib.get("href")
 
     return links, next_page
 
@@ -333,24 +363,17 @@ def normalize_title(t: str) -> str:
     return t.strip()
 
 
-def clean_content(content_el, title: str) -> str:
-    """Yazar/meta/footer/comment block'larını söküp metni süz."""
-    if not content_el:
+def clean_content(page, title: str) -> str:
+    """Yazı gövdesini düz metne indirger. Önce .entry-content kabını (yoksa
+    article) seçer — WordPress'te yorumlar/ilgili yazılar/yazar kutusu bu kabın
+    DIŞINDA sibling olarak durduğu için doğal olarak elenir. _NOISE_TAGS ile
+    yapısal gürültü, JUNK_LINE_PATTERNS ile satır gürültüsü ve başlık tekrarı
+    süzülür. (Eski sürüm BeautifulSoup decompose ile sınıf-bazlı block siliyordu;
+    .entry-content seçimi + satır süzgeci aynı sonucu Scrapling'le verir.)"""
+    nodes = page.css(".entry-content") or page.css("article")
+    if not nodes:
         return ""
-    junk_selectors = [
-        "header", "footer",
-        ".entry-meta", ".post-meta", ".meta", ".byline",
-        ".author", ".author-info", ".author-box",
-        ".share", ".sharedaddy", ".social", ".jp-relatedposts",
-        ".entry-title", "h1",
-        ".comments-area", "#comments",
-        "script", "style", "nav", "aside",
-    ]
-    for sel in junk_selectors:
-        for el in content_el.select(sel):
-            el.decompose()
-
-    raw = content_el.get_text(separator="\n", strip=True)
+    raw = nodes[0].get_all_text(separator="\n", strip=True, ignore_tags=_NOISE_TAGS)
     norm_title = normalize_title(title) if title else ""
 
     clean_lines = []
@@ -371,22 +394,18 @@ def clean_content(content_el, title: str) -> str:
 
 def parse_post(url, category_slug):
     """Bir yazıyı parse edip opportunity dict'i döndür."""
-    res = requests.get(url, headers=HEADERS, timeout=15)
-    if res.status_code != 200:
+    page = fetch_page(url)
+    if page is None:
         return None
 
-    soup = BeautifulSoup(res.text, "html.parser")
-
     # Başlık
-    title_el = soup.select_one("h1.entry-title, h1")
-    title = title_el.get_text(strip=True) if title_el else None
-    if not title:
+    title = page.css("h1.entry-title::text").get() or page.css("h1::text").get()
+    if not title or not title.strip():
         return None
     title = normalize_title(title)
 
     # İçerik — meta/yazar/yorum/paylaşım block'larını söküp temizle
-    content_el = soup.select_one(".entry-content, article")
-    content = clean_content(content_el, title)
+    content = clean_content(page, title)
 
     # Ülke — başlık + içerikten
     combined_text = title + " " + content
@@ -413,9 +432,11 @@ def parse_post(url, category_slug):
     apply_url = url  # default olarak yazının kendi URL'si
     apply_keywords = ("tıkla", "başvur", "apply", "form",
                       "detaylar", "resmi site", "buradan", "kayıt ol")
-    for a in (content_el or soup).find_all("a") if content_el else soup.find_all("a"):
-        href = a.get("href", "")
-        text = _tr_lower(a.get_text(strip=True))
+    nodes = page.css(".entry-content") or page.css("article")
+    scope = nodes[0] if nodes else page
+    for a in scope.css("a"):
+        href = (a.attrib.get("href") or "").strip()
+        text = _tr_lower(a.get_all_text(strip=True) or "")
         if any(k in text for k in apply_keywords):
             if href.startswith("http") and "nasilgitmis.com" not in href:
                 apply_url = href
