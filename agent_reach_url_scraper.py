@@ -504,6 +504,19 @@ def submit(record: dict) -> tuple[bool, str]:
     return res.status_code in (200, 201), res.text
 
 
+# Soft-404 sinyalleri: site olmayan sayfayı 200 ile bir hata/yönlendirme
+# sayfasına servis edebilir (Chevening /not-found/ gibi). status koduna güvenemeyiz.
+_SOFT_404_URL_RE = re.compile(r"/not-found/|/404|/error|/page-not-found/", re.I)
+_SOFT_404_TITLE_RE = re.compile(r"^\s*(?:404|not\s+found|page\s+not\s+found)\b", re.I)
+
+
+def is_soft_404(final_url: str, title: str) -> bool:
+    """URL hata sayfası kalıbı içeriyorsa ya da başlık 404/not found ile
+    başlıyorsa True. status 200 dönen 'yumuşak' 404'leri yakalar."""
+    return bool(_SOFT_404_URL_RE.search(final_url or "")
+                or _SOFT_404_TITLE_RE.search(title or ""))
+
+
 def process_url(url: str, category: str | None, dry_run: bool) -> bool:
     print(f"\n🔗 {url}")
     page = fetch_page(url)
@@ -519,6 +532,10 @@ def process_url(url: str, category: str | None, dry_run: bool) -> bool:
     record = extract_fields(page, final_url, category)
     if not record:
         print("  ❌ Başlık çıkarılamadı, atlandı")
+        return False
+
+    if is_soft_404(final_url, record["title"]):
+        print(f"  🚫 soft-404 (sayfa yok / hata sayfası): {record['title']} — atlandı")
         return False
 
     print(f"  📝 {record['title']}")
