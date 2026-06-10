@@ -212,6 +212,11 @@ def scrape(req: ScrapeRequest):
     """Tek URL'i Scrapling ile çekip (HTTP, gerekirse gizli tarayıcı fallback)
     başlık/ülke/deadline/funding alanlarını döndürür. DB'ye yazmaz.
 
+    process_url ile AYNI çıkarım sırasını izler (yalnızca yan etkisiz):
+    fetch_page → son URL (redirect izleme) → extract_fields → soft-404 elemesi.
+    process_url'in kendisi bool döndürüp DB'ye yazdığı ve print ettiği için
+    doğrudan çağrılamaz; mantığı aynı yapı taşlarıyla burada tekrarlanır.
+
     Endpoint senkron `def` — Scrapling fetch ve Spider kendi event loop'unu
     yönettiği için FastAPI bunu threadpool'da çalıştırır, loop çakışması olmaz."""
     if req.category and req.category not in reach.VALID_CATEGORIES:
@@ -220,9 +225,17 @@ def scrape(req: ScrapeRequest):
     page = reach.fetch_page(req.url)
     if page is None:
         raise HTTPException(502, f"Sayfa çekilemedi: {req.url}")
-    record = reach.extract_fields(page, req.url, req.category)
+    # Redirect izleme: sayfa yönlendirildiyse içerik son URL'den gelir; kaydı da
+    # o URL'ye bağla (process_url'deki final_url mantığı).
+    final_url = getattr(page, "url", None) or req.url
+    record = reach.extract_fields(page, final_url, req.category)
     if record is None:
         raise HTTPException(422, "Başlık çıkarılamadı — sayfa fırsat içermiyor olabilir")
+    # Soft-404: site olmayan sayfayı 200 ile /not-found/ gibi bir hata sayfasına
+    # yönlendirebilir; status koduna güvenilmez. process_url'deki elemeyle aynı.
+    if reach.is_soft_404(final_url, record["title"]):
+        raise HTTPException(
+            404, f"Soft-404: sayfa yok / hata sayfası ({record['title']})")
     return record
 
 
