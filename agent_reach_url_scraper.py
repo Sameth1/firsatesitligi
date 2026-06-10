@@ -30,6 +30,7 @@ Birden fazla URL:
 import os
 import re
 import sys
+import html
 import json
 import argparse
 import unicodedata
@@ -392,17 +393,33 @@ def extract_country(title: str, body: str) -> str:
     return hit[1] if hit else ""
 
 
+# Yakalanan deadline değerinin başında kalan fiil/bağlaç/ayraçlar. "deadline is
+# Tuesday..." → group "is tuesday..." gelir; tarih değerine inene kadar bunları
+# soyarız ("için"/"tarihi"/"olarak" TR, "is"/"are"/"will be" EN, ":/–/—/-" ayraç).
+_DEADLINE_LEAD_RE = re.compile(
+    r"^(?:is|are|was|were|will\s+be|için|son|tarih[i]?|olarak|ise|:|–|—|-|,)"
+    r"(?=\s|:|–|—|-|,|$)[\s:–—,-]*",
+    re.I,
+)
+
+
 def extract_deadline_text(md: str) -> str | None:
     # "Son Başvuru: X" veya "Deadline: X" tarzı satırları yakala
     for pattern in [
-        r"son\s+başvuru[:\s]+([^\n]{4,40})",
-        r"başvuru\s+son\s+tarih[i]?[:\s]+([^\n]{4,40})",
-        r"deadline[:\s]+([^\n]{4,40})",
-        r"application\s+deadline[:\s]+([^\n]{4,40})",
+        r"son\s+başvuru[:\s]+([^\n]{4,60})",
+        r"başvuru\s+son\s+tarih[i]?[:\s]+([^\n]{4,60})",
+        r"deadline[:\s]+([^\n]{4,60})",
+        r"application\s+deadline[:\s]+([^\n]{4,60})",
     ]:
         m = re.search(pattern, md.lower())
         if m:
-            return m.group(1).strip().rstrip(".,;:")
+            val = m.group(1).strip()
+            # Tarih değerine inene kadar baştaki fiil/bağlaç/ayraçları soy.
+            prev = None
+            while prev != val:
+                prev = val
+                val = _DEADLINE_LEAD_RE.sub("", val).strip()
+            return val.rstrip(".,;:")
     return None
 
 
@@ -456,14 +473,14 @@ def extract_fields(page, source_url: str, category: str | None) -> dict | None:
                   or first_paragraph(body, max_chars=1500))
     deadline = ld.get("deadline") or extract_deadline_text(full_text)
     return {
-        "title": title,
+        "title": html.unescape(title),
         "url": source_url,
         "category_slug": category,
         "host_countries": [country] if country else [],
         "deadline_text": deadline,
         "funding_type": extract_funding_type(full_text),
-        "eligibility_notes": extract_eligibility(body),
-        "description": description,
+        "eligibility_notes": html.unescape(extract_eligibility(body)),
+        "description": html.unescape(description),
         "language_requirement": None,
         "submitter_nickname": "agent-reach",
         "submitter_email": None,
@@ -493,7 +510,13 @@ def process_url(url: str, category: str | None, dry_run: bool) -> bool:
     if page is None:
         return False
 
-    record = extract_fields(page, url, category)
+    # Sayfa yönlendirildiyse (301/302) içerik son URL'den gelir; kaydı da o URL'ye
+    # bağla — yoksa link ölü/yanlış sayfaya işaret eder. Scrapling Response.url
+    # son URL'yi taşır; yoksa girilen URL'ye düş.
+    final_url = getattr(page, "url", None) or url
+    if final_url != url:
+        print(f"  ↪️  yönlendirildi: {final_url}")
+    record = extract_fields(page, final_url, category)
     if not record:
         print("  ❌ Başlık çıkarılamadı, atlandı")
         return False
