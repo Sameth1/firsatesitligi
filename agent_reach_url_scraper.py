@@ -403,6 +403,18 @@ _DEADLINE_LEAD_RE = re.compile(
 )
 
 
+# Geçerli bir deadline değeri en az bir rakam ya da ay adı içermeli. "deadline
+# cannot be extended" gibi cümleler "deadline" kelimesinden sonra tarih gibi
+# yakalanıyor; bu süzgeç onları eler.
+_MONTH_NAMES = tuple(AY_MAP.keys())
+
+
+def _looks_like_date(val: str) -> bool:
+    """Değerde rakam veya bilinen ay adı (TR/EN) varsa True. Yoksa tarih değil
+    (örn. 'cannot', 'varies', 'değişir')."""
+    return bool(re.search(r"\d", val)) or any(m in val for m in _MONTH_NAMES)
+
+
 def extract_deadline_text(md: str) -> str | None:
     # "Son Başvuru: X" veya "Deadline: X" tarzı satırları yakala
     for pattern in [
@@ -419,7 +431,10 @@ def extract_deadline_text(md: str) -> str | None:
             while prev != val:
                 prev = val
                 val = _DEADLINE_LEAD_RE.sub("", val).strip()
-            return val.rstrip(".,;:")
+            val = val.rstrip(".,;:")
+            # Rakam/ay içermiyorsa tarih değil — bu eşleşmeyi atla, sıradakini dene.
+            if _looks_like_date(val):
+                return val
     return None
 
 
