@@ -100,6 +100,14 @@ TR_AYLAR = {
     "aralık": 12, "aralik": 12,
 }
 
+# İngilizce ay adları — youthop gibi İngilizce kaynaklar "june 25, 2026" /
+# "25 june 2026" biçiminde tarih verir; parse_deadline bunları da çözsün.
+EN_AYLAR = {
+    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+    "july": 7, "august": 8, "september": 9, "october": 10, "november": 11,
+    "december": 12,
+}
+
 SYSTEM_PROMPT = """Sen "Fırsat Eşitliği" platformunun submission doğrulama ajanısın. Bu platform Türkiye'deki gençlere yurt dışı burs, staj, gönüllülük, yaz okulu, gençlik projesi ve değişim programı gibi ÜCRETSİZ veya FONLU fırsatları toplar.
 
 Sana bir submission'ın bilgileri, BUGÜNÜN TARİHİ ve orijinal sayfasının metni verilir. Üç şeyi değerlendirirsin:
@@ -243,22 +251,36 @@ def approve_submission(sub, dry_run):
 
 def parse_deadline(text):
     """submission.deadline_text içinden bir tarih çıkarır (date veya None).
-    ISO / noktalı / Türkçe-ay formatlarını dener."""
+    Sırayla denenen formatlar: ISO (2026-06-25), noktalı (25.06.2026),
+    Türkçe-ay (25 haziran 2026), İngilizce ay-önce (june 25, 2026) ve
+    İngilizce gün-önce (25 june 2026)."""
     if not text:
         return None
     t = str(text).lower()
-    m = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})", t)
+    y = mo = d = None
+
+    m = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})", t)          # ISO
     if m:
         y, mo, d = (int(g) for g in m.groups())
-    else:
+    if d is None:                                              # noktalı GG.AA.YYYY
         m = re.search(r"(\d{1,2})\.(\d{1,2})\.(\d{4})", t)
         if m:
             d, mo, y = (int(g) for g in m.groups())
-        else:
-            m = re.search(r"(\d{1,2})\s+([a-zçğıöşü]+)\s+(\d{4})", t)
-            if not m or m.group(2) not in TR_AYLAR:
-                return None
+    if d is None:                                              # TR ay: 25 haziran 2026
+        m = re.search(r"(\d{1,2})\s+([a-zçğıöşü]+)\s+(\d{4})", t)
+        if m and m.group(2) in TR_AYLAR:
             d, mo, y = int(m.group(1)), TR_AYLAR[m.group(2)], int(m.group(3))
+    if d is None:                                              # EN ay-önce: june 25, 2026
+        m = re.search(r"([a-z]+)\s+(\d{1,2}),?\s+(\d{4})", t)
+        if m and m.group(1) in EN_AYLAR:
+            mo, d, y = EN_AYLAR[m.group(1)], int(m.group(2)), int(m.group(3))
+    if d is None:                                              # EN gün-önce: 25 june 2026
+        m = re.search(r"(\d{1,2})\s+([a-z]+)\s+(\d{4})", t)
+        if m and m.group(2) in EN_AYLAR:
+            d, mo, y = int(m.group(1)), EN_AYLAR[m.group(2)], int(m.group(3))
+
+    if d is None:
+        return None
     try:
         return date(y, mo, d)
     except ValueError:
