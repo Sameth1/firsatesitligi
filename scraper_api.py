@@ -222,8 +222,13 @@ def scrape(req: ScrapeRequest):
 
     Endpoint senkron `def` — Scrapling fetch ve Spider kendi event loop'unu
     yönettiği için FastAPI bunu threadpool'da çalıştırır, loop çakışması olmaz."""
-    if req.category and req.category not in reach.VALID_CATEGORIES:
-        raise HTTPException(422, f"Geçersiz kategori: {req.category}. "
+    # Boş/whitespace kategoriyi None'a indirge. Boş string ""'i olduğu gibi
+    # bırakmak tehlikeli: submission'a "" yazılır ve agent_approve_submission
+    # RPC'si ""'i geçersiz slug sayıp 'Kategori bulunamadı' ile patlar (null ise
+    # sorunsuz, kategorisiz yayınlanır). Bkz. docs/sql/094_agent_approve_submission.sql.
+    category = (req.category or "").strip() or None
+    if category and category not in reach.VALID_CATEGORIES:
+        raise HTTPException(422, f"Geçersiz kategori: {category}. "
                                  f"Geçerli: {sorted(reach.VALID_CATEGORIES)}")
     page = reach.fetch_page(req.url)
     if page is None:
@@ -231,7 +236,7 @@ def scrape(req: ScrapeRequest):
     # Redirect izleme: sayfa yönlendirildiyse içerik son URL'den gelir; kaydı da
     # o URL'ye bağla (process_url'deki final_url mantığı).
     final_url = getattr(page, "url", None) or req.url
-    record = reach.extract_fields(page, final_url, req.category)
+    record = reach.extract_fields(page, final_url, category)
     if record is None:
         raise HTTPException(422, "Başlık çıkarılamadı — sayfa fırsat içermiyor olabilir")
     # Soft-404: site olmayan sayfayı 200 ile /not-found/ gibi bir hata sayfasına
