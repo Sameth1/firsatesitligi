@@ -35,7 +35,7 @@ import json
 import argparse
 import unicodedata
 import requests
-from datetime import date
+from datetime import date, timedelta
 from dotenv import load_dotenv
 from scrapling.fetchers import Fetcher, StealthyFetcher
 
@@ -471,6 +471,30 @@ def first_paragraph(body: str, max_chars: int = 600) -> str:
     return cut.rstrip(" ,;:") + "…"
 
 
+# "12 Days Remaining" / "Time Left: 94 Days" / "5 days left" gibi geri-sayım
+# rozetleri (youthop vb. sitelerde net tarih yerine bunu gösterir). Net bir son
+# başvuru tarihi çıkmazsa son çare: bugüne N gün ekleyip ISO tarih üret.
+_DAYS_LEFT_RE = re.compile(
+    r"time\s*left[:\s]*(\d{1,4})\s*days?"          # Time Left: 94 Days / Time Left 94 Days
+    r"|(\d{1,4})\s*days?\s*(?:remaining|left)",    # 12 Days Remaining / 5 days left / 1 Day Remaining
+    re.I,
+)
+
+
+def extract_days_remaining(text: str) -> int | None:
+    """Sayfadaki geri-sayım rozetinden kalan gün sayısını döndürür (yoksa None).
+    İlk eşleşme alınır; aside/footer page_text'te zaten budanmış olduğu için ana
+    rozet öne çıkar. 0-1000 aralığı dışındaki saçma değerler elenir."""
+    m = _DAYS_LEFT_RE.search(text or "")
+    if not m:
+        return None
+    try:
+        n = int(m.group(1) or m.group(2))
+    except (TypeError, ValueError):
+        return None
+    return n if 0 <= n <= 1000 else None
+
+
 def extract_fields(page, source_url: str, category: str | None) -> dict | None:
     # Birincil kaynak: sayfanın yapılandırılmış JSON-LD verisi. Her alan için
     # bulunamazsa mevcut heuristiklere düşülür.
@@ -487,6 +511,12 @@ def extract_fields(page, source_url: str, category: str | None) -> dict | None:
     description = (ld.get("description") or page_description(page)
                   or first_paragraph(body, max_chars=1500))
     deadline = ld.get("deadline") or extract_deadline_text(full_text)
+    # Net tarih yoksa son çare: "N Days Remaining" rozetinden bugüne N gün ekle.
+    # ISO biçim → parse_deadline doğrudan kullanır, Postgres ::date sorunsuz cast eder.
+    if not deadline:
+        days = extract_days_remaining(full_text)
+        if days is not None:
+            deadline = (date.today() + timedelta(days=days)).isoformat()
     return {
         "title": html.unescape(title),
         "url": source_url,
