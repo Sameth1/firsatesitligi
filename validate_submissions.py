@@ -112,8 +112,9 @@ Sana bir submission'ın bilgileri, BUGÜNÜN TARİHİ ve orijinal sayfasının m
 TARİH KURALI: Açık/kapalı kararını yalnızca sana verilen "BUGÜNÜN TARİHİ"ne göre ver — kendi tarih bilgine GÜVENME. Sayfadaki son başvuru tarihi, etkinlik tarihi veya proje tarihi bu tarihten önceyse fırsat GEÇMİŞTİR → durum="kapali". Tarihi bütün olarak (gün-ay-yıl) bugünle karşılaştır; yıl tek başına yeterli ipucu değildir.
 
 2) kategori_uygun — Sayfa gerçekten bu fırsatı anlatıyor mu ve platforma uygun mu?
-   - true: Gerçek bir fırsat ilanı, belirtilen kategoriyle makul örtüşüyor ve gencin ücret ödemesini gerektirmiyor.
+   - true: Gerçek bir fırsat ilanı, belirtilen kategoriyle makul örtüşüyor ve gencin ücret ödemesini gerektirmiyor. TEK bir fırsat = tek program, tek son başvuru tarihi, tek başvuru süreci.
    - false: Fırsat ilanı değil (genel blog, ana sayfa, giriş sayfası, alakasız ürün/hizmet, hata sayfası); VEYA ücretli/ticari program; VEYA kategoriyle hiç ilgisi yok.
+   - false (DERLEME/LİSTE KURALI): Sayfa birden çok AYRI fırsatı/placement'ı bir arada listeliyorsa — her birinin kendi son başvuru tarihi ve kendi başvuru linki olan bir derleme/liste/"roundup"/digest — genel teması platforma uygun OLSA BİLE kategori_uygun=false. Çünkü bu tek bir başvurulabilir fırsat değil, fırsat dizinidir. İpuçları: başlıkta/metinde "16 fırsat", "X yeni placement", "this list/batch", arka arkaya birden çok "Apply here"/"Başvur" linki ve birbirinden farklı deadline'lar. Örn. "16 New ESC Volunteering Opportunities" tek fırsat DEĞİLDİR → false.
 
 3) guven — Kararının kanıta dayanma gücü: "yuksek" (açık ve doğrudan kanıt), "orta" (dolaylı/kısmi), "dusuk" (zayıf veya çelişkili).
 
