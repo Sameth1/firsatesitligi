@@ -47,6 +47,9 @@ __pycache__/
 *.pyc
 *.pyo
 
+# scraper_api /validate arka plan çalıştırma logu (her çalıştırmada üzerine yazılır)
+validate_last_run.log
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
