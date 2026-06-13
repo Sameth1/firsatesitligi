@@ -456,7 +456,7 @@ def parse_post(url, category_slug):
         "deadline_text":        deadline,      # 'YYYY-MM-DD' ya da None (text)
         "host_countries":       host_countries,
         "age_min":              age_min,
-        "age_max":              age_max or 30,
+        "age_max":              age_max,   # bulunamazsa NULL (sahte 30 default'u kaldırıldı)
         "language_requirement": "Türkçe / İngilizce",
         "eligibility_notes":    eligibility_notes,
         "funding_type":         slug_to_funding_type(category_slug),

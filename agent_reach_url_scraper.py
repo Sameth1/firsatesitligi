@@ -587,6 +587,49 @@ def extract_apply_link(page, source_url: str) -> str | None:
     return None
 
 
+# Yaş şartı çıkarımı — yalnız AÇIK yaş ifadelerinde set edilir; bulunamazsa
+# (None, None) = yaş sınırı yok. Yanlış pozitif (ör. "18 months", "30 credits")
+# riskine karşı bağlam zorunlu (ages/aged/years old/yaş ya da minimum age).
+_AGE_RANGE_RE = re.compile(
+    r"(?:ages?|aged|between)\s*(\d{1,2})\s*(?:-|–|—|to|and)\s*(\d{1,2})"
+    r"|(\d{1,2})\s*(?:-|–|—|to)\s*(\d{1,2})\s*(?:years?[ -]?old|yaş)"
+    r"|(\d{1,2})\s*[-–]\s*(\d{1,2})\s*yaş",
+    re.I,
+)
+_AGE_MAX_RE = re.compile(
+    r"(?:under|below|younger than|no older than|max(?:imum)?\s*age(?:\s*of)?)\s*(\d{1,2})",
+    re.I,
+)
+_AGE_MIN_RE = re.compile(
+    r"minimum\s*age(?:\s*of)?\s*(\d{1,2})|(\d{1,2})\s*(?:years?\s*)?or older",
+    re.I,
+)
+
+
+def extract_age_range(text: str) -> tuple[int | None, int | None]:
+    """Metinden (age_min, age_max) çıkarır; açık yaş ifadesi yoksa (None, None).
+    Öncelik: açık aralık ('aged 28-40', '18-30 yaş') > üst sınır ('under 35') >
+    alt sınır ('minimum age 18'). Mantıksız değerler (a<b, 10..99) elenir."""
+    low = (text or "").lower()
+    m = _AGE_RANGE_RE.search(low)
+    if m:
+        nums = [int(g) for g in m.groups() if g]
+        if len(nums) >= 2 and 10 <= nums[0] < nums[1] <= 99:
+            return nums[0], nums[1]
+    mx = _AGE_MAX_RE.search(low)
+    if mx:
+        n = int(mx.group(1))
+        if 15 <= n <= 99:
+            excl = bool(re.search(r"(?:under|below|younger than)\s*" + str(n), low))
+            return None, (n - 1 if excl else n)
+    mn = _AGE_MIN_RE.search(low)
+    if mn:
+        n = int(next(g for g in mn.groups() if g))
+        if 10 <= n <= 99:
+            return n, None
+    return None, None
+
+
 def extract_fields(page, source_url: str, category: str | None) -> dict | None:
     # Birincil kaynak: sayfanın yapılandırılmış JSON-LD verisi. Her alan için
     # bulunamazsa mevcut heuristiklere düşülür.
@@ -609,15 +652,20 @@ def extract_fields(page, source_url: str, category: str | None) -> dict | None:
         days = extract_days_remaining(full_text)
         if days is not None:
             deadline = (date.today() + timedelta(days=days)).isoformat()
+    # Ülke çıkmazsa ['*'] (global/her ülke) — [] olursa ülke-filtreli aramalarda
+    # HİÇ görünmez; '*' ise hepsinde görünür (match_opportunities: '*'=any).
+    age_min, age_max = extract_age_range(full_text)
     return {
         "title": html.unescape(title),
         "url": source_url,
         "category_slug": category,
-        "host_countries": [country] if country else [],
+        "host_countries": [country] if country else ["*"],
         "deadline_text": deadline,
         "funding_type": extract_funding_type(full_text),
         "eligibility_notes": html.unescape(extract_eligibility(body)),
         "description": html.unescape(description),
+        "age_min": age_min,
+        "age_max": age_max,
         "language_requirement": None,
         "submitter_nickname": "agent-reach",
         "submitter_email": None,

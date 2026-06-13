@@ -191,9 +191,11 @@ def build_record(base, detail_url, category_slug, apply_link):
         "category_slug":        category_slug,        # None olabilir (güvenli)
         "deadline_text":        base.get("deadline_text"),
         "host_countries":       base.get("host_countries") or [],
-        # youthop İngilizce ve yaş aralığını TR "yaş" kalıbıyla vermez → varsayılan.
-        "age_min":              None,
-        "age_max":              30,
+        # Yaş yalnız sayfada açık ifade varsa (extract_age_range); yoksa NULL =
+        # yaş sınırı yok. Sahte age_max=30 default'u kaldırıldı (31+ kullanıcıyı
+        # yaş sınırsız fellowship'lerden gereksiz eliyordu).
+        "age_min":              base.get("age_min"),
+        "age_max":              base.get("age_max"),
         "language_requirement": "İngilizce",
         "eligibility_notes":    base.get("eligibility_notes"),
         "description":          base.get("description"),
