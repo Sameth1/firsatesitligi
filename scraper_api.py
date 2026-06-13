@@ -32,6 +32,9 @@ Site crawl örneği:
 
 from __future__ import annotations
 
+import subprocess
+import sys
+from pathlib import Path
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException
@@ -263,3 +266,35 @@ def scrape_site(req: ScrapeSiteRequest):
         "truncated": len(items) >= req.max_items,
         "items": items,
     }
+
+
+# Bu dosyanın dizini — validate_submissions.py aynı repoda, yanında durur.
+_BASE_DIR = Path(__file__).resolve().parent
+_VALIDATE_SCRIPT = _BASE_DIR / "validate_submissions.py"
+_VALIDATE_LOG = _BASE_DIR / "validate_last_run.log"
+
+
+@app.post("/validate")
+def validate():
+    """validate_submissions.py --limit 50'yi arka planda (fire-and-forget)
+    subprocess olarak başlatır ve HEMEN döner — işin bitmesini beklemez (LLM
+    çağrıları dakikalar sürebilir). Çıktı validate_last_run.log'a yazılır.
+
+    n8n bunu tetikleyip akışına devam eder; sonucu loga ya da DB'deki
+    submission durumlarına bakarak öğrenir. Aynı API python'ı (sys.executable)
+    kullanılır; çakışan paralel çalıştırmalar admin_note [ajan] işaretiyle zaten
+    idempotent (bkz. validate_submissions.fetch_pending)."""
+    if not _VALIDATE_SCRIPT.exists():
+        raise HTTPException(500, f"validate_submissions.py bulunamadı: {_VALIDATE_SCRIPT}")
+    # Çıktıyı log dosyasına yönlendir — arka plan işi olduğu için yoksa kaybolur.
+    log = open(_VALIDATE_LOG, "w", encoding="utf-8")
+    try:
+        subprocess.Popen(
+            [sys.executable, str(_VALIDATE_SCRIPT), "--limit", "50"],
+            cwd=str(_BASE_DIR),
+            stdout=log,
+            stderr=subprocess.STDOUT,
+        )
+    finally:
+        log.close()   # child kendi dup'ını tutar; parent fd'sini sızdırma
+    return {"status": "started"}
