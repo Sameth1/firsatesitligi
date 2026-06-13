@@ -95,8 +95,10 @@ def sb_headers():
 
 
 def url_exists(url):
-    """URL zaten yayında (opportunities.official_url) ya da pending (submissions.url)
-    mı? Birinde varsa kopya — tekrar ekleme."""
+    """URL daha önce görülmüş mü? İki tabloya bakar: opportunities.official_url
+    (yayında) ve submissions.url. submissions sorgusunda STATUS FİLTRESİ YOK —
+    pending/approved/rejected fark etmez. Böylece haftalık re-run, daha önce
+    reddedilmiş URL'leri de yeniden scrape/validate etmez (idempotent crawl)."""
     for table, col in (("opportunities", "official_url"), ("submissions", "url")):
         res = requests.get(
             f"{SUPABASE_URL}/rest/v1/{table}",
@@ -232,11 +234,6 @@ def process_detail(detail_url, dry_run, stats):
         print(json.dumps(record, ensure_ascii=False, indent=2))
         return
 
-    if url_exists(detail_url):
-        stats["skipped"] += 1
-        print(f"  ⏭ kopya: {record['title'][:60]}")
-        return
-
     ok, detay = insert(record)
     if ok:
         stats["added"] += 1
@@ -267,6 +264,13 @@ def crawl_category(start_url, max_pages, seen, stats, limit, dry_run):
             if d in seen:
                 continue
             seen.add(d)
+            # Kopya elemesini FETCH'ten ÖNCE yap: daha önce işlenmiş URL'ler
+            # (pending/approved/rejected) yeniden çekilmesin. dry_run'da DB'ye
+            # bakmayız (saf önizleme). Bu, haftalık re-run'ı ucuzlatır.
+            if not dry_run and url_exists(d):
+                stats["skipped"] += 1
+                print(f"  ⏭ kopya, atlandı (zaten işlenmiş): {d}")
+                continue
             process_detail(d, dry_run, stats)
             time.sleep(CRAWL_DELAY)
 
