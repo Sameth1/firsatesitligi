@@ -157,13 +157,6 @@ export default function OpportunityCard({ opp }: { opp: Opportunity }) {
         </div>
       )}
 
-      {/* Attribution */}
-      {opp.submitted_by_nickname && (
-        <div style={{ fontSize: 10, color: '#AFA9EC', fontWeight: 500 }}>
-          @{opp.submitted_by_nickname} paylaştı
-        </div>
-      )}
-
       {/* Link */}
       <a
         href={opp.official_url}
