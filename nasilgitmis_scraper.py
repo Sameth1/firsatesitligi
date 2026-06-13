@@ -29,6 +29,10 @@ from datetime import date
 from dotenv import load_dotenv
 from scrapling.fetchers import Fetcher, StealthyFetcher
 
+# Ortak başvuru-linki çıkarımı (reach.extract_apply_link). reach import sırasında
+# load_dotenv + stdout reconfigure çalıştırır; yan etkisi yok, run() yalnız __main__'de.
+import agent_reach_url_scraper as reach
+
 # Windows konsolu (cp1254) emoji/Türkçe karakterde UnicodeEncodeError verir;
 # çıktıyı UTF-8'e sabitle.
 if hasattr(sys.stdout, "reconfigure"):
@@ -425,41 +429,29 @@ def parse_post(url, category_slug):
     # Eligibility notes — ilk ~600 karakter, cümle/kelime sınırında kesilir
     eligibility_notes = truncate_at_word(content, 600) if content else None
 
-    # Başvuru linki — link metni şu kelimelerden birini içeren ilk dış linki al.
-    # _tr_lower: büyük harfli buton metinleri ("BAŞVUR", "TIKLA", "KAYIT OL") de
-    # eşleşsin — Python'un .lower()'ı 'I'yı 'i' yapıp dotless-ı'lı kelimeleri
-    # kaçırıyordu.
-    apply_url = None  # yalnızca gerçek bir DIŞ başvuru linki bulunursa dolar
-    apply_keywords = ("tıkla", "başvur", "apply", "form",
-                      "detaylar", "resmi site", "buradan", "kayıt ol")
-    nodes = page.css(".entry-content") or page.css("article")
-    scope = nodes[0] if nodes else page
-    for a in scope.css("a"):
-        href = (a.attrib.get("href") or "").strip()
-        text = _tr_lower(a.get_all_text(strip=True) or "")
-        if any(k in text for k in apply_keywords):
-            if href.startswith("http") and "nasilgitmis.com" not in href:
-                apply_url = href
-                break
-
-    # Dış başvuru linki ZORUNLU: bulunamadıysa submission'ı hiç ekleme. Aksi halde
-    # url alanına nasilgitmis yazı linki düşer ve onayda official_url kullanıcıyı
-    # blog yazısına yönlendirir (official_url bug). Bulunduğunda url = gerçek
-    # başvuru adresi; yazı linki funding_notes'ta kaynak olarak saklanır.
-    if apply_url is None:
-        print(f"  Dış link bulunamadı, atlandı: {title}")
-        return None
-
-    submission_url = apply_url
-    funding_notes = f"nasilgitmis.com'dan çekildi — kaynak yazı: {url}"
+    # Başvuru linki — ortak reach.extract_apply_link: metni başvuru anahtar
+    # kelimesi (tıkla/başvur/form/detaylar/buradan/kayıt ol/apply/resmi) taşıyan
+    # ilk GERÇEK dış linki alır; sosyal/araç domainlerini (Instagram vb.) eler;
+    # html.unescape eder. Bulunamazsa kaynak yazıya fallback + admin uyarısı
+    # (eskiden submission atlanıyordu; artık eklenir ama official_url=kaynak
+    # olduğu için işaretlenir).
+    apply_url = reach.extract_apply_link(page, url)
+    if apply_url:
+        submission_url = apply_url
+        funding_notes = f"nasilgitmis.com'dan çekildi — kaynak yazı: {url}"
+        admin_note = None
+    else:
+        submission_url = url   # kaynak yazı (dış link yok)
+        funding_notes = f"nasilgitmis.com kaynak yazısı (dış başvuru linki bulunamadı): {url}"
+        admin_note = "[uyarı] dış başvuru linki bulunamadı, kaynak sayfaya yönlendiriyor"
 
     # submissions şeması opportunities'ten farklı: url (official_url değil),
     # category_slug (category_id değil), deadline_text (deadline date değil).
     # target_countries / study_level / is_active gibi opportunity-özel alanları
     # onay anında agent_approve_submission RPC'si dolduruyor; burada yok.
-    return {
+    rec = {
         "title":                title,
-        "url":                  submission_url,  # gerçek dış başvuru linki (zorunlu)
+        "url":                  submission_url,
         "category_slug":        category_slug,
         "deadline_text":        deadline,      # 'YYYY-MM-DD' ya da None (text)
         "host_countries":       host_countries,
@@ -472,6 +464,9 @@ def parse_post(url, category_slug):
         "submitter_nickname":   "nasilgitmis-bot",
         "status":               "pending",
     }
+    if admin_note:
+        rec["admin_note"] = admin_note
+    return rec
 
 # ─── Ana akış ─────────────────────────────────────────────────────────────────
 

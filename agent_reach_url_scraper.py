@@ -35,6 +35,7 @@ import json
 import argparse
 import unicodedata
 import requests
+from urllib.parse import urlsplit, parse_qs, unquote, parse_qsl, urlencode, urlunsplit
 from datetime import date, timedelta
 from dotenv import load_dotenv
 from scrapling.fetchers import Fetcher, StealthyFetcher
@@ -493,6 +494,97 @@ def extract_days_remaining(text: str) -> int | None:
     except (TypeError, ValueError):
         return None
     return n if 0 <= n <= 1000 else None
+
+
+# Gerçek dış başvuru linki çıkarımı — official_url'in scraper kaynak sayfasına
+# değil, gerçek başvuru adresine işaret etmesi için. İki öncelik: önce başvuru
+# EYLEMİ (apply/başvur/tıkla…), sonra genel "resmî site".
+_APPLY_ACTION_KW = ("apply now", "apply", "application", "how to apply",
+                    "başvur", "kayıt ol", "tıkla", "buradan", "detaylar", "form",
+                    "register")
+_APPLY_OFFICIAL_KW = ("official link", "official website", "official site",
+                      "resmi site", "resmi web", "visit website", "website")
+# Apply sanılmaması gereken sosyal/mesajlaşma/uygulama-mağazası domainleri.
+# NOT: docs.google / drive.google / forms.gle GERÇEK başvuru formu olabilir —
+# bunları engellemiyoruz; yalnız sosyal hesaplar (Instagram vb.) elenir.
+_APPLY_JUNK_DOMAINS = (
+    "facebook.", "fb.com", "fb.me", "twitter.", "x.com", "whatsapp.", "wa.me",
+    "t.me", "m.me", "linkedin.", "instagram.", "youtube.", "youtu.be", "tiktok.",
+    "pinterest.", "telegram.", "apps.apple.", "play.google.",
+)
+
+
+# Başvuru linkinden temizlenecek izleme parametreleri. İşlevsel parametreler
+# (p_package, p_lang, form alan id'leri vb.) KORUNUR — yalnız bunlar atılır.
+_TRACKING_PARAMS_EXACT = {
+    "fbclid", "gclid", "dclid", "gbraid", "wbraid", "msclkid", "yclid", "twclid",
+    "igshid", "igsh", "mc_cid", "mc_eid", "ref", "ref_src", "ref_url", "_gl",
+    "spm", "scid",
+}
+_TRACKING_PARAMS_PREFIX = ("utm_", "_ga", "_hs", "pk_", "mtm_")
+
+
+def _strip_tracking(url: str) -> str:
+    """URL query'sinden izleme parametrelerini (utm_*, fbclid, gclid, ref, _gl,
+    _ga* …) atar; işlevsel parametreleri korur. Query yoksa URL aynen döner."""
+    sp = urlsplit(url)
+    if not sp.query:
+        return url
+    kept = [
+        (k, v) for k, v in parse_qsl(sp.query, keep_blank_values=True)
+        if k.lower() not in _TRACKING_PARAMS_EXACT
+        and not any(k.lower().startswith(p) for p in _TRACKING_PARAMS_PREFIX)
+    ]
+    return urlunsplit((sp.scheme, sp.netloc, sp.path, urlencode(kept), sp.fragment))
+
+
+def _resolve_link_wrapper(href: str) -> str:
+    """youthop '/link?u=<encoded>' redirect sarmalını çözer; değilse href aynen."""
+    sp = urlsplit(href)
+    if sp.path.rstrip("/").endswith("/link") and "u=" in (sp.query or ""):
+        real = unquote(parse_qs(sp.query).get("u", [""])[0])
+        if real.startswith("http"):
+            return real
+    return href
+
+
+def _is_real_external(href: str, source_netloc: str) -> bool:
+    """href, kaynak-domain ve sosyal/araç domainleri dışında gerçek bir dış link mi?"""
+    if not href.startswith("http"):
+        return False
+    dom = urlsplit(href).netloc.lower()
+    if not dom or source_netloc in dom or dom in source_netloc:
+        return False
+    return not any(j in dom for j in _APPLY_JUNK_DOMAINS)
+
+
+def extract_apply_link(page, source_url: str) -> str | None:
+    """Sayfadaki GERÇEK dış başvuru linkini döndürür (yoksa None).
+    - Metni başvuru anahtar kelimesi taşıyan anchor'ı bulur (önce eylem, sonra resmî).
+    - youthop '/link?u=' sarmalını gerçek URL'ye çözer.
+    - Kaynak-domain ve sosyal/araç domainlerini eler (Instagram'ı apply sanmaz).
+    - Sonucu html.unescape eder ('&amp;' → '&').
+    Kapsam: önce .entry-content/article (nasilgitmis gövdesi), bulunamazsa tüm
+    sayfa (youthop apply butonları gövde dışında)."""
+    src_netloc = urlsplit(source_url).netloc.lower()
+    scopes = []
+    for sel in (".entry-content", "article", "main"):
+        nodes = page.css(sel)
+        if nodes:
+            scopes.append(nodes[0])
+            break
+    scopes.append(page)   # son çare: tüm sayfa
+    for scope in scopes:
+        anchors = [
+            (_tr_lower(a.get_all_text(strip=True) or ""),
+             _resolve_link_wrapper((a.attrib.get("href") or "").strip()))
+            for a in scope.css("a")
+        ]
+        for kwset in (_APPLY_ACTION_KW, _APPLY_OFFICIAL_KW):
+            for txt, href in anchors:
+                if href and any(kw in txt for kw in kwset) and _is_real_external(href, src_netloc):
+                    return _strip_tracking(html.unescape(href))
+    return None
 
 
 def extract_fields(page, source_url: str, category: str | None) -> dict | None:
