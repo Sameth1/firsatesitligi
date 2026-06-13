@@ -50,23 +50,36 @@ def patch(opp_id, body):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true", help="DB'ye yaz (varsayılan dry-run)")
+    ap.add_argument("--by-url", metavar="DOMAIN",
+                    help="submitter yerine official_url'i bu domaini içeren TÜM "
+                         "kayıtları seç (ör. nasilgitmis.com) — submitter farketmez")
     args = ap.parse_args()
 
-    rows = requests.get(
-        f"{SUPABASE_URL}/rest/v1/opportunities", headers=H,
-        params={"submitted_by_nickname": f"in.({','.join(SRC_SITE)})",
-                "select": "id,title,official_url,funding_notes,submitted_by_nickname",
-                "limit": "1000"}, timeout=30,
-    ).json()
+    if args.by_url:
+        # official_url bazlı seçim: domain submitter'dan bağımsız, kaynak = domain.
+        params = {"official_url": f"ilike.*{args.by_url}*",
+                  "select": "id,title,official_url,funding_notes,submitted_by_nickname",
+                  "limit": "1000"}
+        site_of = lambda o: args.by_url
+        scope_desc = f"official_url ⊇ {args.by_url} (submitter farketmez)"
+    else:
+        # submitter bazlı (varsayılan): youthop-bot + nasilgitmis-bot.
+        params = {"submitted_by_nickname": f"in.({','.join(SRC_SITE)})",
+                  "select": "id,title,official_url,funding_notes,submitted_by_nickname",
+                  "limit": "1000"}
+        site_of = lambda o: SRC_SITE.get(o.get("submitted_by_nickname"), "###")
+        scope_desc = "youthop-bot + nasilgitmis-bot"
+
+    rows = requests.get(f"{SUPABASE_URL}/rest/v1/opportunities", headers=H,
+                        params=params, timeout=30).json()
 
     mode = "CANLI — DB GÜNCELLENECEK" if args.apply else "DRY-RUN — DB'ye yazılmaz"
-    print(f"{len(rows)} kayıt (youthop-bot + nasilgitmis-bot) · {mode}\n" + "─" * 72)
+    print(f"{len(rows)} kayıt · {scope_desc} · {mode}\n" + "─" * 72)
 
     n_fix = n_warn = n_skip = n_err = 0
     for o in rows:
-        bot = o["submitted_by_nickname"]
         cur = o.get("official_url") or ""
-        site = SRC_SITE.get(bot, "###")
+        site = site_of(o)
         if site not in urlsplit(cur).netloc.lower():
             n_skip += 1
             continue  # zaten dış link (affected değil)
@@ -78,16 +91,17 @@ def main():
             continue
         apply = reach.extract_apply_link(page, cur)
 
+        who = o.get("submitted_by_nickname") or "(null)"
         if apply:
             n_fix += 1
-            print(f"  ✅ FIX  {o['title'][:44]}")
+            print(f"  ✅ FIX  [{who}] {o['title'][:40]}")
             print(f"        ÖNCE : {cur}")
             print(f"        SONRA: {apply}")
             if args.apply:
                 patch(o["id"], {"official_url": apply})
         else:
             n_warn += 1
-            print(f"  ⚠️  KAYNAK KALIR (dış link yok)  {o['title'][:40]}")
+            print(f"  ⚠️  KAYNAK KALIR (dış link yok) [{who}]  {o['title'][:34]}")
             print(f"        official_url (değişmez): {cur}")
             if args.apply:
                 fn = (o.get("funding_notes") or "").strip()
