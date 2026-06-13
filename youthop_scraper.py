@@ -196,6 +196,7 @@ def build_record(base, detail_url, category_slug, apply_link):
         # yaş sınırsız fellowship'lerden gereksiz eliyordu).
         "age_min":              base.get("age_min"),
         "age_max":              base.get("age_max"),
+        "study_level":          base.get("study_level"),   # extract_study_level → bachelor/master/phd/any
         "language_requirement": "İngilizce",
         "eligibility_notes":    base.get("eligibility_notes"),
         "description":          base.get("description"),

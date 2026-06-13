@@ -630,6 +630,32 @@ def extract_age_range(text: str) -> tuple[int | None, int | None]:
     return None, None
 
 
+# Eğitim kademesi çıkarımı. DB/RPC token seti SADECE {bachelor, master, phd, any}
+# (frontend study_level seçenekleri). highschool/undergraduate/postgraduate/postdoc
+# token'ı YOK → postdoc'u phd'ye, lise/gençlik/gönüllülük gibi eğitim-bağımsızları
+# 'any'ye katlarız. RPC hard-filter olduğu için yanlış kademe = o kademe dışındaki
+# herkesi eler → emin değilsek 'any' (güvenli, hepsine görünür).
+_SL_PHD_RE = re.compile(r"\bph\.?\s?d\b|doctoral|doctorate|post[\s-]?doc|doktora", re.I)
+_SL_MASTER_RE = re.compile(
+    r"master'?s?\b|\bm\.?sc\b|\bmba\b|postgraduate|post[\s-]?graduate|yüksek\s+lisans", re.I)
+_SL_BACHELOR_RE = re.compile(
+    r"undergraduate|bachelor'?s?\b|\bb\.?sc\b|(?<!yüksek )\blisans\b", re.I)
+
+
+def extract_study_level(text: str, title: str = "") -> list[str]:
+    """Başlık+metinden hedef eğitim kademesi/kademelerini döndürür (kapsayıcı:
+    birden çok geçiyorsa hepsi). Net sinyal yoksa ['any']."""
+    t = ((title or "") + "\n" + (text or "")).lower()
+    levels = []
+    if _SL_PHD_RE.search(t):
+        levels.append("phd")
+    if _SL_MASTER_RE.search(t):
+        levels.append("master")
+    if _SL_BACHELOR_RE.search(t):
+        levels.append("bachelor")
+    return levels or ["any"]
+
+
 def extract_fields(page, source_url: str, category: str | None) -> dict | None:
     # Birincil kaynak: sayfanın yapılandırılmış JSON-LD verisi. Her alan için
     # bulunamazsa mevcut heuristiklere düşülür.
@@ -666,6 +692,7 @@ def extract_fields(page, source_url: str, category: str | None) -> dict | None:
         "description": html.unescape(description),
         "age_min": age_min,
         "age_max": age_max,
+        "study_level": extract_study_level(body, title),
         "language_requirement": None,
         "submitter_nickname": "agent-reach",
         "submitter_email": None,

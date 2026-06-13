@@ -457,6 +457,7 @@ def parse_post(url, category_slug):
         "host_countries":       host_countries,
         "age_min":              age_min,
         "age_max":              age_max,   # bulunamazsa NULL (sahte 30 default'u kaldırıldı)
+        "study_level":          reach.extract_study_level(content, title),  # bachelor/master/phd/any
         "language_requirement": "Türkçe / İngilizce",
         "eligibility_notes":    eligibility_notes,
         "funding_type":         slug_to_funding_type(category_slug),
