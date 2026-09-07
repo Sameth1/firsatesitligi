@@ -52,12 +52,12 @@ function DeadlineBadge({ days, deadline }: { days: number | null; deadline: stri
   )
 }
 
-export default function OpportunityCard({ opp, index = 0 }: { opp: Opportunity; index?: number }) {
+export default function OpportunityCard({ opp }: { opp: Opportunity }) {
   const urgent = opp.days_until_deadline !== null && opp.days_until_deadline <= 30
 
   return (
     <div
-      className="opp-card fx-fade-in-up"
+      className="opp-card"
       style={{
         background: '#fff',
         border: `0.5px solid ${urgent ? '#F09595' : '#e0e0e0'}`,
@@ -68,7 +68,6 @@ export default function OpportunityCard({ opp, index = 0 }: { opp: Opportunity; 
         flexDirection: 'column',
         gap: 10,
         boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-        animationDelay: `${Math.min(index, 10) * 45}ms`,
       }}
     >
 

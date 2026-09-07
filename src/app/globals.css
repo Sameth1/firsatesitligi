@@ -150,3 +150,27 @@ button, a, input, [role="button"] {
 .hero-cta:active {
   transform: translateY(0) scale(0.985);
 }
+
+.hero-cue {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease,
+    background-color 0.2s ease;
+}
+.hero-cue:hover {
+  background: #fff;
+  box-shadow: 0 20px 38px -18px rgba(24, 16, 74, 0.6);
+}
+.hero-cue:active {
+  transform: translateX(-50%) scale(0.97);
+}
+
+/* Ambient WebGL zemini içeriğin arkasında kalsın */
+.page-layer {
+  position: relative;
+  z-index: 1;
+}
+
+/* Tema motifleri yalnız içerik sütununun yanında yer kaldığında görünür */
+.theme-glyphs { display: none; }
+@media (min-width: 1024px) {
+  .theme-glyphs { display: block; }
+}

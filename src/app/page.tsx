@@ -6,6 +6,10 @@ import OpportunityCard from '@/components/OpportunityCard'
 import EmailCapture from '@/components/EmailCapture'
 import AppHeader from '@/components/AppHeader'
 import Hero from '@/components/hero/Hero'
+import AmbientCanvas from '@/components/hero/AmbientCanvas'
+import ThemeGlyphs from '@/components/hero/ThemeGlyphs'
+import gsap from 'gsap'
+import { ScrollTrigger } from 'gsap/ScrollTrigger'
 
 const COUNTRIES: { code: string; label: string; language: string | null }[] = [
   { code: 'DE', label: '🇩🇪 Almanya',     language: 'Almanca' },
@@ -166,10 +170,68 @@ export default function Home() {
   const [languageLevel, setLanguageLevel] = useState<string | null>(null)
 
   const formRef = useRef<HTMLElement>(null)
+  const prevStepRef = useRef<Step | null>(null)
 
   function scrollToForm() {
     formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
+
+  // Adım değişiminde kaydırma konumu. Hero tam ekran olduğu için form,
+  // sayfanın 1 ekran altında duruyor: arama sonrası kullanıcı listenin
+  // ortasında açılmasın diye başa alınır; sonuçtan forma dönüşte de hero'ya
+  // değil doğrudan forma inilir. İlk yüklemede hiç dokunulmaz (hero görünür).
+  useEffect(() => {
+    const prev = prevStepRef.current
+    prevStepRef.current = step
+    if (prev === null || prev === step) return
+
+    if (step === 'results') {
+      window.scrollTo({ top: 0, behavior: 'auto' })
+    } else {
+      formRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' })
+    }
+  }, [step])
+
+  // Form ve sonuç ekranlarının giriş koreografisi. Adım değiştiğinde (ya da
+  // sonuç listesi yenilendiğinde) yeniden kurulur; gsap.context sayesinde
+  // önceki tween'ler ve ScrollTrigger'lar temizlenir.
+  useEffect(() => {
+    gsap.registerPlugin(ScrollTrigger)
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+    const ctx = gsap.context(() => {
+      if (reduced) {
+        gsap.set('[data-anim], .opp-card', { opacity: 1, y: 0 })
+        return
+      }
+
+      // Ekranın üst bloğu: başlık, adım rozetleri, filtreler
+      gsap.fromTo('[data-anim="head"] > *',
+        { opacity: 0, y: 16 },
+        { opacity: 1, y: 0, duration: 0.6, stagger: 0.07, ease: 'power3.out' })
+
+      // Form kartı ve içindeki alan grupları
+      gsap.fromTo('[data-anim="card"]',
+        { opacity: 0, y: 26 },
+        { opacity: 1, y: 0, duration: 0.7, delay: 0.12, ease: 'power3.out' })
+
+      gsap.fromTo('[data-anim="card"] > *',
+        { opacity: 0, y: 12 },
+        { opacity: 1, y: 0, duration: 0.5, delay: 0.25, stagger: 0.045, ease: 'power2.out' })
+
+      // Sonuç kartları: görünüm alanına girdikçe teker teker belirir
+      ScrollTrigger.batch('.opp-card', {
+        start: 'top 92%',
+        onEnter: batch => gsap.fromTo(batch,
+          { opacity: 0, y: 28 },
+          { opacity: 1, y: 0, duration: 0.6, stagger: 0.08, ease: 'power3.out', overwrite: true }),
+      })
+      gsap.set('.opp-card', { opacity: 0 })
+      ScrollTrigger.refresh()
+    })
+
+    return () => ctx.revert()
+  }, [step, results, activeCategory])
 
   const selectedCountry = COUNTRIES.find(c => c.code === country) ?? null
   const targetLanguage = selectedCountry?.language ?? null
@@ -266,14 +328,17 @@ export default function Home() {
     <>
     <Hero onStart={scrollToForm} />
     <main ref={formRef} style={{
+      position: 'relative',
       minHeight: '100vh',
-      background: 'linear-gradient(180deg, #fbfbfe 0%, #f6f5fb 45%, #f5f3fa 100%)',
       padding: '56px 16px 40px',
       scrollMarginTop: 0,
     }}>
-      <div key="form" className="fx-fade-in-up" style={{ maxWidth: 600, margin: '0 auto' }}>
+      <AmbientCanvas />
+      <ThemeGlyphs />
+      <div key="form" className="page-layer" style={{ maxWidth: 600, margin: '0 auto' }}>
 
         {/* Header */}
+        <div data-anim="head">
         <AppHeader />
         <div style={{ fontSize: 13, color: '#888', marginBottom: 12 }}>
           Burs, gönüllülük, staj — bedava yurt dışı fırsatları
@@ -284,6 +349,7 @@ export default function Home() {
           <StepPill label="1 · Profil" active />
           <span style={{ color: '#ccc', fontSize: 12 }}>›</span>
           <StepPill label="2 · Sonuçlar" />
+        </div>
         </div>
 
         {searchError && (
@@ -309,8 +375,10 @@ export default function Home() {
         )}
 
         {/* Form card */}
-        <div style={{
-          background: '#fff', border: '0.5px solid #e0e0e0',
+        <div data-anim="card" style={{
+          background: 'rgba(255,255,255,0.94)',
+          backdropFilter: 'blur(10px)',
+          border: '0.5px solid #e0e0e0',
           borderRadius: 16, padding: '24px 20px',
           boxShadow: '0 20px 40px -28px rgba(83, 74, 183, 0.28), 0 1px 2px rgba(0,0,0,0.02)',
         }}>
@@ -456,13 +524,16 @@ export default function Home() {
   // ─── RESULTS ────────────────────────────────────────────
   return (
     <main style={{
+      position: 'relative',
       minHeight: '100vh',
-      background: 'linear-gradient(180deg, #fbfbfe 0%, #f6f5fb 45%, #f5f3fa 100%)',
       padding: '40px 16px',
     }}>
-      <div key="results" className="fx-fade-in-up" style={{ maxWidth: 680, margin: '0 auto' }}>
+      <AmbientCanvas />
+      <ThemeGlyphs />
+      <div key="results" className="page-layer" style={{ maxWidth: 680, margin: '0 auto' }}>
 
         {/* Header */}
+        <div data-anim="head">
         <AppHeader
           searchSnapshot={searchSnapshot}
           rightSlot={
@@ -502,6 +573,8 @@ export default function Home() {
               onClick={() => setActiveCategory(c.slug)}
             />
           ))}
+        </div>
+
         </div>
 
         {/* Result count */}
@@ -544,8 +617,8 @@ export default function Home() {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
-            {filtered.map((opp, i) => (
-              <OpportunityCard key={opp.id} opp={opp} index={i} />
+            {filtered.map(opp => (
+              <OpportunityCard key={opp.id} opp={opp} />
             ))}
           </div>
         )}

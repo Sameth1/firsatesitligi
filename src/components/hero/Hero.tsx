@@ -75,9 +75,11 @@ export default function Hero({ onStart }: { onStart: () => void }) {
   return (
     <section
       ref={rootRef}
+      onClick={onStart}
       style={{
         position: 'relative',
         minHeight: '100svh',
+        cursor: 'pointer',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -191,16 +193,24 @@ export default function Hero({ onStart }: { onStart: () => void }) {
       <button
         data-fx="cue"
         onClick={onStart}
-        aria-label="Forma in"
+        aria-label="Arama bölümüne in"
+        className="hero-cue"
         style={{
-          position: 'absolute', bottom: 26, left: '50%', transform: 'translateX(-50%)',
-          zIndex: 1, background: 'none', border: 'none', cursor: 'pointer',
-          color: 'rgba(52, 44, 118, 0.72)', fontSize: 11, fontWeight: 600,
-          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+          position: 'absolute', bottom: 30, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 1, cursor: 'pointer',
+          display: 'inline-flex', alignItems: 'center', gap: 10,
+          fontSize: 15, fontWeight: 600, letterSpacing: '-0.01em',
+          color: '#2A2470',
+          background: 'rgba(255, 255, 255, 0.82)',
+          border: '1px solid rgba(83, 74, 183, 0.22)',
+          backdropFilter: 'blur(10px)',
+          padding: '13px 26px', borderRadius: 999,
+          boxShadow: '0 14px 30px -16px rgba(24, 16, 74, 0.5)',
+          whiteSpace: 'nowrap',
         }}
       >
         Aşağı kaydır
-        <span style={{ display: 'block', fontSize: 15, lineHeight: 1 }}>↓</span>
+        <span style={{ display: 'inline-block', fontSize: 19, lineHeight: 1 }}>↓</span>
       </button>
     </section>
   )
