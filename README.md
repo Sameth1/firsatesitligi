@@ -238,14 +238,9 @@ Proje, **GEO (Generative Engine Optimization)** — web sitelerinin ChatGPT, Cla
 - Site-spesifik scraper'lar (`nasilgitmis_scraper.py`, `idealist_scraper.py`)
 - Genel amaçlı URL scraper'ı (`agent_reach_url_scraper.py`, Jina Reader)
 - Link sağlığı otomasyonu (`link_audit_runner.py`, `fix_broken_links.py`)
-- `agent_approve_submission` service-role onay RPC'si (migration 094)
-- İki katmanlı doğrulama ajanı + otomatik onay mantığı (`validate_submissions.py`)
-
-### 🚧 Devam Edenler
-
-- **LLM doğrulama hattının canlıya alınması.** `validate_submissions.py` kod olarak tamamlandı; otomatik onay akışı `agent_approve_submission` RPC'sine bağlandı. LLM sağlayıcısı NVIDIA NIM'e (ücretsiz tier) geçirildi.
-- Migration `094`'ün bağlı Supabase projesine uygulanması (canlı otomatik onaydan önce gerekli).
-- `nasilgitmis_scraper.py` ile toplanan pending submission'ların doğrulama hattından geçirilmesi.
+- `agent_approve_submission` service-role onay RPC'si; migration 094/095'in bağlı Supabase projesinde doğrulanması
+- İki katmanlı doğrulama ajanı + otomatik onay mantığı (`validate_submissions.py`); NVIDIA NIM entegrasyonunun canlı API çağrısıyla doğrulanması
+- `nasilgitmis_scraper.py` ile toplanan pending submission'ların doğrulama hattından geçirilmesi
 
 ### 🗺️ Planlananlar
 
