@@ -75,7 +75,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 # NVIDIA_API_KEY env'i değişir, kod aynı kalır.
 LLM_API_KEY = os.getenv("NVIDIA_API_KEY", "")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://integrate.api.nvidia.com/v1").rstrip("/")
-LLM_MODEL = os.getenv("LLM_MODEL", "meta/llama-3.3-70b-instruct")
+LLM_MODEL = os.getenv("LLM_MODEL", "nvidia/nemotron-3-super-120b-a12b")
 LLM_MIN_INTERVAL = 1.5        # çağrılar arası bekleme — ücretsiz tier RPM sınırı
 # gpt-oss gibi reasoning modelleri akıl yürütmeyi de completion token'ı olarak
 # harcar (boş prompt'ta bile ~270 token). JSON content akıl yürütmeden SONRA
