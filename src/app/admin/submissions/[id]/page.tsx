@@ -38,6 +38,8 @@ interface Submission {
   admin_note: string | null
   description: string | null
   created_at: string
+  submission_origin: 'human' | 'agent'
+  review_stage: string
 }
 
 const inputStyle: React.CSSProperties = {
@@ -197,6 +199,7 @@ export default function SubmissionDetailPage({
   }
 
   const isPending = sub.status === 'pending'
+  const isHuman = sub.submission_origin === 'human'
 
   return (
     <main style={{ minHeight: '100vh', background: '#fafaf9', padding: '32px 16px' }}>
@@ -226,11 +229,12 @@ export default function SubmissionDetailPage({
           display: 'flex', gap: 16, flexWrap: 'wrap',
         }}>
           <span>Gönderen: <strong>{sub.submitter_nickname ? `@${sub.submitter_nickname}` : 'Anonim'}</strong></span>
+          <span><strong>{isHuman ? 'Kullanıcı kaydı' : 'Agent kaydı'}</strong></span>
           {sub.submitter_email ? (
             <span>✉ {sub.submitter_email}</span>
-          ) : (
+          ) : isHuman ? (
             <span style={{ color: '#ccc' }}>✉ yok — revize maili gönderilemez</span>
-          )}
+          ) : null}
           <span>{new Date(sub.created_at).toLocaleDateString('tr-TR')}</span>
         </div>
 
@@ -389,7 +393,7 @@ export default function SubmissionDetailPage({
           )}
 
           {/* Revise */}
-          {isPending && sub.submitter_email && (
+          {isPending && isHuman && sub.submitter_email && (
             <div>
               <Label text="Revize notu (kullanıcıya gider)" />
               <div style={{ display: 'flex', gap: 8 }}>
