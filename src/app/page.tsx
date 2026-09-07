@@ -434,8 +434,11 @@ export default function Home() {
             disabled={loading}
             className="btn-primary"
             style={{
-              width: '100%', padding: '12px', borderRadius: 10,
-              background: loading ? '#AFA9EC' : '#534AB7',
+              width: '100%', padding: '13px', borderRadius: 12,
+              background: loading
+                ? 'linear-gradient(115deg, #AFA9EC 0%, #9FD9D2 100%)'
+                : 'linear-gradient(115deg, #4B41B5 0%, #6C4FD0 55%, #17A79A 100%)',
+              boxShadow: loading ? 'none' : '0 14px 26px -14px rgba(76, 65, 181, 0.75)',
               color: '#fff', border: 'none', fontSize: 14,
               fontWeight: 500, cursor: loading ? 'not-allowed' : 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
@@ -723,7 +726,9 @@ function StepPill({ label, active, done }: { label: string; active?: boolean; do
   return (
     <span style={{
       fontSize: 11, fontWeight: 500, padding: '4px 10px', borderRadius: 20,
-      background: done ? '#E1F5EE' : active ? '#534AB7' : '#f0f0f0',
+      background: done
+        ? '#E1F5EE'
+        : active ? 'linear-gradient(115deg, #4B41B5 0%, #17A79A 140%)' : '#f0f0f0',
       color: done ? '#085041' : active ? '#fff' : '#aaa',
       transition: 'background 0.25s ease, color 0.25s ease',
     }}>
@@ -780,9 +785,10 @@ function FilterChip({ label, active, onClick }: {
       className="pill-btn"
       style={{
         fontSize: 11, fontWeight: 500, padding: '4px 10px', borderRadius: 20,
-        background: active ? '#534AB7' : '#fff',
+        background: active ? 'linear-gradient(115deg, #4B41B5 0%, #17A79A 130%)' : '#fff',
         color: active ? '#fff' : '#666',
-        border: `0.5px solid ${active ? '#534AB7' : '#e0e0e0'}`,
+        border: `0.5px solid ${active ? 'transparent' : '#e0e0e0'}`,
+        boxShadow: active ? '0 8px 16px -10px rgba(76, 65, 181, 0.8)' : 'none',
         cursor: 'pointer',
       }}
     >

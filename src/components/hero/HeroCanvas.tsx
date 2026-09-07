@@ -242,16 +242,18 @@ export default function HeroCanvas() {
     placeBlob(host.clientWidth / host.clientHeight)
 
     // ── Üretilmiş 3D obje (varsa) ─────────────────────────────────────────
-    // public/hero/hero-object.glb Higgsfield'da üretilir. Dosya yoksa sahne
-    // prosedürel blob ile çalışmaya devam eder; 404 gürültüsü olmasın diye
-    // yüklemeden önce HEAD ile varlığı kontrol edilir.
+    // Varsayılan: public/hero/hero-object.glb (repoya konur, sürümlenir).
+    // NEXT_PUBLIC_HERO_MODEL_URL verilirse oradan yüklenir — modeli repoya
+    // koymadan denemek için. Dosya yoksa sahne prosedürel objeyle çalışır;
+    // 404 gürültüsü olmasın diye önce HEAD ile varlık kontrol edilir.
+    const MODEL_URL = process.env.NEXT_PUBLIC_HERO_MODEL_URL || '/hero/hero-object.glb'
     let heroObject: THREE.Object3D | null = null
     let cancelled = false
 
-    fetch('/hero/hero-object.glb', { method: 'HEAD' })
+    fetch(MODEL_URL, { method: 'HEAD' })
       .then(res => {
         if (!res.ok || cancelled) return
-        new GLTFLoader().load('/hero/hero-object.glb', gltf => {
+        new GLTFLoader().load(MODEL_URL, gltf => {
           if (cancelled) return
           heroObject = gltf.scene
 

@@ -17,8 +17,13 @@ export default function AppHeader({ searchSnapshot, rightSlot }: AppHeaderProps)
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         marginBottom: 20,
       }}>
-        <div style={{ fontSize: 22, fontWeight: 500, color: '#1a1a1a' }}>
-          <span style={{ color: '#534AB7' }}>fırsat</span>eşitliği
+        <div style={{ fontSize: 22, fontWeight: 600, color: '#1a1a1a', letterSpacing: '-0.02em' }}>
+          <span style={{
+            background: 'linear-gradient(105deg, #534AB7 0%, #7A5AD6 45%, #17B8A6 100%)',
+            WebkitBackgroundClip: 'text',
+            backgroundClip: 'text',
+            color: 'transparent',
+          }}>fırsat</span>eşitliği
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {rightSlot}
