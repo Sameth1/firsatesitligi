@@ -192,6 +192,7 @@ PostgreSQL şeması Supabase üzerinde barınır. Migration'lar `docs/sql/` alt�
 | `093_match_filter_is_active.sql` | Eşleştirme filtresine `is_active` koşulu |
 | `094_agent_approve_submission.sql` | Service-role otomatik onay RPC'si (admin guard'sız) |
 | `095_submission_study_level.sql` | `submissions.study_level` kolonu + `agent_approve_submission` RPC'sinin çıkarılan kademeyi (`coalesce(sub.study_level, 'any')`) yayına yansıtması |
+| `096_reject_reason_required.sql` | İnsan admin reddinde boş/null gerekçeyi DB katmanında engeller |
 
 Migration'lar `npm run db:0XX` script'leriyle bağlı Supabase projesine uygulanır (bkz. `package.json`).
 
