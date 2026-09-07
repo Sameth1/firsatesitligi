@@ -193,12 +193,16 @@ PostgreSQL şeması Supabase üzerinde barınır. Migration'lar `docs/sql/` alt�
 | `094_agent_approve_submission.sql` | Service-role otomatik onay RPC'si (admin guard'sız) |
 | `095_submission_study_level.sql` | `submissions.study_level` kolonu + `agent_approve_submission` RPC'sinin çıkarılan kademeyi (`coalesce(sub.study_level, 'any')`) yayına yansıtması |
 | `096_reject_reason_required.sql` | İnsan admin reddinde boş/null gerekçeyi DB katmanında engeller |
+| `097_submission_review_memory.sql` | Kullanıcı/agent kuyrukları, kalıcı karar geçmişi, red hafızası ve tek kullanımlık revize bağlantıları |
+| `098_remove_manual_improvement_queue.sql` | Ayrı script/PR öneri kuyruğunu kaldırır; hafıza doğrudan agent kararında kullanılır |
 
 Migration'lar `npm run db:0XX` script'leriyle bağlı Supabase projesine uygulanır (bkz. `package.json`).
 
 Ana tablolar:
 - **`opportunities`** — yayındaki fırsatlar; web uygulamasının gösterdiği veri.
 - **`submissions`** — inceleme bekleyen öneriler (`status`: pending / approved / needs_revision / rejected).
+- **`submission_review_events`** — insan, agent ve revize kararlarının değiştirilemez geçmişi.
+- **`agent_memories`** — insan redlerinden kaynak+kategori+neden bazında öğrenilen karar hafızası (1 örnek, 3 uyarı, 5 güçlü); agent bunu sonraki kararında doğrudan kullanır.
 - **`categories`** — fırsat kategorileri (burs, staj, gönüllülük, ...).
 - **`admins`** — panel erişimi olan kullanıcılar.
 - **`documents`** — fırsata bağlı başvuru belgeleri.
@@ -306,6 +310,9 @@ python validate_submissions.py --recheck --dry-run --limit 10
 
 # İnsan adminlerin red nedenlerini kaynak/neden bazında raporla (veri değiştirmez)
 python validate_submissions.py --feedback-report
+
+# İnceleme/hafıza/revize şemasını bir kez uygula
+npm run db:097
 ```
 
 > ⚠️ `SUPABASE_SERVICE_ROLE_KEY` ve `NVIDIA_API_KEY`/`GROQ_API_KEY` hassas anahtarlardır. `.env` dosyası asla commit'lenmemelidir.

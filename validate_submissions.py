@@ -159,7 +159,10 @@ def fetch_pending(limit=None, recheck=False):
     """
     params = {
         "status": "eq.pending",
-        "select": "id,title,url,category_slug,eligibility_notes,deadline_text,admin_note",
+        "submission_origin": "eq.agent",
+        "review_stage": "in.(agent_queue,agent_uncertain)" if recheck else "eq.agent_queue",
+        "select": ("id,title,url,category_slug,eligibility_notes,deadline_text,"
+                   "admin_note,submitter_nickname,submission_origin,review_stage"),
         "order": "created_at.asc",
     }
     res = requests.get(f"{SUPABASE_URL}/rest/v1/submissions",
@@ -172,6 +175,42 @@ def fetch_pending(limit=None, recheck=False):
         rows = [r for r in rows
                 if not (r.get("admin_note") or "").startswith(AGENT_MARKER)]
     return rows[:limit] if limit else rows
+
+
+def fetch_agent_memories():
+    """İnsan redlerinden üretilen aktif hafıza kayıtlarını getirir."""
+    res = requests.get(
+        f"{SUPABASE_URL}/rest/v1/agent_memories",
+        headers=sb_headers(),
+        params={
+            "active": "eq.true",
+            "select": ("source_nickname,category_slug,reason_code,summary,"
+                       "evidence_count,weight"),
+            "order": "evidence_count.desc",
+            "limit": "500",
+        },
+        timeout=20,
+    )
+    res.raise_for_status()
+    return res.json()
+
+
+def memory_context_for(sub, memories):
+    """Yalnız aynı kaynak/kategorideki en güçlü geçmiş örnekleri döndürür."""
+    source = (sub.get("submitter_nickname") or "manual/unknown").strip()
+    category = (sub.get("category_slug") or "unknown").strip()
+    relevant = [m for m in memories
+                if m.get("source_nickname") == source
+                and m.get("category_slug") == category]
+    if not relevant:
+        return "(bu kaynak/kategori için insan geri bildirimi yok)"
+    lines = []
+    for item in relevant[:8]:
+        lines.append(
+            f"- {item['reason_code']} | ağırlık={item['weight']} | "
+            f"kanıt={item['evidence_count']}: {item['summary']}"
+        )
+    return "\n".join(lines)
 
 
 def _norm_url(u):
@@ -253,7 +292,6 @@ def run_feedback_report():
         for reason, n in sorted(details, key=lambda item: (-item[1], item[0])):
             print(f"    - {reason}: {n}")
 
-
 def apply_decision(sub, eylem, gerekce, dry_run):
     """Kararı submissions tablosuna yazar.
       reddet -> status=rejected + admin_note + reviewed_at
@@ -268,16 +306,17 @@ def apply_decision(sub, eylem, gerekce, dry_run):
             "status": "rejected",
             "admin_note": note,
             "reviewed_at": datetime.now(timezone.utc).isoformat(),
+            "review_stage": "decided",
         }
     elif eylem == "onayla":
         note = f"{AGENT_MARKER} OTOMATİK ONAY — {gerekce}"
         patch = {"admin_note": note}
     elif eylem == "oner":
         note = f"{AGENT_MARKER} ÖNERİ: onaya uygun — {gerekce}"
-        patch = {"admin_note": note}
+        patch = {"admin_note": note, "review_stage": "agent_uncertain"}
     else:
         note = f"{AGENT_MARKER} BELİRSİZ: elle bak — {gerekce}"
-        patch = {"admin_note": note}
+        patch = {"admin_note": note, "review_stage": "agent_uncertain"}
 
     if not dry_run:
         res = requests.patch(
@@ -456,6 +495,15 @@ def judge_with_llm(sub, url, http_note, page_text):
         f"Submitter eligibility notu: {(sub.get('eligibility_notes') or '(yok)')[:400]}\n"
         f"Orijinal URL: {url}\n"
         f"HTTP: {http_note}\n\n"
+        "İNSAN REDLERİNDEN ÖĞRENİLEN İLGİLİ HAFIZA\n"
+        f"{sub.get('_memory_context') or '(yok)'}\n"
+        "Bu hafıza geçmiş insan kararlarından öğrenilmiş karar emsalidir ve "
+        "bu kaydı değerlendirirken doğrudan kullanılmalıdır. example düşük, "
+        "warning tekrarlanan, strong güçlü emsal demektir. Eşleşen sorunu "
+        "özellikle ara; güncel sayfada aynı sorun görülüyorsa ağırlığına göre "
+        "red kararı ver. Güncel açık kanıt hafızayla çelişirse güncel kanıtı "
+        "üstün tut; yalnız hafıza satırına bakarak kanıtsız red verme. Hafıza "
+        "script değişikliği veya PR işi üretmez, kararın içinde kullanılır.\n\n"
         f"SAYFA METNİ (kısaltılmış):\n{page_text}"
     )
     body = {
@@ -614,9 +662,11 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
     if eylem == "onayla":
         # açık + uygun + güven yüksek/orta → agent_approve_submission RPC ile
         # otomatik onay. RPC başarısız olursa güvenli tarafa düş: öneri + pending.
+        # Notu önce yaz: durum değiştiğinde kalıcı karar olayı gerekçeyi de
+        # aynı snapshot içinde kaydetsin.
+        apply_decision(sub, "onayla", gerekce, dry_run)
         ok, detay = approve_submission(sub, dry_run)
         if ok:
-            apply_decision(sub, "onayla", gerekce, dry_run)
             print(f"  → OTOMATİK ONAY — {gerekce}  [{detay}]")
             return "onaylandi"
         apply_decision(sub, "oner",
@@ -803,6 +853,13 @@ def main():
         return
 
     known_urls = fetch_known_urls()
+    try:
+        memories = fetch_agent_memories()
+    except requests.exceptions.RequestException as e:
+        print(f"Agent hafızası okunamadı: {e}", file=sys.stderr)
+        sys.exit(1)
+    for sub in subs:
+        sub["_memory_context"] = memory_context_for(sub, memories)
     seen_urls = set()
     stats = {"llm_calls": 0}
     tally = {k: 0 for k in

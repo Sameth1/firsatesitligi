@@ -696,6 +696,9 @@ def extract_fields(page, source_url: str, category: str | None) -> dict | None:
         "language_requirement": None,
         "submitter_nickname": "agent-reach",
         "submitter_email": None,
+        "status": "pending",
+        "submission_origin": "agent",
+        "review_stage": "agent_queue",
     }
 
 

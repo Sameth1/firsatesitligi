@@ -157,6 +157,8 @@ def build_record(sch, base, detail_url, category, deadline_text):
         "funding_notes":        f"DAAD burs veritabanından çekildi — kaynak: {detail_url}",
         "submitter_nickname":   "daad-bot",
         "status":               "pending",
+        "submission_origin":    "agent",
+        "review_stage":         "agent_queue",
     }
 
 

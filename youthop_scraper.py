@@ -204,6 +204,8 @@ def build_record(base, detail_url, category_slug, apply_link):
         "funding_notes":        f"youthop.com'dan çekildi — kaynak: {detail_url}",
         "submitter_nickname":   "youthop-bot",
         "status":               "pending",
+        "submission_origin":    "agent",
+        "review_stage":         "agent_queue",
     }
     if not apply_link:
         rec["admin_note"] = ("[uyarı] dış başvuru linki bulunamadı, "

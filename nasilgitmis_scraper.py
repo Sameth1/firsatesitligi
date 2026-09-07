@@ -464,6 +464,8 @@ def parse_post(url, category_slug):
         "funding_notes":        funding_notes,
         "submitter_nickname":   "nasilgitmis-bot",
         "status":               "pending",
+        "submission_origin":    "agent",
+        "review_stage":         "agent_queue",
     }
     if admin_note:
         rec["admin_note"] = admin_note
