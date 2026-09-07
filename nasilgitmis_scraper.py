@@ -452,6 +452,7 @@ def parse_post(url, category_slug):
     rec = {
         "title":                title,
         "url":                  submission_url,
+        "source_url":           url,
         "category_slug":        category_slug,
         "deadline_text":        deadline,      # 'YYYY-MM-DD' ya da None (text)
         "host_countries":       host_countries,
@@ -464,6 +465,8 @@ def parse_post(url, category_slug):
         "funding_notes":        funding_notes,
         "submitter_nickname":   "nasilgitmis-bot",
         "status":               "pending",
+        "submission_origin":    "agent",
+        "review_stage":         "agent_queue",
     }
     if admin_note:
         rec["admin_note"] = admin_note

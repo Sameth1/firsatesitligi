@@ -81,6 +81,8 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
       eligibility_notes: eligibility || null,
       language_requirement: languageReq || null,
       description: description || null,
+      submission_origin: 'human',
+      review_stage: 'human_review',
     })
 
     setStatus(error ? 'error' : 'done')

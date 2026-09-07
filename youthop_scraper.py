@@ -188,6 +188,7 @@ def build_record(base, detail_url, category_slug, apply_link):
     rec = {
         "title":                base["title"],
         "url":                  apply_link or detail_url,
+        "source_url":           detail_url,
         "category_slug":        category_slug,        # None olabilir (güvenli)
         "deadline_text":        base.get("deadline_text"),
         "host_countries":       base.get("host_countries") or [],
@@ -204,6 +205,8 @@ def build_record(base, detail_url, category_slug, apply_link):
         "funding_notes":        f"youthop.com'dan çekildi — kaynak: {detail_url}",
         "submitter_nickname":   "youthop-bot",
         "status":               "pending",
+        "submission_origin":    "agent",
+        "review_stage":         "agent_queue",
     }
     if not apply_link:
         rec["admin_note"] = ("[uyarı] dış başvuru linki bulunamadı, "

@@ -19,6 +19,8 @@ interface Submission {
   admin_note: string | null
   description: string | null
   created_at: string
+  submission_origin: 'human' | 'agent'
+  review_stage: string
 }
 
 interface Stats {
@@ -45,10 +47,18 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   rejected: { bg: '#FDE8E8', text: '#A32D2D' },
 }
 
+const FILTERS = [
+  { key: 'human_pending', label: 'Kullanıcı Kayıtları' },
+  { key: 'agent_uncertain', label: 'Agent Belirsizleri' },
+  { key: 'needs_revision', label: 'Revize Bekleyen' },
+  { key: 'approved', label: 'Onaylandı' },
+  { key: 'rejected', label: 'Reddedildi' },
+] as const
+
 export default function AdminPage() {
   const [submissions, setSubmissions] = useState<Submission[]>([])
   const [stats, setStats] = useState<Stats | null>(null)
-  const [filter, setFilter] = useState<string>('pending')
+  const [filter, setFilter] = useState<string>('human_pending')
   const [loading, setLoading] = useState(true)
   const [reviseId, setReviseId] = useState<string | null>(null)
   const [rejectId, setRejectId] = useState<string | null>(null)
@@ -60,12 +70,21 @@ export default function AdminPage() {
   useEffect(() => {
     let active = true
     async function load() {
+      let submissionsQuery = supabase.from('submissions').select('*')
+      if (filter === 'human_pending') {
+        submissionsQuery = submissionsQuery
+          .eq('status', 'pending')
+          .eq('submission_origin', 'human')
+      } else if (filter === 'agent_uncertain') {
+        submissionsQuery = submissionsQuery
+          .eq('status', 'pending')
+          .eq('submission_origin', 'agent')
+          .eq('review_stage', 'agent_uncertain')
+      } else {
+        submissionsQuery = submissionsQuery.eq('status', filter)
+      }
       const [{ data: subs }, statsRes] = await Promise.all([
-        supabase
-          .from('submissions')
-          .select('*')
-          .eq('status', filter)
-          .order('created_at', { ascending: false }),
+        submissionsQuery.order('created_at', { ascending: false }),
         // Yeni RPC: 090 sonrası genişletilmiş istatistikler.
         // Eski deploylar için fallback: yoksa get_submission_stats'e düş.
         supabase.rpc('get_admin_stats'),
@@ -235,19 +254,19 @@ export default function AdminPage() {
 
         {/* Filter tabs */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
-          {['pending', 'needs_revision', 'approved', 'rejected'].map(s => (
+          {FILTERS.map(item => (
             <button
-              key={s}
-              onClick={() => setFilter(s)}
+              key={item.key}
+              onClick={() => setFilter(item.key)}
               style={{
                 fontSize: 11, fontWeight: 500, padding: '4px 12px', borderRadius: 20,
-                background: filter === s ? '#534AB7' : '#fff',
-                color: filter === s ? '#fff' : '#666',
-                border: `0.5px solid ${filter === s ? '#534AB7' : '#e0e0e0'}`,
+                background: filter === item.key ? '#534AB7' : '#fff',
+                color: filter === item.key ? '#fff' : '#666',
+                border: `0.5px solid ${filter === item.key ? '#534AB7' : '#e0e0e0'}`,
                 cursor: 'pointer',
               }}
             >
-              {STATUS_LABELS[s]}
+              {item.label}
             </button>
           ))}
         </div>
@@ -297,6 +316,7 @@ export default function AdminPage() {
                   <span>
                     {sub.submitter_nickname ? `@${sub.submitter_nickname}` : 'Anonim'}
                   </span>
+                  <span>{sub.submission_origin === 'agent' ? 'Agent kaydı' : 'Kullanıcı kaydı'}</span>
                   {sub.submitter_email ? (
                     <span>{sub.submitter_email}</span>
                   ) : (
@@ -334,7 +354,7 @@ export default function AdminPage() {
                       loading={actionLoading === sub.id}
                       onClick={() => handleApprove(sub.id)}
                     />
-                    {sub.submitter_email ? (
+                    {sub.submission_origin === 'human' && sub.submitter_email ? (
                       <ActionBtn
                         label="Revize"
                         color="#3C3489"
@@ -342,14 +362,14 @@ export default function AdminPage() {
                         loading={actionLoading === sub.id}
                         onClick={() => { setReviseId(sub.id); setRejectId(null); setReviseNote('') }}
                       />
-                    ) : (
+                    ) : sub.submission_origin === 'human' ? (
                       <span
                         style={{ fontSize: 10, color: '#ccc', padding: '6px 10px' }}
                         title="E-posta yok — revize gönderilemez. Elden düzelt veya reddet."
                       >
                         Revize (✉ yok)
                       </span>
-                    )}
+                    ) : null}
                     <ActionBtn
                       label="Reddet"
                       color="#A32D2D"
@@ -361,7 +381,7 @@ export default function AdminPage() {
                 )}
 
                 {/* Revise composer */}
-                {reviseId === sub.id && (
+                {reviseId === sub.id && sub.submission_origin === 'human' && (
                   <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
                     <textarea
                       value={reviseNote}

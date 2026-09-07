@@ -681,9 +681,11 @@ def extract_fields(page, source_url: str, category: str | None) -> dict | None:
     # Ülke çıkmazsa ['*'] (global/her ülke) — [] olursa ülke-filtreli aramalarda
     # HİÇ görünmez; '*' ise hepsinde görünür (match_opportunities: '*'=any).
     age_min, age_max = extract_age_range(full_text)
+    apply_link = extract_apply_link(page, source_url)
     return {
         "title": html.unescape(title),
-        "url": source_url,
+        "url": apply_link or source_url,
+        "source_url": source_url,
         "category_slug": category,
         "host_countries": [country] if country else ["*"],
         "deadline_text": deadline,
@@ -696,6 +698,9 @@ def extract_fields(page, source_url: str, category: str | None) -> dict | None:
         "language_requirement": None,
         "submitter_nickname": "agent-reach",
         "submitter_email": None,
+        "status": "pending",
+        "submission_origin": "agent",
+        "review_stage": "agent_queue",
     }
 
 

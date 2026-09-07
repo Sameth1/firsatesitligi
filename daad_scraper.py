@@ -144,6 +144,7 @@ def build_record(sch, base, detail_url, category, deadline_text):
         "title":                (sch.get("nameEn") or sch.get("programmnameEn") or "").strip()
                                 or base.get("title"),
         "url":                  detail_url,
+        "source_url":           detail_url,
         "category_slug":        category,
         "deadline_text":        deadline_text,    # deadlines.js'ten (serbest metin) ya da None
         "host_countries":       ["DE"],           # DAAD → Almanya
@@ -157,6 +158,8 @@ def build_record(sch, base, detail_url, category, deadline_text):
         "funding_notes":        f"DAAD burs veritabanından çekildi — kaynak: {detail_url}",
         "submitter_nickname":   "daad-bot",
         "status":               "pending",
+        "submission_origin":    "agent",
+        "review_stage":         "agent_queue",
     }
 
 
