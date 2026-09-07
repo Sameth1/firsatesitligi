@@ -95,7 +95,7 @@ Proje üç katmandan oluşur:
 | HTTP & parsing | `requests`, `BeautifulSoup4` | Sayfa çekme ve HTML ayrıştırma |
 | Konfigürasyon | `python-dotenv` | `.env` ortam değişkenleri |
 | Keşif LLM'i | Groq API (Llama 4) | Arama sorgusu üretimi, sayfa analizi |
-| Doğrulama LLM'i | Google Gemini API (`gemini-2.5-flash`) | Submission açık/kapalı & kategori doğrulaması |
+| Doğrulama LLM'i | NVIDIA NIM API (`meta/llama-3.3-70b-instruct`, OpenAI-uyumlu, ücretsiz tier) | Submission açık/kapalı & kategori doğrulaması |
 | Genel scraping | Jina Reader | Herhangi bir URL → temiz markdown |
 | Web arama | DuckDuckGo (`ddgs`) | API anahtarı gerektirmeyen arama |
 
@@ -117,7 +117,7 @@ Fırsatlar doğrudan yayına girmez; bir **inceleme hattından** geçer. Bu, hem
                             ┌─────────────────────────────┤
                             │                             │
                        Katman 1                       Katman 2
-                       Heuristik (LLM'siz)             Gemini LLM
+                       Heuristik (LLM'siz)             NVIDIA NIM LLM
                        • kopya URL                     • durum: açık/kapalı?
                        • süresi geçmiş                 • kategori uygun mu?
                        • ölü bağlantı (404/410)        • güven: yüksek/orta/düşük
@@ -131,7 +131,7 @@ Fırsatlar doğrudan yayına girmez; bir **inceleme hattından** geçer. Bu, hem
 ### Karar mantığı (`validate_submissions.py`)
 
 1. **Katman 1 — Heuristikler (ücretsiz, LLM'siz).** Kopya URL, süresi geçmiş `deadline_text` veya 404/410 dönen bağlantı → otomatik **RED**. Bu kararlar LLM kotası harcamaz.
-2. **Katman 2 — Gemini LLM (yalnızca belirsiz HTTP-200 vakalar).** Sayfa açık ama durumu net değilse Gemini'ye sorulur. Gemini üç çıktı verir: `durum` (açık/kapalı/belirsiz), `kategori_uygun` (true/false), `guven` (yüksek/orta/düşük).
+2. **Katman 2 — NVIDIA NIM LLM (yalnızca belirsiz HTTP-200 vakalar).** Sayfa açık ama durumu net değilse OpenAI-uyumlu NVIDIA NIM API'sine sorulur. Model üç çıktı verir: `durum` (açık/kapalı/belirsiz), `kategori_uygun` (true/false), `guven` (yüksek/orta/düşük).
 3. **Karar:**
    - `kapalı` + güven yüksek/orta → **RED**
    - `kategori_uygun=false` + güven yüksek → **RED**
@@ -157,7 +157,7 @@ Tüm scriptler kök dizinde yer alır; `.env` dosyasından `SUPABASE_URL` + `SUP
 | `nasilgitmis_scraper.py` | nasilgitmis.com'dan Erasmus+/ESC/burs/staj fırsatlarını çeker | `submissions` (pending) |
 | `idealist_scraper.py` | idealist.org gönüllülük fırsatlarını çeker | `opportunities` |
 | `agent_reach_url_scraper.py` | Herhangi bir fırsat URL'sini Jina Reader'dan geçirip alan çıkarımı yapar | `submissions` (pending) |
-| `validate_submissions.py` | İki katmanlı doğrulama ajanı (heuristik + Gemini), uygun önerileri otomatik onaylar | `submissions` → `opportunities` |
+| `validate_submissions.py` | İki katmanlı doğrulama ajanı (heuristik + NVIDIA NIM LLM), uygun önerileri otomatik onaylar | `submissions` → `opportunities` |
 | `link_audit_runner.py` | Aktif fırsatların `official_url`'lerine GET atıp sağlık durumunu kaydeder | `opportunities.last_url_check_*` |
 | `fix_broken_links.py` | Bozuk URL'leri aday URL'lerle değiştirir; hiçbiri çalışmazsa `is_active=false` yapar | `opportunities` |
 
@@ -243,7 +243,7 @@ Proje, **GEO (Generative Engine Optimization)** — web sitelerinin ChatGPT, Cla
 
 ### 🚧 Devam Edenler
 
-- **LLM doğrulama hattının canlıya alınması.** `validate_submissions.py` kod olarak tamamlandı; otomatik onay akışı `agent_approve_submission` RPC'sine bağlandı. Şu an Gemini ücretsiz tier kota sınırı nedeniyle bekliyor — model değişimi veya faturalandırma ile çözülecek.
+- **LLM doğrulama hattının canlıya alınması.** `validate_submissions.py` kod olarak tamamlandı; otomatik onay akışı `agent_approve_submission` RPC'sine bağlandı. LLM sağlayıcısı NVIDIA NIM'e (ücretsiz tier) geçirildi.
 - Migration `094`'ün bağlı Supabase projesine uygulanması (canlı otomatik onaydan önce gerekli).
 - `nasilgitmis_scraper.py` ile toplanan pending submission'ların doğrulama hattından geçirilmesi.
 
@@ -288,7 +288,7 @@ Kök dizinde `.env` dosyası oluştur (bu dosya `.gitignore`'dadır — gizli ka
 ```
 SUPABASE_URL=https://xxx.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=eyJ...        # RLS'i bypass eder, gizli tut
-GEMINI_API_KEY=AIza...                  # validate_submissions.py için
+NVIDIA_API_KEY=nvapi-...                # validate_submissions.py için (build.nvidia.com, ücretsiz)
 GROQ_API_KEY=gsk_...                    # site_bulucu.py için
 ```
 
@@ -307,7 +307,7 @@ python validate_submissions.py --dry-run
 python validate_submissions.py --limit 10     # ilk 10 kaydı işle
 ```
 
-> ⚠️ `SUPABASE_SERVICE_ROLE_KEY` ve `GEMINI_API_KEY`/`GROQ_API_KEY` hassas anahtarlardır. `.env` dosyası asla commit'lenmemelidir.
+> ⚠️ `SUPABASE_SERVICE_ROLE_KEY` ve `NVIDIA_API_KEY`/`GROQ_API_KEY` hassas anahtarlardır. `.env` dosyası asla commit'lenmemelidir.
 
 ---
 

@@ -11,9 +11,9 @@ KATMAN 1 — ücretsiz heuristikler (LLM çağrısı YOK):
   • Ölü bağlantı → URL HTTP 404/410 dönüyorsa REDDET.
 
 KATMAN 2 — LLM (yalnızca belirsiz vakalar):
-  Sayfa HTTP 200 dönüyor ama açık/kapalı durumu net değil → LLM'e (DO Inference,
-  OpenAI-uyumlu) sorulur. Diğer HTTP durumları (403/429/5xx/timeout) LLM'e
-  gitmez; belirsiz olarak pending bırakılır.
+  Sayfa HTTP 200 dönüyor ama açık/kapalı durumu net değil → LLM'e (NVIDIA NIM,
+  OpenAI-uyumlu, ücretsiz tier) sorulur. Diğer HTTP durumları (403/429/5xx/
+  timeout) LLM'e gitmez; belirsiz olarak pending bırakılır.
 
 KARAR:
   kapalı / kategori-dışı → otomatik RED (submissions'a doğrudan PATCH; service
@@ -43,8 +43,8 @@ AUDIT MODU — --audit-opportunities:
 .env:
   SUPABASE_URL=...
   SUPABASE_SERVICE_ROLE_KEY=...
-  DIGITALOCEAN_INFERENCE_KEY=...   # OpenAI-uyumlu DO Inference anahtarı
-                                   # --audit-opportunities modunda gerekmez
+  NVIDIA_API_KEY=...   # https://build.nvidia.com (ücretsiz tier) — OpenAI-uyumlu
+                        # --audit-opportunities modunda gerekmez
 """
 
 import argparse
@@ -69,13 +69,14 @@ SUPABASE_URL = os.getenv(
 ).rstrip("/")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
-# LLM sağlayıcı — OpenAI-uyumlu chat/completions. Varsayılan: DigitalOcean
-# Inference (geniş limit, $ kredi). Azure $100 alternatifi de OpenAI-uyumlu;
-# yalnızca LLM_BASE_URL / LLM_MODEL ve anahtar env'i değişir, kod aynı kalır.
-LLM_API_KEY = os.getenv("DIGITALOCEAN_INFERENCE_KEY", "")
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://inference.do-ai.run/v1").rstrip("/")
-LLM_MODEL = os.getenv("LLM_MODEL", "openai-gpt-oss-120b")
-LLM_MIN_INTERVAL = 1.0        # çağrılar arası bekleme — DO limiti geniş
+# LLM sağlayıcı — OpenAI-uyumlu chat/completions. Varsayılan: NVIDIA NIM
+# (build.nvidia.com), kişisel kullanım için ücretsiz tier sunar. Başka bir
+# OpenAI-uyumlu sağlayıcıya geçmek için yalnızca LLM_BASE_URL / LLM_MODEL /
+# NVIDIA_API_KEY env'i değişir, kod aynı kalır.
+LLM_API_KEY = os.getenv("NVIDIA_API_KEY", "")
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://integrate.api.nvidia.com/v1").rstrip("/")
+LLM_MODEL = os.getenv("LLM_MODEL", "meta/llama-3.3-70b-instruct")
+LLM_MIN_INTERVAL = 1.5        # çağrılar arası bekleme — ücretsiz tier RPM sınırı
 # gpt-oss gibi reasoning modelleri akıl yürütmeyi de completion token'ı olarak
 # harcar (boş prompt'ta bile ~270 token). JSON content akıl yürütmeden SONRA
 # gelir; bütçe darsa content yarım/boş kalır (finish_reason='length') → parse
@@ -307,7 +308,7 @@ def page_to_text(html):
     return "\n".join(lines)[:PAGE_CHAR_LIMIT]
 
 
-# ─── LLM katmanı (OpenAI-uyumlu, DO Inference) ────────────────────────────────
+# ─── LLM katmanı (OpenAI-uyumlu, NVIDIA NIM) ──────────────────────────────────
 
 def _loads_lenient(t):
     """JSON'u savunmacı çözer. Düz parse başarısızsa metindeki ilk DENGELİ {...}
@@ -688,9 +689,9 @@ def main():
         return
 
     if not LLM_API_KEY:
-        print("Eksik ortam değişkeni: DIGITALOCEAN_INFERENCE_KEY — .env kontrol et.",
+        print("Eksik ortam değişkeni: NVIDIA_API_KEY — .env kontrol et.",
               file=sys.stderr)
-        print("DO Inference anahtarı: https://cloud.digitalocean.com/gen-ai",
+        print("NVIDIA NIM anahtarı (ücretsiz): https://build.nvidia.com",
               file=sys.stderr)
         sys.exit(1)
 
