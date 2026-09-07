@@ -257,17 +257,6 @@ def fetch_human_rejections():
     return res.json()
 
 
-def fetch_improvement_candidates():
-    res = requests.get(
-        f"{SUPABASE_URL}/rest/v1/agent_improvement_candidates",
-        headers=sb_headers(),
-        params={"select": "*", "order": "reject_count.desc"},
-        timeout=20,
-    )
-    res.raise_for_status()
-    return res.json()
-
-
 def run_feedback_report():
     """Yapılandırılmış insan redlerini kaynak ve neden koduna göre özetler."""
     rows = fetch_human_rejections()
@@ -302,17 +291,6 @@ def run_feedback_report():
         ]
         for reason, n in sorted(details, key=lambda item: (-item[1], item[0])):
             print(f"    - {reason}: {n}")
-
-    candidates = fetch_improvement_candidates()
-    print("\nScript iyileştirme adayları (5+ veya son 20'de >= %30):")
-    if not candidates:
-        print("  Yok")
-    for item in candidates:
-        rate = round(float(item["reject_rate"]) * 100)
-        print(f"  {item['source_nickname']} / {item['category_slug']} / "
-              f"{item['reason_code']}: {item['reject_count']}/{item['sample_size']} "
-              f"(%{rate}) — test edilip PR önerilmeli")
-
 
 def apply_decision(sub, eylem, gerekce, dry_run):
     """Kararı submissions tablosuna yazar.
@@ -519,8 +497,13 @@ def judge_with_llm(sub, url, http_note, page_text):
         f"HTTP: {http_note}\n\n"
         "İNSAN REDLERİNDEN ÖĞRENİLEN İLGİLİ HAFIZA\n"
         f"{sub.get('_memory_context') or '(yok)'}\n"
-        "Bu hafıza yalnızca dikkat ipucudur. Güncel sayfada bağımsız kanıt "
-        "bulmadan sırf hafıza nedeniyle otomatik red verme.\n\n"
+        "Bu hafıza geçmiş insan kararlarından öğrenilmiş karar emsalidir ve "
+        "bu kaydı değerlendirirken doğrudan kullanılmalıdır. example düşük, "
+        "warning tekrarlanan, strong güçlü emsal demektir. Eşleşen sorunu "
+        "özellikle ara; güncel sayfada aynı sorun görülüyorsa ağırlığına göre "
+        "red kararı ver. Güncel açık kanıt hafızayla çelişirse güncel kanıtı "
+        "üstün tut; yalnız hafıza satırına bakarak kanıtsız red verme. Hafıza "
+        "script değişikliği veya PR işi üretmez, kararın içinde kullanılır.\n\n"
         f"SAYFA METNİ (kısaltılmış):\n{page_text}"
     )
     body = {

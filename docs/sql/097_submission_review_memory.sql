@@ -235,37 +235,6 @@ where s.reviewed_by is not null
     where e.submission_id = s.id and e.actor_type = 'human'
   );
 
--- 5+ aynı red veya tam 20 son insan kararında >= %30: script iyileştirme adayı.
-create or replace view public.agent_improvement_candidates
-with (security_invoker = true) as
-with ranked as (
-  select e.*,
-    row_number() over (
-      partition by e.source_nickname, e.category_slug order by e.created_at desc
-    ) as rn
-  from public.submission_review_events e
-  where e.actor_type = 'human' and e.decision in ('approved', 'rejected')
-), last_twenty as (
-  select * from ranked where rn <= 20
-), totals as (
-  select source_nickname, category_slug, count(*) as sample_size
-  from last_twenty group by source_nickname, category_slug
-), rejected as (
-  select source_nickname, category_slug, reason_code, count(*) as reject_count
-  from last_twenty
-  where decision = 'rejected' and reason_code is not null
-  group by source_nickname, category_slug, reason_code
-)
-select r.source_nickname, r.category_slug, r.reason_code,
-  r.reject_count, t.sample_size,
-  round(r.reject_count::numeric / nullif(t.sample_size, 0), 3) as reject_rate
-from rejected r join totals t using (source_nickname, category_slug)
-where r.reject_count >= 5
-   or (t.sample_size = 20 and r.reject_count::numeric / t.sample_size >= 0.30);
-
-revoke all on public.agent_improvement_candidates from public, anon, authenticated;
-grant select on public.agent_improvement_candidates to service_role;
-
 -- Tek kullanımlık, hash'lenmiş revize bağlantıları.
 create table if not exists public.submission_revision_tokens (
   id uuid primary key default gen_random_uuid(),

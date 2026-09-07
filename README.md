@@ -194,6 +194,7 @@ PostgreSQL şeması Supabase üzerinde barınır. Migration'lar `docs/sql/` alt�
 | `095_submission_study_level.sql` | `submissions.study_level` kolonu + `agent_approve_submission` RPC'sinin çıkarılan kademeyi (`coalesce(sub.study_level, 'any')`) yayına yansıtması |
 | `096_reject_reason_required.sql` | İnsan admin reddinde boş/null gerekçeyi DB katmanında engeller |
 | `097_submission_review_memory.sql` | Kullanıcı/agent kuyrukları, kalıcı karar geçmişi, red hafızası ve tek kullanımlık revize bağlantıları |
+| `098_remove_manual_improvement_queue.sql` | Ayrı script/PR öneri kuyruğunu kaldırır; hafıza doğrudan agent kararında kullanılır |
 
 Migration'lar `npm run db:0XX` script'leriyle bağlı Supabase projesine uygulanır (bkz. `package.json`).
 
@@ -201,7 +202,7 @@ Ana tablolar:
 - **`opportunities`** — yayındaki fırsatlar; web uygulamasının gösterdiği veri.
 - **`submissions`** — inceleme bekleyen öneriler (`status`: pending / approved / needs_revision / rejected).
 - **`submission_review_events`** — insan, agent ve revize kararlarının değiştirilemez geçmişi.
-- **`agent_memories`** — insan redlerinden kaynak+kategori+neden bazında üretilen dikkat hafızası (1 örnek, 3 uyarı, 5 güçlü).
+- **`agent_memories`** — insan redlerinden kaynak+kategori+neden bazında öğrenilen karar hafızası (1 örnek, 3 uyarı, 5 güçlü); agent bunu sonraki kararında doğrudan kullanır.
 - **`categories`** — fırsat kategorileri (burs, staj, gönüllülük, ...).
 - **`admins`** — panel erişimi olan kullanıcılar.
 - **`documents`** — fırsata bağlı başvuru belgeleri.

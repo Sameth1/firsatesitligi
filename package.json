@@ -17,6 +17,7 @@
     "db:095": "npx supabase db query --linked -f docs/sql/095_submission_study_level.sql",
     "db:096": "npx supabase db query --linked -f docs/sql/096_reject_reason_required.sql",
     "db:097": "npx supabase db query --linked -f docs/sql/097_submission_review_memory.sql",
+    "db:098": "npx supabase db query --linked -f docs/sql/098_remove_manual_improvement_queue.sql",
     "db:insert-programs": "node scripts/insert_programs.js"
   },
   "dependencies": {
