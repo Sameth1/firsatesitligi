@@ -52,20 +52,25 @@ function DeadlineBadge({ days, deadline }: { days: number | null; deadline: stri
   )
 }
 
-export default function OpportunityCard({ opp }: { opp: Opportunity }) {
+export default function OpportunityCard({ opp, index = 0 }: { opp: Opportunity; index?: number }) {
   const urgent = opp.days_until_deadline !== null && opp.days_until_deadline <= 30
 
   return (
-    <div style={{
-      background: '#fff',
-      border: `0.5px solid ${urgent ? '#F09595' : '#e0e0e0'}`,
-      borderLeft: `3px solid ${urgent ? '#E24B4A' : opp.category_color}`,
-      borderRadius: 12,
-      padding: '16px 18px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 10,
-    }}>
+    <div
+      className="opp-card fx-fade-in-up"
+      style={{
+        background: '#fff',
+        border: `0.5px solid ${urgent ? '#F09595' : '#e0e0e0'}`,
+        borderLeft: `3px solid ${urgent ? '#E24B4A' : opp.category_color}`,
+        borderRadius: 12,
+        padding: '16px 18px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+        boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+        animationDelay: `${Math.min(index, 10) * 45}ms`,
+      }}
+    >
 
       {/* Üst satır: başlık + rozet */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
@@ -162,13 +167,14 @@ export default function OpportunityCard({ opp }: { opp: Opportunity }) {
         href={opp.official_url}
         target="_blank"
         rel="noopener noreferrer"
+        className="apply-link"
         style={{
           fontSize: 12, color: '#534AB7', fontWeight: 500,
           textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4,
           marginTop: 2,
         }}
       >
-        Resmi başvuru sayfasına git ↗
+        Resmi başvuru sayfasına git <span className="apply-arrow">↗</span>
       </a>
     </div>
   )

@@ -256,8 +256,12 @@ export default function Home() {
 
   // ─── FORM ───────────────────────────────────────────────
   if (step === 'form') return (
-    <main style={{ minHeight: '100vh', background: '#fafaf9', padding: '40px 16px' }}>
-      <div style={{ maxWidth: 600, margin: '0 auto' }}>
+    <main style={{
+      minHeight: '100vh',
+      background: 'linear-gradient(180deg, #fbfbfe 0%, #f6f5fb 45%, #f5f3fa 100%)',
+      padding: '40px 16px',
+    }}>
+      <div key="form" className="fx-fade-in-up" style={{ maxWidth: 600, margin: '0 auto' }}>
 
         {/* Header */}
         <AppHeader />
@@ -298,6 +302,7 @@ export default function Home() {
         <div style={{
           background: '#fff', border: '0.5px solid #e0e0e0',
           borderRadius: 16, padding: '24px 20px',
+          boxShadow: '0 20px 40px -28px rgba(83, 74, 183, 0.28), 0 1px 2px rgba(0,0,0,0.02)',
         }}>
 
           <SectionTitle>Profilini gir</SectionTitle>
@@ -417,13 +422,16 @@ export default function Home() {
           <button
             onClick={handleSearch}
             disabled={loading}
+            className="btn-primary"
             style={{
               width: '100%', padding: '12px', borderRadius: 10,
               background: loading ? '#AFA9EC' : '#534AB7',
               color: '#fff', border: 'none', fontSize: 14,
               fontWeight: 500, cursor: loading ? 'not-allowed' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
             }}
           >
+            {loading && <Spinner />}
             {loading ? 'Aranıyor...' : 'Fırsatları Göster →'}
           </button>
         </div>
@@ -433,8 +441,12 @@ export default function Home() {
 
   // ─── RESULTS ────────────────────────────────────────────
   return (
-    <main style={{ minHeight: '100vh', background: '#fafaf9', padding: '40px 16px' }}>
-      <div style={{ maxWidth: 680, margin: '0 auto' }}>
+    <main style={{
+      minHeight: '100vh',
+      background: 'linear-gradient(180deg, #fbfbfe 0%, #f6f5fb 45%, #f5f3fa 100%)',
+      padding: '40px 16px',
+    }}>
+      <div key="results" className="fx-fade-in-up" style={{ maxWidth: 680, margin: '0 auto' }}>
 
         {/* Header */}
         <AppHeader
@@ -442,6 +454,7 @@ export default function Home() {
           rightSlot={
             <button
               onClick={() => setStep('form')}
+              className="ghost-btn"
               style={{
                 fontSize: 12, color: '#534AB7', background: 'none',
                 border: '0.5px solid #AFA9EC', borderRadius: 8,
@@ -488,7 +501,7 @@ export default function Home() {
 
         {/* Gevşetilen filtreler banner'ı */}
         {relaxedFilters.length > 0 && results.length > 0 && (
-          <div style={{
+          <div className="fx-fade-in-up" style={{
             background: '#FAEEDA', border: '0.5px solid #E6C79A',
             borderRadius: 10, padding: '10px 14px', marginBottom: 16,
             fontSize: 12, color: '#633806', lineHeight: 1.5,
@@ -501,7 +514,7 @@ export default function Home() {
 
         {/* Cards */}
         {filtered.length === 0 ? (
-          <div style={{
+          <div className="fx-fade-in" style={{
             textAlign: 'center', padding: '60px 20px',
             color: '#aaa', fontSize: 14,
           }}>
@@ -509,6 +522,7 @@ export default function Home() {
             <br />
             <button
               onClick={() => setStep('form')}
+              className="ghost-btn"
               style={{ marginTop: 12, color: '#534AB7', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}
             >
               Filtreleri genişlet →
@@ -516,8 +530,8 @@ export default function Home() {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
-            {filtered.map(opp => (
-              <OpportunityCard key={opp.id} opp={opp} />
+            {filtered.map((opp, i) => (
+              <OpportunityCard key={opp.id} opp={opp} index={i} />
             ))}
           </div>
         )}
@@ -606,12 +620,13 @@ function Picker({ placeholder, value, valueLabel, options, onChange, emptyHint }
       </button>
 
       {open && (
-        <div style={{
+        <div className="fx-scale-in" style={{
           position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0,
           background: '#fff', border: '0.5px solid #e0e0e0', borderRadius: 8,
-          boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+          boxShadow: '0 12px 28px -8px rgba(0,0,0,0.14)',
           maxHeight: 320, overflowY: 'auto', zIndex: 20,
           padding: 4,
+          transformOrigin: 'top',
         }}>
           {options.length > 8 && (
             <input
@@ -699,6 +714,7 @@ function StepPill({ label, active, done }: { label: string; active?: boolean; do
       fontSize: 11, fontWeight: 500, padding: '4px 10px', borderRadius: 20,
       background: done ? '#E1F5EE' : active ? '#534AB7' : '#f0f0f0',
       color: done ? '#085041' : active ? '#fff' : '#aaa',
+      transition: 'background 0.25s ease, color 0.25s ease',
     }}>
       {label}
     </span>
@@ -730,6 +746,7 @@ function Tag({ label, selected, onClick, color }: {
   return (
     <button
       onClick={onClick}
+      className="pill-btn"
       style={{
         fontSize: 11, fontWeight: 500, padding: '4px 10px', borderRadius: 20,
         background: selected ? color : 'transparent',
@@ -749,6 +766,7 @@ function FilterChip({ label, active, onClick }: {
   return (
     <button
       onClick={onClick}
+      className="pill-btn"
       style={{
         fontSize: 11, fontWeight: 500, padding: '4px 10px', borderRadius: 20,
         background: active ? '#534AB7' : '#fff',
@@ -759,6 +777,18 @@ function FilterChip({ label, active, onClick }: {
     >
       {label}
     </button>
+  )
+}
+
+function Spinner() {
+  return (
+    <span
+      className="fx-spin"
+      style={{
+        display: 'inline-block', width: 13, height: 13, borderRadius: '50%',
+        border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff',
+      }}
+    />
   )
 }
 

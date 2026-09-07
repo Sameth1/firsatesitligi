@@ -96,6 +96,7 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
     <div
       ref={overlayRef}
       onClick={e => { if (e.target === overlayRef.current) onClose() }}
+      className="fx-fade-in"
       style={{
         position: 'fixed', inset: 0, zIndex: 100,
         background: 'rgba(0,0,0,0.35)',
@@ -103,11 +104,11 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
         padding: 16,
       }}
     >
-      <div style={{
+      <div className="fx-scale-in" style={{
         background: '#fff', borderRadius: 16,
         maxWidth: 520, width: '100%', maxHeight: '90vh',
         overflowY: 'auto', padding: '24px 20px',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+        boxShadow: '0 24px 64px -12px rgba(0,0,0,0.25)',
       }}>
         {status === 'done' ? (
           <div style={{ textAlign: 'center', padding: '20px 0' }}>

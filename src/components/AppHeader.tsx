@@ -24,12 +24,13 @@ export default function AppHeader({ searchSnapshot, rightSlot }: AppHeaderProps)
           {rightSlot}
           <button
             onClick={() => setShowModal(true)}
+            className="pill-btn"
             style={{
               fontSize: 12, fontWeight: 500, padding: '6px 14px', borderRadius: 20,
               background: 'transparent', color: '#534AB7',
               border: '1px solid #534AB7',
               cursor: 'pointer', whiteSpace: 'nowrap',
-              transition: 'background 0.15s, color 0.15s',
+              transition: 'background 0.15s, color 0.15s, transform 0.15s',
             }}
             onMouseEnter={e => {
               (e.target as HTMLButtonElement).style.background = '#534AB7';
