@@ -29,6 +29,8 @@ Kullanım:
   python validate_submissions.py                # tüm pending'leri işle
   python validate_submissions.py --limit 10     # ilk 10
   python validate_submissions.py --dry-run      # DB'ye yazma, kararı göster
+  python validate_submissions.py --recheck --dry-run --limit 10
+                                               # daha önce ajan notu alan pending'leri yeniden değerlendir
   python validate_submissions.py --audit-opportunities   # aşağıya bak
 
 AUDIT MODU — --audit-opportunities:
@@ -53,6 +55,7 @@ import os
 import re
 import sys
 import time
+from collections import Counter
 from datetime import date, datetime, timezone
 
 import requests
@@ -75,7 +78,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 # NVIDIA_API_KEY env'i değişir, kod aynı kalır.
 LLM_API_KEY = os.getenv("NVIDIA_API_KEY", "")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://integrate.api.nvidia.com/v1").rstrip("/")
-LLM_MODEL = os.getenv("LLM_MODEL", "meta/llama-3.3-70b-instruct")
+LLM_MODEL = os.getenv("LLM_MODEL", "nvidia/nemotron-3-super-120b-a12b")
 LLM_MIN_INTERVAL = 1.5        # çağrılar arası bekleme — ücretsiz tier RPM sınırı
 # gpt-oss gibi reasoning modelleri akıl yürütmeyi de completion token'ı olarak
 # harcar (boş prompt'ta bile ~270 token). JSON content akıl yürütmeden SONRA
@@ -84,6 +87,7 @@ LLM_MIN_INTERVAL = 1.5        # çağrılar arası bekleme — ücretsiz tier RP
 LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "3000"))
 
 AGENT_MARKER = "[ajan]"       # admin_note öneki — tekrar çalıştırmada atlamak için
+HUMAN_REJECT_RE = re.compile(r"^\[insan\]\s+RED:([a-z0-9_]+)\s+—\s+(.+)$")
 PAGE_CHAR_LIMIT = 6000
 
 HTTP_HEADERS = {
@@ -120,6 +124,8 @@ Sana bir submission'ın bilgileri, BUGÜNÜN TARİHİ ve orijinal sayfasının m
 
 TARİH KURALI: Açık/kapalı kararını yalnızca sana verilen "BUGÜNÜN TARİHİ"ne göre ver — kendi tarih bilgine GÜVENME. Sayfadaki son başvuru tarihi, etkinlik tarihi veya proje tarihi bu tarihten önceyse fırsat GEÇMİŞTİR → durum="kapali". Tarihi bütün olarak (gün-ay-yıl) bugünle karşılaştır; yıl tek başına yeterli ipucu değildir.
 
+GÜNCELLİK KURALI: "Apply now", "Applications are invited" veya çalışan bir başvuru linki tek başına fırsatın bugün açık olduğuna yüksek güvenli kanıt değildir; eski ilanlarda bu ifadeler kalabilir. Açık kararı için gelecekte bir tarih, açık olduğu belirtilen güncel dönem/yıl veya başvurunun şu anda kabul edildiğini gösteren eşdeğer güncel kanıt ara. Böyle bir güncellik kanıtı yoksa durum="belirsiz" ve guven en fazla "orta" olsun; otomatik onaya gönderme.
+
 2) kategori_uygun — Sayfa gerçekten bu fırsatı anlatıyor mu ve platforma uygun mu?
    - true: Gerçek bir fırsat ilanı, belirtilen kategoriyle makul örtüşüyor ve gencin ücret ödemesini gerektirmiyor. TEK bir fırsat = tek program, tek son başvuru tarihi, tek başvuru süreci.
    - false: Fırsat ilanı değil (genel blog, ana sayfa, giriş sayfası, alakasız ürün/hizmet, hata sayfası); VEYA ücretli/ticari program; VEYA kategoriyle hiç ilgisi yok.
@@ -143,8 +149,14 @@ def sb_headers():
     }
 
 
-def fetch_pending(limit=None):
-    """pending submission'ları çeker. Service key RLS'i bypass eder."""
+def fetch_pending(limit=None, recheck=False):
+    """Pending submission'ları çeker. Service key RLS'i bypass eder.
+
+    Varsayılan akış, daha önce ajan tarafından işlenen kayıtları idempotentlik
+    için atlar. ``recheck=True`` eski ajan notlu pending kayıtları da yeniden
+    değerlendirir; zamanla geçen deadline'ları ve değişen sayfaları yakalamak
+    için kullanılır.
+    """
     params = {
         "status": "eq.pending",
         "select": "id,title,url,category_slug,eligibility_notes,deadline_text,admin_note",
@@ -154,8 +166,11 @@ def fetch_pending(limit=None):
                        headers=sb_headers(), params=params, timeout=20)
     res.raise_for_status()
     rows = res.json()
-    # Ajanın daha önce işlediklerini atla — idempotent
-    rows = [r for r in rows if not (r.get("admin_note") or "").startswith(AGENT_MARKER)]
+    # Ajanın daha önce işlediklerini varsayılan olarak atla — idempotent.
+    # --recheck özellikle eski pending kararlarını tazelemek için bu süzgeci açar.
+    if not recheck:
+        rows = [r for r in rows
+                if not (r.get("admin_note") or "").startswith(AGENT_MARKER)]
     return rows[:limit] if limit else rows
 
 
@@ -179,6 +194,64 @@ def fetch_known_urls():
     except requests.exceptions.RequestException as e:
         print(f"Uyarı: mevcut URL listesi çekilemedi — kopya kontrolü zayıf ({e})")
         return set()
+
+
+def fetch_human_rejections():
+    """İnsan adminlerin reddettiği kayıtları geri bildirim raporu için çeker.
+
+    Bu kayıtlar yalnızca analiz edilir; agent tarafından yeniden açılmaz veya
+    durumları değiştirilmez.
+    """
+    res = requests.get(
+        f"{SUPABASE_URL}/rest/v1/submissions",
+        headers=sb_headers(),
+        params={
+            "status": "eq.rejected",
+            "reviewed_by": "not.is.null",
+            "select": "submitter_nickname,admin_note,reviewed_at",
+            "order": "reviewed_at.desc",
+            "limit": "5000",
+        },
+        timeout=20,
+    )
+    res.raise_for_status()
+    return res.json()
+
+
+def run_feedback_report():
+    """Yapılandırılmış insan redlerini kaynak ve neden koduna göre özetler."""
+    rows = fetch_human_rejections()
+    by_reason = Counter()
+    by_source = Counter()
+    by_source_reason = Counter()
+
+    for row in rows:
+        source = (row.get("submitter_nickname") or "manual/unknown").strip()
+        note = (row.get("admin_note") or "").strip()
+        match = HUMAN_REJECT_RE.match(note)
+        if match:
+            reason = match.group(1)
+        elif note:
+            reason = "legacy_unstructured"
+        else:
+            reason = "missing_reason"
+        by_reason[reason] += 1
+        by_source[source] += 1
+        by_source_reason[(source, reason)] += 1
+
+    print(f"İnsan tarafından reddedilen toplam kayıt: {len(rows)}")
+    print("\nNedene göre:")
+    for reason, count in by_reason.most_common():
+        print(f"  {reason}: {count}")
+    print("\nKaynağa göre:")
+    for source, count in by_source.most_common():
+        print(f"  {source}: {count}")
+        details = [
+            (reason, n) for (item_source, reason), n in by_source_reason.items()
+            if item_source == source
+        ]
+        for reason, n in sorted(details, key=lambda item: (-item[1], item[0])):
+            print(f"    - {reason}: {n}")
 
 
 def apply_decision(sub, eylem, gerekce, dry_run):
@@ -253,8 +326,8 @@ def approve_submission(sub, dry_run):
 def parse_deadline(text):
     """submission.deadline_text içinden bir tarih çıkarır (date veya None).
     Sırayla denenen formatlar: ISO (2026-06-25), noktalı (25.06.2026),
-    Türkçe-ay (25 haziran 2026), İngilizce ay-önce (june 25, 2026) ve
-    İngilizce gün-önce (25 june 2026)."""
+    Türkçe-ay (25 haziran 2026), İngilizce ay-önce (june 25, 2026 / april
+    22nd, 2026) ve İngilizce gün-önce (25 june 2026)."""
     if not text:
         return None
     t = str(text).lower()
@@ -272,7 +345,9 @@ def parse_deadline(text):
         if m and m.group(2) in TR_AYLAR:
             d, mo, y = int(m.group(1)), TR_AYLAR[m.group(2)], int(m.group(3))
     if d is None:                                              # EN ay-önce: june 25, 2026
-        m = re.search(r"([a-z]+)\s+(\d{1,2}),?\s+(\d{4})", t)
+        m = re.search(
+            r"([a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})", t
+        )
         if m and m.group(1) in EN_AYLAR:
             mo, d, y = EN_AYLAR[m.group(1)], int(m.group(2)), int(m.group(3))
     if d is None:                                              # EN gün-önce: 25 june 2026
@@ -410,9 +485,16 @@ def judge_with_llm(sub, url, http_note, page_text):
         except requests.exceptions.RequestException as e:
             print(f"  ! LLM ağ hatası: {e}")
             return None
-        if res.status_code == 429:               # rate limit aşıldı
-            wait = 20 * (attempt + 1)
-            print(f"  LLM 429 (rate limit) — {wait}s bekleniyor...")
+        if res.status_code in (429, 500, 502, 503, 504) and attempt < 2:
+            # NVIDIA ücretsiz endpoint'i yoğunlukta 503 döndürebiliyor. 429 için
+            # daha uzun, diğer geçici sunucu hataları için kademeli kısa backoff.
+            if res.status_code == 429:
+                wait = 20 * (attempt + 1)
+                reason = "rate limit"
+            else:
+                wait = 5 * (attempt + 1)
+                reason = "geçici sunucu hatası"
+            print(f"  LLM {res.status_code} ({reason}) — {wait}s bekleniyor...")
             time.sleep(wait)
             continue
         break
@@ -672,16 +754,30 @@ def main():
     parser.add_argument("--limit", type=int, help="En fazla bu kadar kayıt işle")
     parser.add_argument("--dry-run", action="store_true",
                         help="DB'ye yazma, sadece kararı göster")
+    parser.add_argument("--recheck", action="store_true",
+                        help="Daha önce [ajan] notu almış pending kayıtları da "
+                             "yeniden değerlendir")
     parser.add_argument("--audit-opportunities", action="store_true",
                         help="Submission yerine yayındaki fırsatları denetle: "
                              "last_verified_at boş olanların URL'i ölü ya da son "
                              "başvuru tarihi geçmişse is_active=false yapar")
+    parser.add_argument("--feedback-report", action="store_true",
+                        help="İnsan adminlerin red nedenlerini kaynak ve neden "
+                             "koduna göre salt okunur raporla")
     args = parser.parse_args()
 
     if not SUPABASE_KEY:
         print("Eksik ortam değişkeni: SUPABASE_SERVICE_ROLE_KEY — .env kontrol et.",
               file=sys.stderr)
         sys.exit(1)
+
+    if args.feedback_report:
+        try:
+            run_feedback_report()
+        except requests.exceptions.RequestException as e:
+            print(f"Red geri bildirimi okunamadı: {e}", file=sys.stderr)
+            sys.exit(1)
+        return
 
     # Audit modu yalnızca heuristik (URL + tarih) çalışır — LLM yok, anahtar gerekmez.
     if args.audit_opportunities:
@@ -697,7 +793,7 @@ def main():
 
     print("Pending submission'lar çekiliyor...")
     try:
-        subs = fetch_pending(args.limit)
+        subs = fetch_pending(args.limit, recheck=args.recheck)
     except requests.exceptions.RequestException as e:
         print(f"Supabase'den okuma hatası: {e}", file=sys.stderr)
         sys.exit(1)

@@ -95,7 +95,7 @@ Proje üç katmandan oluşur:
 | HTTP & parsing | `requests`, `BeautifulSoup4` | Sayfa çekme ve HTML ayrıştırma |
 | Konfigürasyon | `python-dotenv` | `.env` ortam değişkenleri |
 | Keşif LLM'i | Groq API (Llama 4) | Arama sorgusu üretimi, sayfa analizi |
-| Doğrulama LLM'i | NVIDIA NIM API (`meta/llama-3.3-70b-instruct`, OpenAI-uyumlu, ücretsiz tier) | Submission açık/kapalı & kategori doğrulaması |
+| Doğrulama LLM'i | NVIDIA NIM API (`nvidia/nemotron-3-super-120b-a12b`, OpenAI-uyumlu, ücretsiz tier) | Submission açık/kapalı & kategori doğrulaması |
 | Genel scraping | Jina Reader | Herhangi bir URL → temiz markdown |
 | Web arama | DuckDuckGo (`ddgs`) | API anahtarı gerektirmeyen arama |
 
@@ -192,6 +192,7 @@ PostgreSQL şeması Supabase üzerinde barınır. Migration'lar `docs/sql/` alt�
 | `093_match_filter_is_active.sql` | Eşleştirme filtresine `is_active` koşulu |
 | `094_agent_approve_submission.sql` | Service-role otomatik onay RPC'si (admin guard'sız) |
 | `095_submission_study_level.sql` | `submissions.study_level` kolonu + `agent_approve_submission` RPC'sinin çıkarılan kademeyi (`coalesce(sub.study_level, 'any')`) yayına yansıtması |
+| `096_reject_reason_required.sql` | İnsan admin reddinde boş/null gerekçeyi DB katmanında engeller |
 
 Migration'lar `npm run db:0XX` script'leriyle bağlı Supabase projesine uygulanır (bkz. `package.json`).
 
@@ -238,14 +239,9 @@ Proje, **GEO (Generative Engine Optimization)** — web sitelerinin ChatGPT, Cla
 - Site-spesifik scraper'lar (`nasilgitmis_scraper.py`, `idealist_scraper.py`)
 - Genel amaçlı URL scraper'ı (`agent_reach_url_scraper.py`, Jina Reader)
 - Link sağlığı otomasyonu (`link_audit_runner.py`, `fix_broken_links.py`)
-- `agent_approve_submission` service-role onay RPC'si (migration 094)
-- İki katmanlı doğrulama ajanı + otomatik onay mantığı (`validate_submissions.py`)
-
-### 🚧 Devam Edenler
-
-- **LLM doğrulama hattının canlıya alınması.** `validate_submissions.py` kod olarak tamamlandı; otomatik onay akışı `agent_approve_submission` RPC'sine bağlandı. LLM sağlayıcısı NVIDIA NIM'e (ücretsiz tier) geçirildi.
-- Migration `094`'ün bağlı Supabase projesine uygulanması (canlı otomatik onaydan önce gerekli).
-- `nasilgitmis_scraper.py` ile toplanan pending submission'ların doğrulama hattından geçirilmesi.
+- `agent_approve_submission` service-role onay RPC'si; migration 094/095'in bağlı Supabase projesinde doğrulanması
+- İki katmanlı doğrulama ajanı + otomatik onay mantığı (`validate_submissions.py`); NVIDIA NIM entegrasyonunun canlı API çağrısıyla doğrulanması
+- `nasilgitmis_scraper.py` ile toplanan pending submission'ların doğrulama hattından geçirilmesi
 
 ### 🗺️ Planlananlar
 
@@ -305,6 +301,11 @@ python nasilgitmis_scraper.py
 # Bekleyen submission'ları doğrula (DB'ye yazmadan önizleme)
 python validate_submissions.py --dry-run
 python validate_submissions.py --limit 10     # ilk 10 kaydı işle
+python validate_submissions.py --recheck --dry-run --limit 10
+# Daha önce [ajan] notu alan pending kayıtları yeniden değerlendir
+
+# İnsan adminlerin red nedenlerini kaynak/neden bazında raporla (veri değiştirmez)
+python validate_submissions.py --feedback-report
 ```
 
 > ⚠️ `SUPABASE_SERVICE_ROLE_KEY` ve `NVIDIA_API_KEY`/`GROQ_API_KEY` hassas anahtarlardır. `.env` dosyası asla commit'lenmemelidir.
