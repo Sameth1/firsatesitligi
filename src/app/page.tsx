@@ -5,6 +5,7 @@ import { Opportunity, MatchParams } from '@/types'
 import OpportunityCard from '@/components/OpportunityCard'
 import EmailCapture from '@/components/EmailCapture'
 import AppHeader from '@/components/AppHeader'
+import Hero from '@/components/hero/Hero'
 
 const COUNTRIES: { code: string; label: string; language: string | null }[] = [
   { code: 'DE', label: '🇩🇪 Almanya',     language: 'Almanca' },
@@ -164,6 +165,12 @@ export default function Home() {
   const [field, setField] = useState<string | null>(null)
   const [languageLevel, setLanguageLevel] = useState<string | null>(null)
 
+  const formRef = useRef<HTMLElement>(null)
+
+  function scrollToForm() {
+    formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   const selectedCountry = COUNTRIES.find(c => c.code === country) ?? null
   const targetLanguage = selectedCountry?.language ?? null
 
@@ -256,10 +263,13 @@ export default function Home() {
 
   // ─── FORM ───────────────────────────────────────────────
   if (step === 'form') return (
-    <main style={{
+    <>
+    <Hero onStart={scrollToForm} />
+    <main ref={formRef} style={{
       minHeight: '100vh',
       background: 'linear-gradient(180deg, #fbfbfe 0%, #f6f5fb 45%, #f5f3fa 100%)',
-      padding: '40px 16px',
+      padding: '56px 16px 40px',
+      scrollMarginTop: 0,
     }}>
       <div key="form" className="fx-fade-in-up" style={{ maxWidth: 600, margin: '0 auto' }}>
 
@@ -437,6 +447,7 @@ export default function Home() {
         </div>
       </div>
     </main>
+    </>
   )
 
   // ─── RESULTS ────────────────────────────────────────────

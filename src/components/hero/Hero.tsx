@@ -1,0 +1,207 @@
+'use client'
+
+/**
+ * Açılış sahnesi — WebGL arka plan + GSAP ile koreografi.
+ * İçerik metni DOM'da düz metin olarak durur (SEO/GEO için önemli); GSAP yalnız
+ * görünürlük/dönüşüm animasyonu ekler, metni parçalayıp yeniden yazmaz.
+ */
+
+import { useEffect, useRef } from 'react'
+import dynamic from 'next/dynamic'
+import gsap from 'gsap'
+import { ScrollTrigger } from 'gsap/ScrollTrigger'
+
+// WebGL yalnız istemcide — SSR'da canvas oluşturulmaz.
+const HeroCanvas = dynamic(() => import('./HeroCanvas'), { ssr: false })
+
+const HEADLINE = ['Yurt', 'dışı', 'fırsatlar,', 'herkese', 'açık.']
+
+export default function Hero({ onStart }: { onStart: () => void }) {
+  const rootRef = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    gsap.registerPlugin(ScrollTrigger)
+
+    const ctx = gsap.context(() => {
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      if (reduced) {
+        gsap.set('[data-fx]', { opacity: 1, y: 0, clipPath: 'inset(0% 0 0 0)' })
+        return
+      }
+
+      const tl = gsap.timeline({ defaults: { ease: 'power3.out' } })
+
+      tl.fromTo('[data-fx="eyebrow"]',
+          { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.6 })
+        .fromTo('[data-fx="word"]',
+          { opacity: 0, yPercent: 115 },
+          { opacity: 1, yPercent: 0, duration: 0.9, stagger: 0.075 }, '-=0.3')
+        .fromTo('[data-fx="sub"]',
+          { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.7 }, '-=0.5')
+        .fromTo('[data-fx="cta"]',
+          { opacity: 0, y: 18, scale: 0.96 },
+          { opacity: 1, y: 0, scale: 1, duration: 0.6 }, '-=0.45')
+        .fromTo('[data-fx="proof"] > *',
+          { opacity: 0, y: 12 },
+          { opacity: 1, y: 0, duration: 0.5, stagger: 0.08 }, '-=0.35')
+        .fromTo('[data-fx="cue"]', { opacity: 0 }, { opacity: 1, duration: 0.5 }, '-=0.2')
+
+      // kaydırınca içerik yukarı süzülür — hero ile form arasında derinlik
+      gsap.to('[data-fx="stack"]', {
+        yPercent: -14,
+        opacity: 0.15,
+        ease: 'none',
+        scrollTrigger: {
+          trigger: rootRef.current,
+          start: 'top top',
+          end: 'bottom top',
+          scrub: 0.4,
+        },
+      })
+
+      // aşağı ok sürekli nefes alsın
+      gsap.to('[data-fx="cue"] span', {
+        y: 7,
+        repeat: -1,
+        yoyo: true,
+        duration: 1.1,
+        ease: 'sine.inOut',
+      })
+    }, rootRef)
+
+    return () => ctx.revert()
+  }, [])
+
+  return (
+    <section
+      ref={rootRef}
+      style={{
+        position: 'relative',
+        minHeight: '100svh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden',
+        isolation: 'isolate',
+      }}
+    >
+      <HeroCanvas />
+
+      <div
+        data-fx="stack"
+        style={{
+          position: 'relative', zIndex: 1,
+          width: '100%', maxWidth: 860,
+          padding: '0 24px',
+          textAlign: 'center',
+          color: '#fff',
+        }}
+      >
+        <div
+          data-fx="eyebrow"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase',
+            fontWeight: 600, color: 'rgba(255,255,255,0.92)',
+            background: 'rgba(255,255,255,0.14)',
+            border: '1px solid rgba(255,255,255,0.28)',
+            backdropFilter: 'blur(8px)',
+            padding: '7px 16px', borderRadius: 999, marginBottom: 26,
+          }}
+        >
+          <span className="fx-pulse-dot" style={{
+            width: 6, height: 6, borderRadius: '50%',
+            background: '#5BE8C8', display: 'inline-block',
+          }} />
+          Ücretsiz · Hesap gerektirmez
+        </div>
+
+        <h1 style={{
+          fontSize: 'clamp(38px, 8vw, 84px)',
+          lineHeight: 1.02,
+          fontWeight: 600,
+          letterSpacing: '-0.035em',
+          margin: '0 0 22px',
+          color: '#fff',
+          textWrap: 'balance',
+          textShadow: '0 2px 30px rgba(24, 16, 74, 0.35)',
+        }}>
+          {HEADLINE.map((word, i) => (
+            <span key={i} style={{ display: 'inline-block', overflow: 'hidden', verticalAlign: 'bottom' }}>
+              <span data-fx="word" style={{ display: 'inline-block' }}>
+                {word}
+              </span>
+              {i < HEADLINE.length - 1 && <span>&nbsp;</span>}
+            </span>
+          ))}
+        </h1>
+
+        <p
+          data-fx="sub"
+          style={{
+            fontSize: 'clamp(15px, 2.1vw, 19px)',
+            lineHeight: 1.55,
+            color: 'rgba(255,255,255,0.88)',
+            maxWidth: 620, margin: '0 auto 34px',
+          }}
+        >
+          Burs, staj, gönüllülük, yaz okulu ve değişim programları — profilini gir,
+          sana uyanları saniyeler içinde gör.
+        </p>
+
+        <div data-fx="cta">
+          <button
+            onClick={onStart}
+            className="hero-cta"
+            style={{
+              fontSize: 15, fontWeight: 600,
+              padding: '15px 34px', borderRadius: 999,
+              border: 'none', cursor: 'pointer',
+              color: '#2A2470',
+              background: 'linear-gradient(120deg, #FFFFFF 0%, #E6E2FF 100%)',
+              boxShadow: '0 18px 38px -18px rgba(10, 6, 45, 0.75)',
+            }}
+          >
+            Fırsatları keşfet →
+          </button>
+        </div>
+
+        <div
+          data-fx="proof"
+          style={{
+            display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center',
+            marginTop: 30,
+          }}
+        >
+          {['Erasmus+ & ESC', 'DAAD bursları', 'Gönüllülük', 'Yaz okulları'].map(label => (
+            <span key={label} style={{
+              fontSize: 11.5, fontWeight: 500,
+              color: 'rgba(255,255,255,0.9)',
+              background: 'rgba(255,255,255,0.12)',
+              border: '1px solid rgba(255,255,255,0.22)',
+              backdropFilter: 'blur(6px)',
+              padding: '6px 13px', borderRadius: 999,
+            }}>
+              {label}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <button
+        data-fx="cue"
+        onClick={onStart}
+        aria-label="Forma in"
+        style={{
+          position: 'absolute', bottom: 26, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 1, background: 'none', border: 'none', cursor: 'pointer',
+          color: 'rgba(52, 44, 118, 0.72)', fontSize: 11, fontWeight: 600,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+        }}
+      >
+        Aşağı kaydır
+        <span style={{ display: 'block', fontSize: 15, lineHeight: 1 }}>↓</span>
+      </button>
+    </section>
+  )
+}
