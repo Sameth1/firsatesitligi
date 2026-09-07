@@ -1,0 +1,1163 @@
+{
+  "generated_at": "2026-09-07T21:04:04.139770+00:00",
+  "read_only": true,
+  "counts": {
+    "kapatilmali": 30,
+    "admin_kontrolu": 64,
+    "zaten_kapali": 17
+  },
+  "records": [
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-08-31"
+      ],
+      "submission_id": "30c86b44-f263-4a0f-8b15-7b0bd226f47f",
+      "opportunity_id": "a8473830-489a-474e-8ba8-a30794fd4481",
+      "baslik": "In-Country Palestinian Territories",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=57652675"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-06-15"
+      ],
+      "submission_id": "0b138322-b644-4b2b-b8fb-21ff549e2901",
+      "opportunity_id": "ad5b56a8-c589-4779-a523-98b5238fe956",
+      "baslik": "Zukunftsnetzwerk Weimarer Dreieck",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=57871508"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-06-15"
+      ],
+      "submission_id": "c1fece00-9b45-4678-bf90-ec70bbbb4719",
+      "opportunity_id": "4c00726f-8145-4233-ad3f-49ed3913a280",
+      "baslik": "Zukunftsnetzwerk Weimarer Dreieck",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=57871506"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-08-31"
+      ],
+      "submission_id": "b7619976-fee9-47e2-98fd-2d376627569b",
+      "opportunity_id": "77111d1f-5131-47c2-b40d-75df6ee8bc1a",
+      "baslik": "Third Country Scholarships for Postgraduate Studies for Students from",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=50015282"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "faf57d97-1b20-4916-b733-75e08e52c7b2",
+      "opportunity_id": "c0e582f2-9faa-4af0-a08f-77d83b6d5c3f",
+      "baslik": "University Winter Courses",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=50046485"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "f42c9d86-963f-42b1-932c-4d9cdd1884e6",
+      "opportunity_id": "ce395c6c-a9e0-4b58-b4d5-beaf783c5ea1",
+      "baslik": "DAAD-K.C.Wong Postdoc Fellowships",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=50015446"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "0fce4faf-5332-473c-9faa-f550578a7f54",
+      "opportunity_id": "50410085-9455-40e2-b2af-adf09814cc14",
+      "baslik": "Study Scholarships - Master Studies for All Academic Disciplines",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=50026200"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "e216dda4-2dfd-46aa-8ff7-a3c15afabbfd",
+      "opportunity_id": "a043855a-cbe3-4a0c-87c4-d07e99069d03",
+      "baslik": "CAS-DAAD Regierungsstipendien - Programme for the Promotion of",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=50094047"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "db7a61c6-67b8-4087-8cb4-5a2a0df32446",
+      "opportunity_id": "ff90bf48-a59b-4f88-b524-2706a1fdbdaa",
+      "baslik": "University Summer Courses",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=50035295"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-09-03"
+      ],
+      "submission_id": "31144605-9d62-4466-a879-5eb6794bb858",
+      "opportunity_id": "11420574-98ca-4777-9f3e-e1329a3968a5",
+      "baslik": "Co-financed Short-Term Research Grant Brazil",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=57378178"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "0c25b12b-2d6c-4056-85c6-9d19bd0bc606",
+      "opportunity_id": "4c5fc5c1-0524-4ab5-91c6-713083ce35e3",
+      "baslik": "Hanse-Wissenschaftskolleg (HWK): Funded Regular and Junior Fellowships",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000666"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "fa3567b6-ae1e-4e75-9b54-1a4307f4a2f1",
+      "opportunity_id": "912f264b-cb78-43a4-912c-bc04d2999d92",
+      "baslik": "Sino-German Postdoc Program",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=50015315"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik",
+        "başvuru uygunluk koşulları eksik"
+      ],
+      "submission_id": "92634bda-8c87-49f5-8051-c185017611d0",
+      "opportunity_id": "e7c80151-c137-40c9-be3b-703414b1fc07",
+      "baslik": "DAAD Konrad Zuse School of Excellence in Reliable Artificial Intelligence (relAI): Scholarship for Master's Students",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000612"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "2a2cab1d-0cf2-4f98-bbc1-3cb4ffa80942",
+      "opportunity_id": "6abcbdfc-d51e-478b-938e-59f89287d579",
+      "baslik": "DAAD Zuse School of Embedded Composite Artificial Intelligence (SECAI): Scholarships for Master's students in AI",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000611"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik",
+        "başvuru uygunluk koşulları eksik"
+      ],
+      "submission_id": "7b4aea3a-b3e5-467f-99c2-e72842fedce3",
+      "opportunity_id": "672aa938-8581-4900-adf8-121c00b55ddb",
+      "baslik": "Taiwan Summer Institute Programme",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=50015361"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "2dea49e8-a69b-49f5-ad66-e87fe17c9002",
+      "opportunity_id": "8a9f9445-024d-4a16-9359-353319eeda09",
+      "baslik": "Gilman-DAAD Germany Scholarships",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=57649740"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "69d2ee99-fafb-4cf2-996c-5d1e2f220b4f",
+      "opportunity_id": "bc4c7fb7-deb0-4080-8b72-562fc0ad6f33",
+      "baslik": "Leibniz Institute of European History Mainz: Fellowships for Doctoral Students",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000556"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "f99e1d1d-b541-4b84-b09b-6034edd4ed7a",
+      "opportunity_id": "f5e4b7f4-d110-41c1-a002-a4ba826489c9",
+      "baslik": "BECAL Master",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=57593463"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "bbc4e4ac-0471-4275-a712-56281bb13fde",
+      "opportunity_id": "287848b3-4ff7-4b7d-b3fb-7197cf71cf1f",
+      "baslik": "SBW Berlin Scholarship",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000494"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "b6997664-aba9-4bd5-a536-d68ea75797b7",
+      "opportunity_id": "d071f66c-c3e5-4fee-906c-9629083ca472",
+      "baslik": "RWTH International Academy: Women in Engineering Scholarship",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000422"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "5f05816b-663a-4c66-ad41-c28d0844b35b",
+      "opportunity_id": "6bdaeafc-4d16-4b4c-afbf-8830346b4298",
+      "baslik": "Ernst Ludwig Ehrlich Studienwerk: Doctoral Scholarship",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000418"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "0e1f4c03-602b-49ad-8ce4-f52e042d0571",
+      "opportunity_id": "7ea3a43f-84f1-45fa-ba27-802316f5f8c8",
+      "baslik": "German Academic Scholarship Foundation: Doctoral Scholarships",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000406"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "1ba1b746-31be-4cd6-9ecb-f3faad590440",
+      "opportunity_id": "ece5c442-2c96-4a4b-ba9a-81db7e3e61ea",
+      "baslik": "Evangelisches Studienwerk: Scholarship for Students With Refugee Status",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000384"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "a042a2c8-45a5-40c3-952b-724d56d53025",
+      "opportunity_id": "bc1e0a0b-2236-414f-878f-a384a9c1715f",
+      "baslik": "Rosa Luxemburg Foundation: Scholarship Programme for International Doctoral Students",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000220"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "4c8eec5e-f337-4dfa-ace6-18dfcb87941a",
+      "opportunity_id": "fe611f1b-f280-4e73-a893-0438fba1c36e",
+      "baslik": "German Federal Environmental Foundation (DBU): Fellowship Programme with CEE Countries",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000203"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "08e26e03-8097-4a1d-bf6b-54b7357aef51",
+      "opportunity_id": "c7028c7a-cbbc-440d-9c3a-927422e0abb9",
+      "baslik": "Alexander von Humboldt-Foundation: Georg Forster Research Fellowship for Postdocs",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000195"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "b7064adc-394f-4ce4-b19e-76b9c6711a31",
+      "opportunity_id": "f298440e-5c42-4ff1-965b-5d11cb0eea00",
+      "baslik": "Ministry of Science, Research and the Arts Baden-Württemberg: Mathilde Planck Contract Lectureships (MPL)",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000172"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "ab896482-7186-407e-8761-b55504d560a1",
+      "opportunity_id": "cf4297a9-6d37-4b03-9237-d455351432ae",
+      "baslik": "Alexander von Humboldt Foundation: Humboldt Research Fellowship for Experienced Researchers",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000169"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "2583c6e5-37f2-4330-8ad0-bfe7967359ad",
+      "opportunity_id": "1918f15a-ce77-414b-891a-ea02bd52176c",
+      "baslik": "Gerda Henkel Foundation: PhD Scholarships",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000165"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "0baa9aae-334d-42f9-be55-f62b5deb06bc",
+      "opportunity_id": "7900a26f-4c2c-48a4-96c9-ea27fad2211a",
+      "baslik": "Boehringer Ingelheim Fonds: PhD Fellowships",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000164"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "28d3be70-6390-4b9a-a271-22e4e20765fd",
+      "opportunity_id": "e8dc6235-086e-494f-aa96-0c87e732531c",
+      "baslik": "Friedrich Ebert Foundation: Scholarship for International Students",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000153"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "b77b05ca-6834-4abb-b7b7-36fecebeb019",
+      "opportunity_id": "c980c177-2eee-4724-b58d-31f34ddf8d67",
+      "baslik": "Boehringer Ingelheim Fonds: Travel Grants",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000148"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "fbeed4c5-bb17-46f3-85bc-d1ba8929c30f",
+      "opportunity_id": "ed2314bc-9831-4ee5-9d3b-7168bec850e8",
+      "baslik": "Herzog August Bibliothek: Doctoral Fellowships",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000144"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik",
+        "başvuru uygunluk koşulları eksik"
+      ],
+      "submission_id": "32499611-0412-4d27-85f1-4c029e248f21",
+      "opportunity_id": "c82fd651-d9b1-43ca-a45b-739b7ce85321",
+      "baslik": "German Research Foundation (DFG): Heisenberg Programme",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000137"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "08b0f342-74fc-4050-ab1a-29a4bade24ed",
+      "opportunity_id": "13b32a89-c01d-46c5-bec8-0eed9b8654e5",
+      "baslik": "Copernicus Hamburg: Copernicus Fellowship Programme",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000136"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "0091c454-93e7-456d-861a-412190541275",
+      "opportunity_id": "c4438a2a-63d6-4dbe-bbb5-a8e954bd39b6",
+      "baslik": "Hanns Seidel Foundation: PhD scholarships",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000132"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "3b8ede17-21b5-4c31-98c3-b3cfecec6610",
+      "opportunity_id": "3cffc34e-d6fd-437a-b1f1-d2050678c692",
+      "baslik": "Foundation of the Berlin House of Representatives: Grant Programme",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000131"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "e24f2928-0a23-4140-9ed9-a5d803cf0a3b",
+      "opportunity_id": "ceef4e11-3925-49fb-84f9-c8c1d907d220",
+      "baslik": "Gerda Henkel Foundation: Research Scholarships",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000130"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "8c0d9644-e674-4fa3-ab5b-30860ed73ae6",
+      "opportunity_id": "3e2e074a-5a04-446c-b68b-b11e6f833036",
+      "baslik": "Alexander von Humboldt-Foundation: Georg Forster Research Fellowship for Experienced Researchers",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000129"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "2e7ea434-425e-40f4-89f2-67669cb98a81",
+      "opportunity_id": "415e56c2-424f-4a44-8817-489e161a107e",
+      "baslik": "German Federal Environmental Foundation (DBU): PhD Scholarship Programme",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000127"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "85a39b60-6b34-481b-a071-2b169cbdc7fb",
+      "opportunity_id": "ec001ecf-4236-48e1-ac99-b7f800986c2c",
+      "baslik": "Friedrich Ebert Foundation: Scholarship for International Doctoral Students",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000126"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "00548c2d-ea69-4ec1-a952-d6b063a0e234",
+      "opportunity_id": "93efb2db-b4ae-423f-acc9-f4ff8e8eedae",
+      "baslik": "Heinrich Böll Foundation: Student Scholarship",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000124"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik",
+        "başvuru uygunluk koşulları eksik"
+      ],
+      "submission_id": "52fdfcec-c6da-4ada-9614-b048a7062f5b",
+      "opportunity_id": "7fa0e988-5b86-49d5-a757-022221102d8d",
+      "baslik": "Herder Institute for Historical Research on East-Central Europe: Herder Fellowship",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000123"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "f05a1731-6fb8-448d-87dc-cbb8e22dc2be",
+      "opportunity_id": "185c908e-3ad3-4963-9e8a-61e0cc8668d0",
+      "baslik": "Evangelisches Studienwerk: Scholarship for Students",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000117"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "e963c5ef-e9c5-4723-8f37-eb1a9cb30286",
+      "opportunity_id": "c18b8439-dc72-4ff2-87f6-c8b4ec30bab2",
+      "baslik": "Catholic Academic Exchange Service (KAAD): Eastern Europe Programme",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000114"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik",
+        "başvuru uygunluk koşulları eksik"
+      ],
+      "submission_id": "42b81675-78ba-49e8-88c0-f7908263b310",
+      "opportunity_id": "4d006b62-baff-418a-8dae-63443cd1c62f",
+      "baslik": "Heinrich Böll Foundation: PhD scholarship",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000113"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "82348588-343a-4756-8e1b-29197cf0e72c",
+      "opportunity_id": "6e43c651-d7d6-469d-ae36-c7a51ed56898",
+      "baslik": "Alexander von Humboldt Foundation: Humboldt Research Fellowships for Postdoctoral Researchers",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000110"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "30ba94ed-a05e-427d-b3a1-6bb56eba1450",
+      "opportunity_id": "c2ea2d35-8d0f-4bc5-8253-2cebe17d64a3",
+      "baslik": "Konrad-Adenauer-Stiftung (KAS): Scholarship Programme for International Students",
+      "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=10000108"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "ev sahibi ülke/global bilgisi eksik",
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "c6e50bfc-33fa-4310-af93-3fd32cd3ac37",
+      "opportunity_id": "0a96473d-69e0-42d7-bf5a-09c20026bcba",
+      "baslik": "The KPMG Data Analytics - Virtual Internship",
+      "url": "https://www.insidesherpa.com/virtual-internships/theme/m7W4GMqeT3bh9Nb2c/KPMG-Data-Analytics-Virtual-Internship"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik",
+        "başvuru uygunluk koşulları eksik"
+      ],
+      "submission_id": "283b5981-c80f-4258-8442-80abbfcb1b19",
+      "opportunity_id": "33edd65c-1e6d-4243-81a3-4bd631fd05a0",
+      "baslik": "Marketing & Communications Internships in Valencia, Spain (Paid)",
+      "url": "https://www.internhq.com/destinations/spain/marketing-and-communications-in-valencia/"
+    },
+    {
+      "sinif": "zaten_kapali",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik",
+        "başvuru uygunluk koşulları eksik"
+      ],
+      "submission_id": "339b1680-2186-4a10-bc87-49a768d2edd9",
+      "opportunity_id": "0264b32b-24bd-40bf-bd29-88e67293c0d4",
+      "baslik": "OECD Internship Programme 2021",
+      "url": "https://oecd.taleo.net/careersection/ext_2/joblist.ftl?lang=en"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "ev sahibi ülke/global bilgisi eksik",
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "d28f3dce-aead-4d36-bd57-a15a78a037ff",
+      "opportunity_id": "c7f0f575-73fd-4f71-bbc5-911bc4877e85",
+      "baslik": "Internship Opportunities (Afreximbank) 2023 - Youth Opportunities",
+      "url": "https://www.afreximbank.com/careers/vacancies/internship/internship-opportunities/"
+    },
+    {
+      "sinif": "zaten_kapali",
+      "nedenler": [
+        "ev sahibi ülke/global bilgisi eksik",
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "3f7d386a-565d-4539-8470-6eca9c85779e",
+      "opportunity_id": "0f7bf901-6c21-47cb-a552-2724566fb8ac",
+      "baslik": "The Visiting Student Research Program 2026 at KAUST",
+      "url": "https://admissions.kaust.edu.sa/study"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "ev sahibi ülke/global bilgisi eksik",
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "52b9bc9c-55cc-47bb-b394-13b28980e484",
+      "opportunity_id": "164e48e7-78cb-4958-a24f-e34b56132b93",
+      "baslik": "African Union Internship Program 2026",
+      "url": "https://career2.successfactors.eu/careers?company=africanuni"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "ev sahibi ülke/global bilgisi eksik",
+        "tam ve işlenebilir son başvuru tarihi eksik",
+        "başvuru uygunluk koşulları eksik"
+      ],
+      "submission_id": "1d940efd-0258-4517-b9db-60cee011de14",
+      "opportunity_id": "c547462c-3797-4c6d-8237-a23be6b5b12c",
+      "baslik": "IFAD 2026 Internship Opportunity for Students and Graduates",
+      "url": "https://job.ifad.org/psc/IFHRPRDE/CAREERS/JOBS/c/HRS_HRAM_FL.HRS_CG_SEARCH_FL.GBL?Page=HRS_APP_JBPST_FL&JobOpeningId=2096&PostingSeq=1&SiteId=1000&languageCd=ENG&FOCUS=Applicant&ifad_back=y"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-06-26"
+      ],
+      "submission_id": "9d54dfc9-1c53-41cb-9ef3-ac8e60832a41",
+      "opportunity_id": "32b0e081-e879-40cf-88a7-3ed1607f9345",
+      "baslik": "CBCF State Farm Communications Internship Program 2026",
+      "url": "https://cbcfinc.academicworks.com/opportunities/2794"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-06-15"
+      ],
+      "submission_id": "fd341c60-c68b-48fa-a6a6-1cabde26406c",
+      "opportunity_id": "70abd4e8-461e-4474-bbd8-338c4e624182",
+      "baslik": "Applicaton for CSA Campus Ambassador Programme 2026 is open now !!!",
+      "url": "https://form.jotform.com/261346036031042"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "ev sahibi ülke/global bilgisi eksik",
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "68d52d6d-8877-4927-9242-2955eccad455",
+      "opportunity_id": "f99d5011-3fac-45ce-8c06-06968e19044d",
+      "baslik": "Asian Development Bank (ADB) Visiting Fellow Program",
+      "url": "https://www.adb.org/site/careers/adb-visiting-fellow-program"
+    },
+    {
+      "sinif": "zaten_kapali",
+      "nedenler": [
+        "kategori eksik",
+        "tam ve işlenebilir son başvuru tarihi eksik",
+        "finansman türü eksik veya geçersiz",
+        "başvuru uygunluk koşulları eksik"
+      ],
+      "submission_id": "0275b626-2400-4899-a647-0315bebb08a5",
+      "opportunity_id": "7a5b9632-53a1-4f59-b266-09e597cdbd03",
+      "baslik": "Open Call for Idea: AdamStart COVID-19 Challenge 2020",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSdl2Tqhv0dDgt8ynDhGLBjr4aFJMTtGVragEFsiyOiS5Y73Qw/viewform"
+    },
+    {
+      "sinif": "zaten_kapali",
+      "nedenler": [
+        "kategori eksik",
+        "tam ve işlenebilir son başvuru tarihi eksik",
+        "finansman türü eksik veya geçersiz"
+      ],
+      "submission_id": "75ae874c-1ff8-414d-95c4-00801457f749",
+      "opportunity_id": "c18c8446-e137-47eb-96ba-c485e68bebf1",
+      "baslik": "Apply for CERN European Research Council (ERC) grants",
+      "url": "https://jobs.smartrecruiters.com/oneclick-ui/company/71459607/job/1443983386/publication/743999679390197"
+    },
+    {
+      "sinif": "zaten_kapali",
+      "nedenler": [
+        "kategori eksik",
+        "ev sahibi ülke/global bilgisi eksik",
+        "tam ve işlenebilir son başvuru tarihi eksik",
+        "finansman türü eksik veya geçersiz"
+      ],
+      "submission_id": "93e1b0ba-c9bb-47bc-852b-8d732015457e",
+      "opportunity_id": "bf925e57-517c-4f37-ad68-f231b6e3451f",
+      "baslik": "Apply Now! The Global Resilience Fund for Girls and Young Women",
+      "url": "https://www.tfaforms.com/4824055"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "kategori eksik",
+        "ev sahibi ülke/global bilgisi eksik",
+        "tam ve işlenebilir son başvuru tarihi eksik",
+        "finansman türü eksik veya geçersiz",
+        "başvuru uygunluk koşulları eksik"
+      ],
+      "submission_id": "68419a4d-0b30-43d6-b2d6-67cd0c14726e",
+      "opportunity_id": "1e83893a-f4b7-445a-a86e-da29bbea456e",
+      "baslik": "Wikipedia AfroCreatives WikiProject +film",
+      "url": "https://meta.wikimedia.org/wiki/AfroCreatives_WikiProject/Afro_Creatives_WikiProject_+film"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "kategori eksik",
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "26c4fe49-456e-4209-baeb-bd7c76c190ed",
+      "opportunity_id": "ea4e6e08-415c-4ea4-8dc5-0db4977c30a5",
+      "baslik": "Data Journalism Grants 2023 - Youth Opportunities",
+      "url": "https://pulitzercenter.tfaforms.net/236721"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "kategori eksik",
+        "ev sahibi ülke/global bilgisi eksik",
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "49fb470a-0c5c-4943-998c-dc748e3a7588",
+      "opportunity_id": "c0c689a4-5076-441d-92df-47474d1c93b4",
+      "baslik": "Fund for Women Journalists 2023 - Youth Opportunities",
+      "url": "https://iwmf.submittable.com/submit/159321/howard-g-buffett-fund-for-women-journalists-rolling-deadline"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "kategori eksik",
+        "ev sahibi ülke/global bilgisi eksik",
+        "tam ve işlenebilir son başvuru tarihi eksik",
+        "finansman türü eksik veya geçersiz"
+      ],
+      "submission_id": "765bac09-525a-400e-842b-28dd0f220f18",
+      "opportunity_id": "15b18232-94d6-47e8-92cc-5ac1603354f2",
+      "baslik": "Generations: Global Grant 2024",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLScnVxKP7LbuwY86nLMEt7KYSzP1a9PebCznR5w9NtxOStgn4Q/viewform"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-07-15"
+      ],
+      "submission_id": "daaf7235-ccfe-4fa9-bd8c-09d73ba0e3b9",
+      "opportunity_id": "aefb643c-8191-49a5-bb78-2c4dbb3e995c",
+      "baslik": "Science and SciLifeLab Prize for Young Scientists 2026",
+      "url": "https://www.science.org/content/prize-award/science-and-scilifelab-prize-young-scientists"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-06-14"
+      ],
+      "submission_id": "f5532d15-bb7b-44cf-92b9-94af11b0fa12",
+      "opportunity_id": "700ed165-b09d-4929-bb85-1c4afd05d815",
+      "baslik": "Nelson Mandela Essay Prize Competition 2026 by ASAP",
+      "url": "https://academicsstand.org/news/2025-nelson-mandela-essay-prize-competition"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-08-01"
+      ],
+      "submission_id": "4e4afb4c-0657-4e8b-9295-538f83b6f364",
+      "opportunity_id": "7c3d727b-e3a2-416f-a5a6-a8eb7d6e39e1",
+      "baslik": "The Interledger on Campus (IoC) Mini-Grant Program in Online 2026",
+      "url": "https://accounts.submittable.com/u/login/identifier?state=hqFo2SA4YTJwMHNuWnk3cFBWNXlWcHBZd245T0NxcTVxTXFKeKFur3VuaXZlcnNhbC1sb2dpbqN0aWTZIEdtZUhoX1pOODRpV0xZWkkxbkVvNTAySGcwTFJNVnNwo2NpZNkgRmZpZ1l1TFp1VFVQdkNKQktxWlBOcHIzMzBtRk1lM3Olb3JnaWS0b3JnX1lMRTlyTFhPbXVCNkpOcGOnb3JnbmFtZdksZ21zLTZmN2IxZmQ4LTY3N2ItNGJmMS05YWM5LTRmNGMxNWM0NDc1YS1lbXA"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-07-01"
+      ],
+      "submission_id": "d1d41fdf-d09d-45a1-90b0-67ed0e56fff0",
+      "opportunity_id": "f044222e-8461-4f2d-a437-f01c10851b78",
+      "baslik": "The Young Climate Prize 2026 | The World Around",
+      "url": "https://theworldaround.submittable.com/submit/9f9064c2-c328-4dfe-87bb-4800d634edd4/apply-today"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-07-30"
+      ],
+      "submission_id": "8434160b-7d5e-4b53-96cf-09adf7197be8",
+      "opportunity_id": "fd733ed1-fd97-4241-8032-f82365931eb6",
+      "baslik": "KPMG Private Enterprise Global Tech Innovator Competition 2026",
+      "url": "https://www.meridianwest.eu.com/jfe/form/SV_2mCzYssTxyx3peS"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-06-13"
+      ],
+      "submission_id": "a84f10a3-30e1-479b-8255-7f5d67a35323",
+      "opportunity_id": "737043f7-5624-4e1c-82f9-e15d82e403e5",
+      "baslik": "The Kurt Schork Freelance Award in International Journalism 2026",
+      "url": "https://ksmfund.org/submissions/"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-06-16"
+      ],
+      "submission_id": "d7417d9e-80de-477f-9635-189d38887ef1",
+      "opportunity_id": "48226ac8-dd2c-4c7c-850c-e3d9764a2b5b",
+      "baslik": "Science & Technology Pioneer Award for Women in 2026",
+      "url": "https://www.cwi-portal.com/submit/348791/2027-science-and-technology-pioneer-award"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-06-15"
+      ],
+      "submission_id": "162e5a50-5e4c-4f56-baca-81c3cf04019d",
+      "opportunity_id": "63ef9be0-2722-4aab-a97a-1ad3d99cf7d2",
+      "baslik": "One Young World's The Pankaj Award to End Conflict 2026",
+      "url": "https://apply.oneyoungworld.com/scholarship/form/the-pankaj-award-to-end-conflict"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-07-12"
+      ],
+      "submission_id": "5f575e7a-8b81-41da-9bd4-76928b1d64ad",
+      "opportunity_id": "6051e6e9-3eee-48b2-acc2-a21a32014a97",
+      "baslik": "RELX Environmental Challenge 2026: Win $75k Full Grant",
+      "url": "https://relxenvironmentalchallenge.awardsplatform.com/"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "94c14fca-54a7-4597-83a8-63f4b1215ac1",
+      "opportunity_id": "eb461e59-6763-416b-8ec1-655f5fb548c0",
+      "baslik": "Fondation Rainbow Bridge MBA Scholarships for African and Asian Women - Youth Opportunities",
+      "url": "http://www.mba.hec.edu/Fees-Funding/Scholarships/Fondation-Rainbow-Bridge"
+    },
+    {
+      "sinif": "zaten_kapali",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "69957fb2-b62e-4648-ad80-35ec54dffcfc",
+      "opportunity_id": "66a64897-b40c-4e95-8b13-192913660c1e",
+      "baslik": "Eni-Oxford Africa Scholarships 2024 (Full Scholarship)",
+      "url": "https://www.sbs.ox.ac.uk/oxford-experience/scholarships-and-funding/eni-oxford-africa-scholarships"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "ev sahibi ülke/global bilgisi eksik",
+        "başvuru uygunluk koşulları eksik"
+      ],
+      "submission_id": "adfa411f-b76b-4b7c-9a85-a5bfe929d0c1",
+      "opportunity_id": "c4cbc43b-e603-4982-8d59-695e26e21e7e",
+      "baslik": "The Schwarzman Scholars Master’s Program at Tsinghua University",
+      "url": "https://connect.schwarzmanscholars.org/apply/"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-08-15"
+      ],
+      "submission_id": "5b71dd5d-2db7-4bf1-8cd8-73af97b74832",
+      "opportunity_id": "868855c8-9f01-45f2-8a7b-e4a6a4022cb0",
+      "baslik": "Griffith University Vice Chancellor's International Scholarship 2026",
+      "url": "https://www.griffith.edu.au/international/scholarships-finance/scholarships/application"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "ev sahibi ülke/global bilgisi eksik",
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "a19ca73c-7c43-4adb-9a4c-791b76ae4b1f",
+      "opportunity_id": "bfbf5caf-1673-43d1-b442-4fd16be4e2bd",
+      "baslik": "Turkish Government Research Fellowship Program",
+      "url": "https://tbbs.turkiyeburslari.gov.tr/auth/register"
+    },
+    {
+      "sinif": "zaten_kapali",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "9120d313-bc1e-4257-bcd4-6e0f4824d4e7",
+      "opportunity_id": "8bfb5580-3ca6-486e-8008-d2e64219017a",
+      "baslik": "EDUFI Fellowships Programme 2019 in Finland- Apply Now",
+      "url": "http://www.cimo.fi/programmes/edufi_scholarships/edufi_fellowships"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "ev sahibi ülke/global bilgisi eksik",
+        "tam ve işlenebilir son başvuru tarihi eksik",
+        "başvuru uygunluk koşulları eksik"
+      ],
+      "submission_id": "dd4f2479-a1b5-45d5-9a9b-39d7b5745d73",
+      "opportunity_id": "a7f35f08-b4df-4424-8110-f36fb4db165a",
+      "baslik": "Virtual Fellowship Program by Savvy for Aspiring and Early-Stage Entrepreneurs",
+      "url": "https://savvyfellows.com/apply/"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "a4833332-38dc-402a-b7d0-927b4107c898",
+      "opportunity_id": "d063768b-ba6d-4eb2-8a6f-013d55fe2498",
+      "baslik": "Georg Forster Research Fellowship - Youth Opportunities",
+      "url": "https://service.humboldt-foundation.de/pls/web/pub_register.main?p_package=gf&p_lang=en"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "ev sahibi ülke/global bilgisi eksik",
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "7a08bc43-0a30-4679-8455-256e0bed8748",
+      "opportunity_id": "03967658-5f7b-45c7-aa09-129330803ae2",
+      "baslik": "Pledre Virtual Schools Incubator Program 2022",
+      "url": "https://pledre.com/incubator"
+    },
+    {
+      "sinif": "zaten_kapali",
+      "nedenler": [
+        "ev sahibi ülke/global bilgisi eksik",
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "d20c944d-f848-4306-a709-131347a5c17f",
+      "opportunity_id": "d2a4e094-733f-48ba-8640-e16c270d557a",
+      "baslik": "Global Youth Climate Fellowship Program 2022",
+      "url": "https://www.gy4es.org/fellowship"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "ev sahibi ülke/global bilgisi eksik",
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "bdb89c23-ffcf-417e-84b3-88be2fc312dc",
+      "opportunity_id": "8af885fd-1626-4e62-8720-7f7a94df5d61",
+      "baslik": "Agora Fellowship in African Countries for Christians 2026",
+      "url": "https://forms.office.com/pages/responsepage.aspx?id=Aih8mYZ3BEeZSgpfhNJ09gTSaXznIiJNgLlD-4hTVphURTlIVEYwMkUyMDg0TTlHVTNMQURXNTc2VC4u&route=shorturl"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-06-14"
+      ],
+      "submission_id": "231d1be3-1b9f-4092-899a-6123b1d93489",
+      "opportunity_id": "bc722162-0b1f-4859-9f93-825fe0ae13be",
+      "baslik": "International Journalist's Programmes George Weidenfeld Fellowship 2026",
+      "url": "https://ijp.org/en/programmes/greatbritain/"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-06-26"
+      ],
+      "submission_id": "d16ac448-a36e-4caf-8f43-2791528e4def",
+      "opportunity_id": "6e901bb3-76cc-4ee3-85fe-533746c49b06",
+      "baslik": "The Royal Society Short Industry Fellowship 2026 in United Kingdom",
+      "url": "https://grants.royalsociety.org/"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-08-26"
+      ],
+      "submission_id": "f583d910-df35-447c-9f23-5c6d748f544a",
+      "opportunity_id": "79ae4076-b2d0-4a37-b37e-fc9e00730a45",
+      "baslik": "The Green Leaders Fellowship by the Green Institute in Nigeria 2026",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSeq_DopHotVynfWFDDTsX5rN-tnubTkOhe68AttOKX7JDwZAQ/viewform"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-08-16"
+      ],
+      "submission_id": "3cb17b33-47d6-4185-8fbe-fcc466ddf66b",
+      "opportunity_id": "749bf2eb-60a7-4e4d-9d30-1dac8ce71924",
+      "baslik": "The Ford Philanthropy Fellowship 2026 (Fully Funded)",
+      "url": "https://watson.is/ford-philanthropy-fellowship-application/"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "yayından sonra hiç doğrulanmamış"
+      ],
+      "submission_id": "f8987844-0316-4044-8f15-36617ed79ac6",
+      "opportunity_id": "ef930ad1-9f8e-4cd2-898a-e46a9bd8dd6b",
+      "baslik": "CaribOx Visiting Fellowship Scheme in Caribbean 2027",
+      "url": "https://caribox.site.ox.ac.uk/articles/caribox-visiting-fellowship-scheme-2027"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-06-16"
+      ],
+      "submission_id": "d0f05cbe-9482-47eb-b574-32cf013ec2e1",
+      "opportunity_id": "1e4b8c7d-cf3f-48f9-b8d4-3cf0e477d9c9",
+      "baslik": "Apply Now: TWAS-CUI Postgraduate Fellowship 2026 in Pakistan",
+      "url": "https://onlineforms.twas.org/apply/308"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-06-16"
+      ],
+      "submission_id": "3defbaee-2963-483c-a562-96cd1fc85247",
+      "opportunity_id": "565e3d3a-88e4-4425-b5b7-63bb0ad43e61",
+      "baslik": "The IJP German-Japanese Fellowship Programme 2026",
+      "url": "https://ijp.org/wp-content/uploads/2026/04/IJP_Call-for-Applications-German-Japanese-Programme-2026.pdf"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-06-26"
+      ],
+      "submission_id": "946ac2b9-7082-4ae6-ac51-b72b8a538370",
+      "opportunity_id": "950baf9a-892f-48bb-93d4-8446840a2555",
+      "baslik": "Next Generation Foresight Practitioner (NGFP) Fellowship 2027",
+      "url": "https://apply.nextgenforesight.org/register"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-06-25"
+      ],
+      "submission_id": "afb4e86b-c3af-4b7f-a856-46e2a1af4fde",
+      "opportunity_id": "115ae957-b01d-46f9-9b11-277293b23461",
+      "baslik": "FIAS Fellowship Programme 2027/28 application is open now",
+      "url": "https://www.fias-fp.eu/fellowships/call-applications-20272028"
+    },
+    {
+      "sinif": "zaten_kapali",
+      "nedenler": [
+        "kategori eksik",
+        "ev sahibi ülke/global bilgisi eksik",
+        "tam ve işlenebilir son başvuru tarihi eksik",
+        "başvuru uygunluk koşulları eksik"
+      ],
+      "submission_id": "d6c0065f-20a2-4377-ac84-ee6d1b0d7e74",
+      "opportunity_id": "16f59ec1-1d79-4644-b3b1-c8bca5c346c4",
+      "baslik": "🌱 16 New ESC Volunteering Opportunities in Europe",
+      "url": "https://youthworkshub.org/16124"
+    },
+    {
+      "sinif": "zaten_kapali",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "094a3088-bbec-4d7a-8ef6-0a49e559ec00",
+      "opportunity_id": "1f419d57-31c6-4240-a0d0-db670fb414ca",
+      "baslik": "Almanya Erasmus+ Gençlik Projesi 2026",
+      "url": "https://nasilgitmis.com/almanya-erasmus-genclik-projesi-2026/"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-06-10"
+      ],
+      "submission_id": "0d46ffd0-a1b7-4b01-a366-fd4633717755",
+      "opportunity_id": "b63cb856-2266-41e1-9cda-985a5fd1c20f",
+      "baslik": "Almanya Erasmus+ Gençlik Değişimi 2026 – Dortmund Proj",
+      "url": "https://drive.google.com/file/u/0/d/1__RMn2hDtBrr-ulgEnOQHzf0JB5a9y4H/view?usp=sharing&pli=1"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-06-30"
+      ],
+      "submission_id": "4a429f77-2c7c-426f-83da-819da65c00f6",
+      "opportunity_id": "5cc7d978-c750-455b-8ce3-9e3a4f3d171f",
+      "baslik": "Polonya Erasmus+ Gençlik Değişimi 2026",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSflKtsf7Crm9KAZLXtkfHS8LAzjkJR5bgpsSSFZUy9-rlH8HQ/viewform?usp=send_form"
+    },
+    {
+      "sinif": "zaten_kapali",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "92c565c9-d982-4fb8-bf58-49c4372e66c2",
+      "opportunity_id": "7617a40d-08ec-4b99-810f-0f85ff5083ba",
+      "baslik": "Yunanistan Erasmus+ Eğitim Kursu 2026 !",
+      "url": "https://docs.google.com/forms/d/1KNRBa7eXGF6HCBAKTRcqTLm7M_JQWF5u17muqzWARKo/viewform?edit_requested=true"
+    },
+    {
+      "sinif": "zaten_kapali",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "d5887342-1b2b-4d74-b946-f7a6f2eff82a",
+      "opportunity_id": "d17969ed-8b1a-448f-8688-3ff6da09f141",
+      "baslik": "Kuzey Makedonya Erasmus+ Gençlik Değişimi 2026 !",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSeTg40G7-l3d62LgPdolYwWjw3KCr4oNCnV2qwzq3aRTLteXA/viewform?usp=send_form"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-06-22"
+      ],
+      "submission_id": "5f567f7a-3b89-48d3-ae9f-0113ca309151",
+      "opportunity_id": "fbd7d9e3-3962-4348-8a92-1cbf6b550bfe",
+      "baslik": "Romanya Erasmus+ Gençlik Değişimi 2026",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSdCaSo8v5_-7xqPYq-gnWzCOpqFFZfB1Fp07izMu8K6QxlEbg/viewform"
+    },
+    {
+      "sinif": "zaten_kapali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş"
+      ],
+      "submission_id": "9afab1dc-ad38-4f92-96fb-e7e3189eb934",
+      "opportunity_id": "01280b5b-8dfa-4594-bbb5-877ebaa3bcf5",
+      "baslik": "Macaristan Erasmus+ Gençlik Değişimi 2026",
+      "url": "https://nasilgitmis.com/macaristan-erasmus-genclik-degisimi-recycling-is-cool-2026/"
+    },
+    {
+      "sinif": "zaten_kapali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş"
+      ],
+      "submission_id": "6007065a-f514-4075-af13-4c21d4fc7aa7",
+      "opportunity_id": "2d4d1e43-9aac-4057-ac70-f25c8ccbc732",
+      "baslik": "Almaya Hamburg'da Erasmus Staj Fırsatı: Almanya'da Sosyal Medya ve Medya Deneyimi",
+      "url": "https://nasilgitmis.com/hamburgda-erasmus-staj-firsati-almanya/"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-06-19"
+      ],
+      "submission_id": "6a2a7587-b0c5-4b30-93e6-eccc0f778863",
+      "opportunity_id": "80b1da90-9502-4b63-a184-b279b4b62150",
+      "baslik": "Almanya Erasmus+ Eğitim Kursu: Münih'te Tüm Masrafları Karşılanan Uluslararası Eğitim Fırsatı",
+      "url": "https://www.cosmosyouth.org/post/almanya-da-ger%C3%A7ekle%C5%9Fecek-conflictual-potentials-projesi-i-%C3%A7in-kat%C4%B1l%C4%B1mc%C4%B1lar-ar%C4%B1yoruz"
+    },
+    {
+      "sinif": "kapatilmali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş: 2026-06-20"
+      ],
+      "submission_id": "3a79e25b-09ba-47cd-b3b2-68e0baddaaca",
+      "opportunity_id": "c172472e-91ed-4950-8199-17e304dc691d",
+      "baslik": "Litvanya Erasmus+ Gençlik Değişimi 2026",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSfMyH1Jd1WIjh0J9YRyxHC1bVhyw1Gtmwh8V0bTDcap8jYVhw/viewform"
+    },
+    {
+      "sinif": "zaten_kapali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş"
+      ],
+      "submission_id": "cf044b16-a5a4-455a-82b9-765b4fc9f499",
+      "opportunity_id": "d50ee534-05ba-4c16-a1a1-195a923a0527",
+      "baslik": "İtalya'da 2 Aylık ESC Gönüllülük Projesi: Poggiardo'da Avrupa Deneyimi",
+      "url": "https://nasilgitmis.com/italya-esc-gonulluluk-projesi-poggiardo-2026/"
+    },
+    {
+      "sinif": "zaten_kapali",
+      "nedenler": [
+        "son başvuru tarihi geçmiş"
+      ],
+      "submission_id": "2af39449-fa4f-42ce-a99c-faca5847149c",
+      "opportunity_id": "e3e32251-1ecb-44f7-869f-b634b5326ac3",
+      "baslik": "5 Farklı Ülkede 5 Farklı ESC Projesi",
+      "url": "https://nasilgitmis.com/almanya-italya-ispanya-portekiz-esc-projeleri-2026/"
+    },
+    {
+      "sinif": "zaten_kapali",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "0fbe519c-994a-4f2a-849d-e574498eda10",
+      "opportunity_id": "d27c864d-8651-435f-99ed-f4fb76ed973c",
+      "baslik": "Almanya'da 1 Hafta Erasmus+ Gençlik Değişim Projesi",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSd_k_a-KtHB8vGVxost0iinOiJNI2ZEgSsDsFsCLGjlSYOH5Q/viewform"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "9224ee14-d34c-4d7f-91ea-ca44a4412783",
+      "opportunity_id": "622ebdbf-bf40-406c-9a4f-6f6c6b4b4546",
+      "baslik": "Fransa'da 1 Hafta Erasmus+ Gençlik Değişimi",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSeCBeGfjApCSXIBcs3tqqk9Esidutdye0MQz9G7aFFuW_LdnA/viewform"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "ed1b7f12-80e1-4d99-8987-0df571758597",
+      "opportunity_id": "5cb048b9-2b91-407d-85ef-080caf9b309c",
+      "baslik": "Bulgarista'da ESC Gönüllülük Projesi",
+      "url": "https://youth.europa.eu/solidarity/opportunity/49361_en"
+    },
+    {
+      "sinif": "admin_kontrolu",
+      "nedenler": [
+        "tam ve işlenebilir son başvuru tarihi eksik"
+      ],
+      "submission_id": "6cc22ca2-00ab-41ac-9e38-7c2f5c5a4837",
+      "opportunity_id": "972e2077-2220-4d2e-9953-fc3c1fca7cd7",
+      "baslik": "Kuzey Makedonya'da 2 Ay Avrupa Dayanışma Programı (ESC)",
+      "url": "https://youth.europa.eu/solidarity/opportunity/49358_en"
+    }
+  ]
+}

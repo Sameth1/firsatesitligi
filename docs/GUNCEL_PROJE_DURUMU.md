@@ -1,6 +1,6 @@
 # Fırsat Eşitliği — Güncel Proje Devralma Notu
 
-Son güncelleme: 7 Eylül 2026
+Son güncelleme: 8 Eylül 2026
 
 ## Amaç
 
@@ -38,10 +38,11 @@ Yeni scraper kayıtları `submissions` tablosuna `submission_origin=agent`, `rev
 
 1. Agent her `agent_queue` kaydını inceler.
 2. Kopya URL, geçmiş tarih ve 404/410 önce heuristiklerle değerlendirilir.
-3. Belirsiz HTTP-200 kayıtları NVIDIA NIM'e gider.
-4. Agent açık+uygun kayıtları otomatik onaylar, net uygunsuz/kapalı kayıtları otomatik reddeder.
-5. Gerçekten belirsiz kalanlar `agent_uncertain` olur ve admin panelindeki **Agent Belirsizleri** sekmesine düşer.
-6. Agent kaydında Revize yoktur; admin alanları düzeltebilir, sonra Onayla veya Reddet seçer.
+3. Eksik başlık, URL, kategori, ülke/global bilgisi, kesin gelecek tarih, finansman veya uygunluk koşulu varsa kayıt LLM'e gitmeden `agent_uncertain` olur.
+4. Eksiksiz HTTP-200 kayıtları NVIDIA NIM'e gider. Otomatik onay için güven yüksek olmalı; tek fırsat, doğrudan fırsat sayfası, son tarih, finansman, ülke ve uygunluk kanıtlarının tamamı ayrı ayrı doğrulanmalıdır.
+5. Migration 099 aynı kapıları RPC içinde tekrar denetler; Python hatası dahi eksik kaydı yayımlayamaz ve eksik finansmanı `free` varsaymaz.
+6. Belirsiz kalanlar `agent_uncertain` olur ve admin panelindeki **Agent Belirsizleri** sekmesine düşer.
+7. Agent kaydında Revize yoktur; admin alanları düzeltebilir, sonra Onayla veya Reddet seçer.
 
 ## İnsan redlerinden öğrenme
 
@@ -62,7 +63,7 @@ Yeni scraper kayıtları `submissions` tablosuna `submission_origin=agent`, `rev
 
 ## Supabase durumu
 
-Uygulanan migration'lar: 094, 095, 096 ve 097. `098_remove_manual_improvement_queue.sql` kodda hazırdır; tarayıcı bağlantısı yanıt vermediği için canlı projede henüz çalıştırılmadı. Bu yalnız artık kullanılmayan eski PR-adayı görünümünü siler; agent karar akışını etkilemez.
+Uygulanan migration'lar: 094, 095, 096, 097 ve **099**. Migration 099, 8 Eylül'de canlı Supabase SQL Editor'da başarıyla çalıştırıldı; `agent_validation` kolonu ve sıkı iki parametreli RPC doğrulandı. Migration 098 yalnız eski kullanılmayan görünüm temizliğidir ve henüz uygulanmadı.
 
 Migration 097 sonrası doğrulanan canlı durum:
 
@@ -70,6 +71,16 @@ Migration 097 sonrası doğrulanan canlı durum:
 - 377 submission: 130 agent onaylı, 245 agent reddedilmiş, 1 insan onaylı, 1 insan reddedilmiş.
 - O anda pending kayıt yoktu.
 - `agent_memories` başlangıçta 0 idi; eski 84 insan reddinin 68'inde neden yok, 16'sı eski serbest metin biçimindeydi. Yeni panelde yapılandırılmış red geldikçe hafıza otomatik oluşacak.
+
+8 Eylül salt-okunur eski onay taraması (`--reaudit-agent-approvals`):
+
+- Gerçek agent otomatik onayı: 111 (adminin sonradan onayladığı 19 kayıt hariç).
+- Yeni sıkı kapıyı geçen: 0.
+- Aktif fakat süresi geçmiş, kapatılmalı: 30.
+- Eksik/kanıtsız, admin kontrolü gerekli: 64.
+- Zaten kapalı: 17.
+- En yaygın sorun: 75 kayıtta tam ve işlenebilir son tarih yok.
+- Ayrıntılı salt-okunur rapor: `docs/reports/agent-approval-reaudit-2026-09-08.json`.
 
 ## Kod ve PR durumu
 
@@ -86,14 +97,16 @@ Migration 097 sonrası doğrulanan canlı durum:
 - Değiştirilen frontend ve Edge Function dosyalarında ESLint: geçti.
 - `next build --webpack`: geçti.
 - Vercel preview kontrolleri: geçti.
+- Yeni agent yayın kapıları için 8 birim testi: geçti.
+- Canlı DB'de `agent_validation` kolonu ve yeni RPC imzası: doğrulandı.
+- NVIDIA NIM izole şema çağrısı: başarılı; bütün yeni doğrulama alanları döndü ve sıkı kapıdan geçti.
 
 ## Sonraki güvenli adım
 
-1. İsteğe bağlı temizlik olarak migration 098'i çalıştır.
-2. PR #40'ı incele ve merge et.
-3. `notify-submission` Edge Function'ını deploy et; webhook ve `APP_URL`/Resend env değerlerini doğrula.
-4. Bir test kullanıcı gönderisiyle Revize → güvenli link → yeniden pending akışını uçtan uca dene.
-5. Ardından kullanıcının ertelediği kaynak toplama planındaki “2-3-4” başlıklarına dön. Önceki konuşmada bu başlıkların ayrıntısı tamamlanmadığı için kullanıcıdan kısa teyit al.
+1. Rapordaki 30 süresi geçmiş kaydı admin onayıyla pasifleştir; 64 kaydı panelden incele.
+2. İsteğe bağlı temizlik olarak migration 098'i çalıştır.
+3. PR #40'ı incele ve merge et.
+4. `notify-submission` Edge Function'ını deploy et; webhook ve `APP_URL`/Resend env değerlerini doğrula.
 
 ## Çalışma ilkesi
 

@@ -18,10 +18,10 @@ KATMAN 2 — LLM (yalnızca belirsiz vakalar):
 KARAR:
   kapalı / kategori-dışı → otomatik RED (submissions'a doğrudan PATCH; service
     key RLS'i bypass eder).
-  açık + uygun + güven yüksek/orta → OTOMATİK ONAY: agent_approve_submission
-    RPC'si (migration 094) service key ile çağrılır — submission 'approved'
-    olur ve opportunities'e taşınır. RPC başarısız olursa öneri olarak
-    işaretlenip 'pending' bırakılır (insan panelden onaylar).
+  Yalnızca açık + uygun + güven YÜKSEK ve bütün zorunlu alanları sayfadaki
+    kanıtla doğrulanmış kayıt → OTOMATİK ONAY. Eksik alan, orta/düşük güven,
+    liste sayfası veya doğrulanamayan bilgi varsa pending kalır. Veritabanı
+    RPC'si de aynı kapıları tekrar denetler (migration 099).
   belirsiz → admin_note; pending kalır.
 
 Kullanım:
@@ -57,6 +57,7 @@ import sys
 import time
 from collections import Counter
 from datetime import date, datetime, timezone
+from pathlib import Path
 
 import requests
 from bs4 import BeautifulSoup
@@ -89,6 +90,7 @@ LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "3000"))
 AGENT_MARKER = "[ajan]"       # admin_note öneki — tekrar çalıştırmada atlamak için
 HUMAN_REJECT_RE = re.compile(r"^\[insan\]\s+RED:([a-z0-9_]+)\s+—\s+(.+)$")
 PAGE_CHAR_LIMIT = 6000
+VALID_FUNDING_TYPES = {"full", "partial", "free", "stipend"}
 
 HTTP_HEADERS = {
     "User-Agent": (
@@ -133,10 +135,20 @@ GÜNCELLİK KURALI: "Apply now", "Applications are invited" veya çalışan bir 
 
 3) guven — Kararının kanıta dayanma gücü: "yuksek" (açık ve doğrudan kanıt), "orta" (dolaylı/kısmi), "dusuk" (zayıf veya çelişkili).
 
+4) Yayın güvenlik doğrulamaları — Her alan yalnız sayfadaki açık kanıtla true olabilir:
+   - tek_firsat: Sayfa yalnız TEK fırsatı anlatıyor.
+   - dogrudan_firsat_sayfasi: URL genel ana sayfa, giriş ekranı, arama sonucu, etiket/kategori veya çoklu fırsat listesi değil; bu fırsatın kendi detay/başvuru sayfası.
+   - son_tarih_dogrulandi: Submission'daki son tarih sayfadaki tarihle aynı, tam olarak gün-ay-yıl içeriyor ve BUGÜNDEN ÖNCE değil.
+   - finansman_dogrulandi: Submission'daki finansman türü (full/partial/free/stipend) sayfadaki açık bilgiyle uyuşuyor. Bilgi yoksa false; tahmin etme.
+   - ulke_dogrulandi: Submission'daki ev sahibi ülke veya gerçekten global olduğu sayfada doğrulanıyor.
+   - uygunluk_dogrulandi: Submission'daki uygunluk notu sayfadaki başvuru koşullarıyla uyuşuyor ve boş/genel bir metin değil.
+
+Bu doğrulamaların herhangi birinde kanıt yoksa false ver. false otomatik red anlamına gelmez; kaydı insan kontrolüne bırakır.
+
 KRİTİK: "kapali" ya da kategori_uygun=false kararın submission'ın OTOMATİK REDDEDİLMESİNE yol açar. Bu olumsuz kararları yalnızca metinde açık kanıt varken ver. Emin değilsen "belirsiz" + düşük/orta güven seç — yanlış reddetmektense insana bırak.
 
 ÇIKTI: Yanıtını yalnızca şu alanlara sahip TEK bir JSON nesnesi olarak ver. Markdown, ``` işareti veya açıklama EKLEME:
-{"durum": "acik|kapali|belirsiz", "kategori_uygun": true|false, "guven": "yuksek|orta|dusuk", "gerekce": "<kararını dayandıran kanıtı belirten Türkçe tek cümle>"}"""
+{"durum": "acik|kapali|belirsiz", "kategori_uygun": true|false, "guven": "yuksek|orta|dusuk", "tek_firsat": true|false, "dogrudan_firsat_sayfasi": true|false, "son_tarih_dogrulandi": true|false, "finansman_dogrulandi": true|false, "ulke_dogrulandi": true|false, "uygunluk_dogrulandi": true|false, "gerekce": "<kararını dayandıran kanıtı belirten Türkçe tek cümle>"}"""
 
 
 # ─── Supabase ─────────────────────────────────────────────────────────────────
@@ -161,8 +173,9 @@ def fetch_pending(limit=None, recheck=False):
         "status": "eq.pending",
         "submission_origin": "eq.agent",
         "review_stage": "in.(agent_queue,agent_uncertain)" if recheck else "eq.agent_queue",
-        "select": ("id,title,url,category_slug,eligibility_notes,deadline_text,"
-                   "admin_note,submitter_nickname,submission_origin,review_stage"),
+        "select": ("id,title,url,category_slug,host_countries,eligibility_notes,"
+                   "deadline_text,funding_type,study_level,admin_note,"
+                   "submitter_nickname,submission_origin,review_stage"),
         "order": "created_at.asc",
     }
     res = requests.get(f"{SUPABASE_URL}/rest/v1/submissions",
@@ -292,6 +305,97 @@ def run_feedback_report():
         for reason, n in sorted(details, key=lambda item: (-item[1], item[0])):
             print(f"    - {reason}: {n}")
 
+
+def fetch_agent_approved_submissions(limit=None):
+    """Gerçek otomatik onayları getirir (admin onaylarını dahil etmez)."""
+    params = {
+        "status": "eq.approved",
+        "submission_origin": "eq.agent",
+        "reviewed_by": "is.null",
+        "select": ("id,title,url,category_slug,host_countries,eligibility_notes,"
+                   "deadline_text,funding_type,study_level,admin_note,"
+                   "created_opportunity_id,reviewed_at"),
+        "order": "reviewed_at.desc",
+        "limit": str(limit or 5000),
+    }
+    res = requests.get(f"{SUPABASE_URL}/rest/v1/submissions",
+                       headers=sb_headers(), params=params, timeout=20)
+    res.raise_for_status()
+    return res.json()
+
+
+def fetch_opportunities_by_ids(ids):
+    if not ids:
+        return {}
+    result = {}
+    for start in range(0, len(ids), 100):
+        batch = ids[start:start + 100]
+        params = {
+            "id": f"in.({','.join(batch)})",
+            "select": ("id,title,official_url,deadline,deadline_notes,is_active,"
+                       "last_verified_at"),
+        }
+        res = requests.get(f"{SUPABASE_URL}/rest/v1/opportunities",
+                           headers=sb_headers(), params=params, timeout=20)
+        res.raise_for_status()
+        result.update({row["id"]: row for row in res.json()})
+    return result
+
+
+def classify_historic_approval(sub, opportunity):
+    """Eski otomatik onayı yeni kapıya göre salt-okunur sınıflandırır."""
+    blockers = submission_completeness_blockers(sub)
+    if opportunity is None:
+        return "admin_kontrolu", blockers + ["yayındaki fırsat kaydı bulunamadı"]
+    deadline = opportunity_deadline(opportunity) or parse_deadline(sub.get("deadline_text"))
+    if opportunity.get("is_active") and deadline is not None and deadline < date.today():
+        return "kapatilmali", [f"son başvuru tarihi geçmiş: {deadline.isoformat()}"]
+    if not opportunity.get("is_active"):
+        return "zaten_kapali", blockers
+    if blockers:
+        return "admin_kontrolu", blockers
+    if not opportunity.get("last_verified_at"):
+        return "admin_kontrolu", ["yayından sonra hiç doğrulanmamış"]
+    return "yayinda_kalabilir", []
+
+
+def run_agent_approval_reaudit(args):
+    """Eski agent onaylarını değiştirmeden yeni sıkı kurala göre raporlar."""
+    subs = fetch_agent_approved_submissions(args.limit)
+    opp_ids = [str(s["created_opportunity_id"]) for s in subs
+               if s.get("created_opportunity_id")]
+    opportunities = fetch_opportunities_by_ids(opp_ids)
+    report = []
+    tally = Counter()
+    for sub in subs:
+        opp = opportunities.get(str(sub.get("created_opportunity_id")))
+        classification, reasons = classify_historic_approval(sub, opp)
+        tally[classification] += 1
+        report.append({
+            "sinif": classification,
+            "nedenler": reasons,
+            "submission_id": sub["id"],
+            "opportunity_id": sub.get("created_opportunity_id"),
+            "baslik": sub.get("title"),
+            "url": (opp or {}).get("official_url") or sub.get("url"),
+        })
+
+    print(f"İncelenen gerçek agent otomatik onayı: {len(report)}")
+    for key in ("yayinda_kalabilir", "admin_kontrolu", "kapatilmali", "zaten_kapali"):
+        print(f"  {key}: {tally[key]}")
+    print("Bu mod veritabanında hiçbir şeyi değiştirmez.")
+
+    if args.output:
+        output = Path(args.output).resolve()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps({
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "read_only": True,
+            "counts": dict(tally),
+            "records": report,
+        }, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"Rapor: {output}")
+
 def apply_decision(sub, eylem, gerekce, dry_run):
     """Kararı submissions tablosuna yazar.
       reddet -> status=rejected + admin_note + reviewed_at
@@ -329,13 +433,14 @@ def apply_decision(sub, eylem, gerekce, dry_run):
     return note
 
 
-def approve_submission(sub, dry_run):
+def approve_submission(sub, verdict, dry_run):
     """agent_approve_submission RPC'sini service key ile çağırır — submission'ı
     'approved' işaretler, opportunities'e taşır, belgelerini ekler.
     (ok: bool, detay: str) döndürür.
 
-    RPC (migration 094) admin guard'sızdır; EXECUTE izni yalnızca service_role'a
-    verildiği için bu script çağırabilir. Hata (kategori bulunamadı, ağ sorunu,
+    RPC (migration 099) admin guard'sızdır; EXECUTE izni yalnızca service_role'a
+    verildiği için bu script çağırabilir ve aynı sıkı yayın kapılarını DB'de
+    tekrarlar. Hata (kategori bulunamadı, ağ sorunu,
     RPC henüz uygulanmamış vb.) çalıştırmayı durdurmaz — çağıran güvenli tarafa
     düşer: submission'ı öneri olarak 'pending' bırakır."""
     if dry_run:
@@ -344,7 +449,7 @@ def approve_submission(sub, dry_run):
         res = requests.post(
             f"{SUPABASE_URL}/rest/v1/rpc/agent_approve_submission",
             headers=sb_headers(),
-            json={"p_id": sub["id"]},
+            json={"p_id": sub["id"], "p_validation": verdict},
             timeout=20,
         )
     except requests.exceptions.RequestException as e:
@@ -473,9 +578,16 @@ def _parse_verdict(text):
     guven = v.get("guven")
     if guven not in ("yuksek", "orta", "dusuk"):
         guven = "dusuk"                            # tanınmayan güven → temkinli
+    # bool("false") True olduğu için truthy dönüşüm yapma. Model yalnızca gerçek
+    # JSON boolean true gönderirse doğrulama başarılı sayılır (fail-closed).
+    boolean_fields = (
+        "kategori_uygun", "tek_firsat", "dogrudan_firsat_sayfasi",
+        "son_tarih_dogrulandi", "finansman_dogrulandi",
+        "ulke_dogrulandi", "uygunluk_dogrulandi",
+    )
     return {
         "durum": durum,
-        "kategori_uygun": bool(v.get("kategori_uygun", False)),
+        **{field: v.get(field) is True for field in boolean_fields},
         "guven": guven,
         "gerekce": (str(v.get("gerekce") or "").strip()[:300] or "(gerekçe yok)"),
     }
@@ -491,7 +603,10 @@ def judge_with_llm(sub, url, http_note, page_text):
         "SUBMISSION\n"
         f"Başlık: {sub.get('title') or '(yok)'}\n"
         f"Kategori slug: {sub.get('category_slug') or '(belirtilmemiş)'}\n"
+        f"Ev sahibi ülkeler: {', '.join(sub.get('host_countries') or []) or '(yok)'}\n"
         f"Kaydedilen son başvuru metni: {sub.get('deadline_text') or '(yok)'}\n"
+        f"Kaydedilen finansman türü: {sub.get('funding_type') or '(yok)'}\n"
+        f"Kaydedilen eğitim kademesi: {', '.join(sub.get('study_level') or []) or '(yok)'}\n"
         f"Submitter eligibility notu: {(sub.get('eligibility_notes') or '(yok)')[:400]}\n"
         f"Orijinal URL: {url}\n"
         f"HTTP: {http_note}\n\n"
@@ -566,9 +681,64 @@ def judge_with_llm(sub, url, http_note, page_text):
     return verdict
 
 
+def submission_completeness_blockers(sub):
+    """LLM'den bağımsız, yayın öncesi zorunlu veri kapısı.
+
+    Bu alanlardan biri eksik/bozuksa kayıt değerlendirilebilir ama otomatik
+    yayımlanamaz. Admin kuyruğunda kalır.
+    """
+    blockers = []
+    title = (sub.get("title") or "").strip()
+    url = (sub.get("url") or "").strip()
+    if len(title) < 8:
+        blockers.append("başlık eksik veya çok kısa")
+    if not re.match(r"^https?://[^\s]+$", url, flags=re.IGNORECASE):
+        blockers.append("geçerli HTTP(S) URL yok")
+    if not (sub.get("category_slug") or "").strip():
+        blockers.append("kategori eksik")
+    countries = sub.get("host_countries") or []
+    if not countries or any(not str(c).strip() for c in countries):
+        blockers.append("ev sahibi ülke/global bilgisi eksik")
+    deadline = parse_deadline(sub.get("deadline_text"))
+    if deadline is None:
+        blockers.append("tam ve işlenebilir son başvuru tarihi eksik")
+    elif deadline < date.today():
+        blockers.append("son başvuru tarihi geçmiş")
+    if sub.get("funding_type") not in VALID_FUNDING_TYPES:
+        blockers.append("finansman türü eksik veya geçersiz")
+    if len((sub.get("eligibility_notes") or "").strip()) < 20:
+        blockers.append("başvuru uygunluk koşulları eksik")
+    return blockers
+
+
+def auto_approval_blockers(sub, verdict):
+    """Eksiksizlik + LLM kanıt kapısı. Boş liste dışında yayın YASAK."""
+    blockers = submission_completeness_blockers(sub)
+    if verdict.get("durum") != "acik":
+        blockers.append("fırsatın açık olduğu kesin değil")
+    if verdict.get("guven") != "yuksek":
+        blockers.append("LLM güveni yüksek değil")
+    if verdict.get("kategori_uygun") is not True:
+        blockers.append("kategori uygunluğu doğrulanmadı")
+    if (len((verdict.get("gerekce") or "").strip()) < 10
+            or verdict.get("gerekce") == "(gerekçe yok)"):
+        blockers.append("kanıta dayalı gerekçe eksik")
+    evidence_labels = {
+        "tek_firsat": "tek bir fırsat olduğu doğrulanmadı",
+        "dogrudan_firsat_sayfasi": "doğrudan fırsat sayfası olduğu doğrulanmadı",
+        "son_tarih_dogrulandi": "son tarih sayfadan doğrulanmadı",
+        "finansman_dogrulandi": "finansman sayfadan doğrulanmadı",
+        "ulke_dogrulandi": "ülke/global bilgisi sayfadan doğrulanmadı",
+        "uygunluk_dogrulandi": "başvuru koşulları sayfadan doğrulanmadı",
+    }
+    blockers.extend(label for field, label in evidence_labels.items()
+                    if verdict.get(field) is not True)
+    return blockers
+
+
 def decide(verdict):
     """Karar dict'i -> (eylem, gerekce). eylem: reddet | onayla | belirsiz.
-    Otomatik ONAY yalnızca açık + kategori-uygun + güven yüksek/orta'da;
+    Otomatik ONAY yalnızca açık + kategori-uygun + güven yüksek olduğunda;
     otomatik RED yalnızca yüksek/orta güvenli net olumsuzlarda."""
     if verdict["guven"] == "dusuk":
         return "belirsiz", verdict["gerekce"]
@@ -577,7 +747,7 @@ def decide(verdict):
     if not verdict["kategori_uygun"] and verdict["guven"] == "yuksek":
         return "reddet", verdict["gerekce"]
     if (verdict["durum"] == "acik" and verdict["kategori_uygun"]
-            and verdict["guven"] in ("yuksek", "orta")):
+            and verdict["guven"] == "yuksek"):
         return "onayla", verdict["gerekce"]
     return "belirsiz", verdict["gerekce"]
 
@@ -615,6 +785,15 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
                        f"Son başvuru tarihi geçmiş: {dl.isoformat()}", dry_run)
         print(f"  SÜRESİ GEÇMİŞ ({dl}) → REDDET")
         return "sure_gecti"
+
+    # Yayın kapısı 1 — eksik kayıt için LLM çağrısı bile yapma. Agent bu
+    # alanları kendi tahminiyle doldurmaz; kayıt admin kuyruğunda kalır.
+    completeness_blockers = submission_completeness_blockers(sub)
+    if completeness_blockers:
+        reason = "Eksik kayıt: " + "; ".join(completeness_blockers)
+        apply_decision(sub, "belirsiz", reason, dry_run)
+        print(f"  {reason} → BELİRSİZ")
+        return "belirsiz"
 
     # Sayfayı getir
     status, final_url, html, err = fetch_page(url)
@@ -660,12 +839,21 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
     eylem, gerekce = decide(verdict)
 
     if eylem == "onayla":
-        # açık + uygun + güven yüksek/orta → agent_approve_submission RPC ile
-        # otomatik onay. RPC başarısız olursa güvenli tarafa düş: öneri + pending.
+        # Yayın kapısı 2 — modelin tüm kanıt doğrulamaları açıkça true değilse
+        # otomatik onay yok. Eksik/orta güvenli kayıt admin kuyruğunda kalır.
+        blockers = auto_approval_blockers(sub, verdict)
+        if blockers:
+            guarded_reason = "Otomatik yayın kapısı: " + "; ".join(blockers)
+            apply_decision(sub, "belirsiz", guarded_reason, dry_run)
+            print(f"  → BELİRSİZ — {guarded_reason}")
+            return "belirsiz"
+
+        # Tüm kapılar geçti → RPC ile otomatik onay. RPC aynı alanları ve LLM
+        # validation nesnesini DB tarafında tekrar doğrular.
         # Notu önce yaz: durum değiştiğinde kalıcı karar olayı gerekçeyi de
         # aynı snapshot içinde kaydetsin.
         apply_decision(sub, "onayla", gerekce, dry_run)
-        ok, detay = approve_submission(sub, dry_run)
+        ok, detay = approve_submission(sub, verdict, dry_run)
         if ok:
             print(f"  → OTOMATİK ONAY — {gerekce}  [{detay}]")
             return "onaylandi"
@@ -814,6 +1002,10 @@ def main():
     parser.add_argument("--feedback-report", action="store_true",
                         help="İnsan adminlerin red nedenlerini kaynak ve neden "
                              "koduna göre salt okunur raporla")
+    parser.add_argument("--reaudit-agent-approvals", action="store_true",
+                        help="Eski gerçek agent onaylarını yeni sıkı kapıya göre "
+                             "salt okunur sınıflandır")
+    parser.add_argument("--output", help="Re-audit JSON raporunun dosya yolu")
     args = parser.parse_args()
 
     if not SUPABASE_KEY:
@@ -826,6 +1018,14 @@ def main():
             run_feedback_report()
         except requests.exceptions.RequestException as e:
             print(f"Red geri bildirimi okunamadı: {e}", file=sys.stderr)
+            sys.exit(1)
+        return
+
+    if args.reaudit_agent_approvals:
+        try:
+            run_agent_approval_reaudit(args)
+        except requests.exceptions.RequestException as e:
+            print(f"Agent onayları yeniden incelenemedi: {e}", file=sys.stderr)
             sys.exit(1)
         return
 

@@ -131,18 +131,19 @@ Fırsatlar doğrudan yayına girmez; bir **inceleme hattından** geçer. Bu, hem
 ### Karar mantığı (`validate_submissions.py`)
 
 1. **Katman 1 — Heuristikler (ücretsiz, LLM'siz).** Kopya URL, süresi geçmiş `deadline_text` veya 404/410 dönen bağlantı → otomatik **RED**. Bu kararlar LLM kotası harcamaz.
-2. **Katman 2 — NVIDIA NIM LLM (yalnızca belirsiz HTTP-200 vakalar).** Sayfa açık ama durumu net değilse OpenAI-uyumlu NVIDIA NIM API'sine sorulur. Model üç çıktı verir: `durum` (açık/kapalı/belirsiz), `kategori_uygun` (true/false), `guven` (yüksek/orta/düşük).
+2. **Katman 2 — NVIDIA NIM LLM (yalnızca eksiksiz HTTP-200 vakalar).** Eksik kayıt LLM'e gitmeden admin kuyruğuna ayrılır. Model durum/kategori/güvenin yanında tek fırsat, doğrudan fırsat sayfası, son tarih, finansman, ülke ve uygunluk kanıtlarını ayrı ayrı doğrular.
 3. **Karar:**
    - `kapalı` + güven yüksek/orta → **RED**
    - `kategori_uygun=false` + güven yüksek → **RED**
-   - `açık` + `kategori_uygun` + güven yüksek/orta → **OTOMATİK ONAY** (`agent_approve_submission` RPC)
+   - yalnız `açık` + `kategori_uygun` + güven **yüksek** + bütün zorunlu alanlar ve altı kanıt doğrulanmış → **OTOMATİK ONAY**
+   - eksik başlık/URL/kategori/ülke/tarih/finansman/uygunluk veya doğrulanamayan tek bir kanıt → **belirsiz**, `pending` kalır
    - diğer tüm durumlar → **belirsiz**, `pending` kalır, insan panelden inceler
 
 Yanlış reddetmeyi önlemek için olumsuz kararlar yalnızca açık kanıt varken verilir; tereddütte karar insana bırakılır. Otomatik onay yapılan kayıtlarda `reviewed_by` alanı `NULL` bırakılır — "insan değil otomasyon onayladı" denetim sinyali.
 
 ### `agent_approve_submission` RPC'si
 
-Standart `approve_submission()` RPC'si çağıranın admin olmasını (`auth.uid()`) şart koşar; bu yüzden service-role anahtarıyla çalışan scriptler onay yapamaz. `docs/sql/094_agent_approve_submission.sql` migration'ı, **admin guard'ı olmayan** ikiz bir fonksiyon ekler. Güvenlik sınırı, fonksiyonu çağırma yetkisidir: `EXECUTE` izni `public`/`anon`/`authenticated`'tan alınıp **yalnızca `service_role`'a** verilir.
+Standart `approve_submission()` RPC'si insan admin içindir. Agent'ın kullandığı RPC'nin son sürümü migration 099'dadır: çağırma yetkisi yalnız `service_role`'dadır ve Python'dan bağımsız olarak zorunlu alanları, gelecekteki kesin tarihi, yüksek güveni ve bütün kanıt bayraklarını veritabanında tekrar kontrol eder. Eksik bilgiyi `free` gibi bir varsayılanla doldurmaz; hata verip kaydı pending bırakır.
 
 ---
 
@@ -195,6 +196,7 @@ PostgreSQL şeması Supabase üzerinde barınır. Migration'lar `docs/sql/` alt�
 | `096_reject_reason_required.sql` | İnsan admin reddinde boş/null gerekçeyi DB katmanında engeller |
 | `097_submission_review_memory.sql` | Kullanıcı/agent kuyrukları, kalıcı karar geçmişi, red hafızası ve tek kullanımlık revize bağlantıları |
 | `098_remove_manual_improvement_queue.sql` | Ayrı script/PR öneri kuyruğunu kaldırır; hafıza doğrudan agent kararında kullanılır |
+| `099_strict_agent_approval_gate.sql` | Eksik/kanıtsız agent kaydının yayına çıkmasını Python ve DB katmanında engeller |
 
 Migration'lar `npm run db:0XX` script'leriyle bağlı Supabase projesine uygulanır (bkz. `package.json`).
 
@@ -311,8 +313,14 @@ python validate_submissions.py --recheck --dry-run --limit 10
 # İnsan adminlerin red nedenlerini kaynak/neden bazında raporla (veri değiştirmez)
 python validate_submissions.py --feedback-report
 
+# Eski gerçek agent onaylarını yeni sıkı kapıya göre raporla (veri değiştirmez)
+python validate_submissions.py --reaudit-agent-approvals --output agent-reaudit.json
+
 # İnceleme/hafıza/revize şemasını bir kez uygula
 npm run db:097
+
+# Eksik/kanıtsız agent kaydını DB katmanında da engelle
+npm run db:099
 ```
 
 > ⚠️ `SUPABASE_SERVICE_ROLE_KEY` ve `NVIDIA_API_KEY`/`GROQ_API_KEY` hassas anahtarlardır. `.env` dosyası asla commit'lenmemelidir.
