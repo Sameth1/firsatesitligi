@@ -38,10 +38,10 @@ Yeni scraper kayıtları `submissions` tablosuna `submission_origin=agent`, `rev
 
 1. Agent her `agent_queue` kaydını inceler.
 2. Kopya URL, geçmiş tarih ve 404/410 önce heuristiklerle değerlendirilir.
-3. Eksik başlık, URL, kategori, ülke/global bilgisi, kesin gelecek tarih, finansman veya uygunluk koşulu varsa kayıt LLM'e gitmeden `agent_uncertain` olur.
+3. Eksik başlık, URL, kategori, ülke/global bilgisi, kesin güncel tarih, finansman veya uygunluk koşulu varsa kayıt LLM'e gitmeden reddedilir.
 4. Eksiksiz HTTP-200 kayıtları NVIDIA NIM'e gider. Otomatik onay için güven yüksek olmalı; tek fırsat, doğrudan fırsat sayfası, son tarih, finansman, ülke ve uygunluk kanıtlarının tamamı ayrı ayrı doğrulanmalıdır.
 5. Migration 099 aynı kapıları RPC içinde tekrar denetler; Python hatası dahi eksik kaydı yayımlayamaz ve eksik finansmanı `free` varsaymaz.
-6. Belirsiz kalanlar `agent_uncertain` olur ve admin panelindeki **Agent Belirsizleri** sekmesine düşer.
+6. Eski tarih, yanlış/eksik bilgi, liste-kaynak sayfası veya doğrudan olmayan link reddedilir. `agent_uncertain` yalnız tarihi güncel, doğrudan hedefi ve bütün alanları doğrulanmış kayıtta açık/kapalı kararı gerçekten çelişkiliyse kullanılır.
 7. Agent kaydında Revize yoktur; admin alanları düzeltebilir, sonra Onayla veya Reddet seçer.
 
 ## İnsan redlerinden öğrenme
@@ -63,7 +63,9 @@ Yeni scraper kayıtları `submissions` tablosuna `submission_origin=agent`, `rev
 
 ## Supabase durumu
 
-Uygulanan migration'lar: 094, 095, 096, 097 ve **099**. Migration 099, 8 Eylül'de canlı Supabase SQL Editor'da başarıyla çalıştırıldı; `agent_validation` kolonu ve sıkı iki parametreli RPC doğrulandı. Migration 098 yalnız eski kullanılmayan görünüm temizliğidir ve henüz uygulanmadı.
+Uygulanan migration'lar: 094, 095, 096, 097, **099 ve 100**. Migration 099 sıkı agent onay kapısını; migration 100 ise kanıt sayfası `source_url` ile doğrudan başvuru/resmî hedef `url` ayrımını canlı Supabase'e ekledi. Migration 098 yalnız eski kullanılmayan görünüm temizliğidir ve henüz uygulanmadı.
+
+Doğrudan link geçmişi: Eski `official_url=kaynak yazı` hatası için `audit_apply_links.py` ve `backfill_apply_links.py` yazılmıştı. Youthop ve Nasıl Gitmiş scraper'ları dış Apply linkini çıkarmaya başlamıştı; ancak kaynak ile hedef ayrı DB alanlarında tutulmuyordu. Migration 100 ve güncel scraper'lar bu ayrımı kalıcı hale getirir. Agent hedef linki kontrol ederken tarih/kategori kanıtını ayrı kaynak sayfasından okuyabilir.
 
 Migration 097 sonrası doğrulanan canlı durum:
 
@@ -97,7 +99,8 @@ Migration 097 sonrası doğrulanan canlı durum:
 - Değiştirilen frontend ve Edge Function dosyalarında ESLint: geçti.
 - `next build --webpack`: geçti.
 - Vercel preview kontrolleri: geçti.
-- Yeni agent yayın kapıları için 8 birim testi: geçti.
+- Yeni agent yayın/onay/red kapıları için 14 birim testi: geçti.
+- Canlı DB'de `source_url` kolonu: doğrulandı.
 - Canlı DB'de `agent_validation` kolonu ve yeni RPC imzası: doğrulandı.
 - NVIDIA NIM izole şema çağrısı: başarılı; bütün yeni doğrulama alanları döndü ve sıkı kapıdan geçti.
 

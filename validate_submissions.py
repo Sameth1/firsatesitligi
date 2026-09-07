@@ -19,10 +19,10 @@ KARAR:
   kapalı / kategori-dışı → otomatik RED (submissions'a doğrudan PATCH; service
     key RLS'i bypass eder).
   Yalnızca açık + uygun + güven YÜKSEK ve bütün zorunlu alanları sayfadaki
-    kanıtla doğrulanmış kayıt → OTOMATİK ONAY. Eksik alan, orta/düşük güven,
-    liste sayfası veya doğrulanamayan bilgi varsa pending kalır. Veritabanı
-    RPC'si de aynı kapıları tekrar denetler (migration 099).
-  belirsiz → admin_note; pending kalır.
+    kanıtla doğrulanmış kayıt → OTOMATİK ONAY. Eksik/yanlış alan, eski tarih,
+    kaynak/liste linki veya doğrulanamayan kanıt → RED. Yalnız tarihi güncel,
+    doğrudan linki doğrulanmış ve alanları tutarlı kayıtta karar çelişkiliyse
+    belirsiz → admin_note; pending kalır. DB RPC aynı onay kapılarını tekrarlar.
 
 Kullanım:
   pip install requests beautifulsoup4 python-dotenv      # ek SDK gerekmez
@@ -58,6 +58,7 @@ import time
 from collections import Counter
 from datetime import date, datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import requests
 from bs4 import BeautifulSoup
@@ -91,6 +92,7 @@ AGENT_MARKER = "[ajan]"       # admin_note öneki — tekrar çalıştırmada at
 HUMAN_REJECT_RE = re.compile(r"^\[insan\]\s+RED:([a-z0-9_]+)\s+—\s+(.+)$")
 PAGE_CHAR_LIMIT = 6000
 VALID_FUNDING_TYPES = {"full", "partial", "free", "stipend"}
+AGGREGATOR_DOMAINS = {"youthop.com", "www.youthop.com", "nasilgitmis.com", "www.nasilgitmis.com"}
 
 HTTP_HEADERS = {
     "User-Agent": (
@@ -143,9 +145,9 @@ GÜNCELLİK KURALI: "Apply now", "Applications are invited" veya çalışan bir 
    - ulke_dogrulandi: Submission'daki ev sahibi ülke veya gerçekten global olduğu sayfada doğrulanıyor.
    - uygunluk_dogrulandi: Submission'daki uygunluk notu sayfadaki başvuru koşullarıyla uyuşuyor ve boş/genel bir metin değil.
 
-Bu doğrulamaların herhangi birinde kanıt yoksa false ver. false otomatik red anlamına gelmez; kaydı insan kontrolüne bırakır.
+Bu doğrulamaların herhangi birinde kanıt yoksa veya kayıtla çelişiyorsa false ver. Herhangi bir false kayıt eksik/yanlış sayılarak otomatik reddedilir. `belirsiz` yalnız bütün bu alanlar true iken açık/kapalı kararında gerçek bir çelişki kalırsa kullanılabilir.
 
-KRİTİK: "kapali" ya da kategori_uygun=false kararın submission'ın OTOMATİK REDDEDİLMESİNE yol açar. Bu olumsuz kararları yalnızca metinde açık kanıt varken ver. Emin değilsen "belirsiz" + düşük/orta güven seç — yanlış reddetmektense insana bırak.
+KRİTİK: Eksik zorunlu bilgi de kayıt hatasıdır. "kapali", kategori_uygun=false veya yayın doğrulamalarından herhangi birinin false olması submission'ın OTOMATİK REDDEDİLMESİNE yol açar. Kanıt görmeden true üretme. "belirsiz" yalnız bütün yayın doğrulamaları true olduğu halde genel karar güveni orta/düşük kaldığında kullanılabilir.
 
 ÇIKTI: Yanıtını yalnızca şu alanlara sahip TEK bir JSON nesnesi olarak ver. Markdown, ``` işareti veya açıklama EKLEME:
 {"durum": "acik|kapali|belirsiz", "kategori_uygun": true|false, "guven": "yuksek|orta|dusuk", "tek_firsat": true|false, "dogrudan_firsat_sayfasi": true|false, "son_tarih_dogrulandi": true|false, "finansman_dogrulandi": true|false, "ulke_dogrulandi": true|false, "uygunluk_dogrulandi": true|false, "gerekce": "<kararını dayandıran kanıtı belirten Türkçe tek cümle>"}"""
@@ -173,7 +175,7 @@ def fetch_pending(limit=None, recheck=False):
         "status": "eq.pending",
         "submission_origin": "eq.agent",
         "review_stage": "in.(agent_queue,agent_uncertain)" if recheck else "eq.agent_queue",
-        "select": ("id,title,url,category_slug,host_countries,eligibility_notes,"
+        "select": ("id,title,url,source_url,category_slug,host_countries,eligibility_notes,"
                    "deadline_text,funding_type,study_level,admin_note,"
                    "submitter_nickname,submission_origin,review_stage"),
         "order": "created_at.asc",
@@ -228,6 +230,26 @@ def memory_context_for(sub, memories):
 
 def _norm_url(u):
     return (u or "").strip().rstrip("/").lower()
+
+
+def _url_host(url):
+    try:
+        return urlsplit((url or "").strip()).netloc.lower().split(":", 1)[0]
+    except ValueError:
+        return ""
+
+
+def direct_link_blockers(sub):
+    """Kaynak yazının yanlışlıkla başvuru URL'i olmasını deterministik engeller."""
+    url = (sub.get("url") or "").strip()
+    source_url = (sub.get("source_url") or "").strip()
+    blockers = []
+    if _url_host(url) in AGGREGATOR_DOMAINS:
+        blockers.append("doğrudan başvuru/resmî fırsat linki yerine kaynak yazı verilmiş")
+    if (source_url and _url_host(source_url) in AGGREGATOR_DOMAINS
+            and _norm_url(source_url) == _norm_url(url)):
+        blockers.append("kaynak ve başvuru linki aynı")
+    return list(dict.fromkeys(blockers))
 
 
 def fetch_known_urls():
@@ -312,7 +334,7 @@ def fetch_agent_approved_submissions(limit=None):
         "status": "eq.approved",
         "submission_origin": "eq.agent",
         "reviewed_by": "is.null",
-        "select": ("id,title,url,category_slug,host_countries,eligibility_notes,"
+        "select": ("id,title,url,source_url,category_slug,host_countries,eligibility_notes,"
                    "deadline_text,funding_type,study_level,admin_note,"
                    "created_opportunity_id,reviewed_at"),
         "order": "reviewed_at.desc",
@@ -608,8 +630,9 @@ def judge_with_llm(sub, url, http_note, page_text):
         f"Kaydedilen finansman türü: {sub.get('funding_type') or '(yok)'}\n"
         f"Kaydedilen eğitim kademesi: {', '.join(sub.get('study_level') or []) or '(yok)'}\n"
         f"Submitter eligibility notu: {(sub.get('eligibility_notes') or '(yok)')[:400]}\n"
-        f"Orijinal URL: {url}\n"
-        f"HTTP: {http_note}\n\n"
+        f"Doğrudan başvuru/resmî fırsat URL'i: {url}\n"
+        f"Doğrudan URL HTTP: {http_note}\n"
+        f"Bilginin alındığı kaynak URL: {sub.get('source_url') or url}\n\n"
         "İNSAN REDLERİNDEN ÖĞRENİLEN İLGİLİ HAFIZA\n"
         f"{sub.get('_memory_context') or '(yok)'}\n"
         "Bu hafıza geçmiş insan kararlarından öğrenilmiş karar emsalidir ve "
@@ -684,8 +707,7 @@ def judge_with_llm(sub, url, http_note, page_text):
 def submission_completeness_blockers(sub):
     """LLM'den bağımsız, yayın öncesi zorunlu veri kapısı.
 
-    Bu alanlardan biri eksik/bozuksa kayıt değerlendirilebilir ama otomatik
-    yayımlanamaz. Admin kuyruğunda kalır.
+    Bu alanlardan biri eksik/bozuksa kayıt yayınlanamaz ve otomatik reddedilir.
     """
     blockers = []
     title = (sub.get("title") or "").strip()
@@ -736,6 +758,19 @@ def auto_approval_blockers(sub, verdict):
     return blockers
 
 
+def evidence_rejection_reasons(verdict):
+    """Sayfada yanlışlığı doğrulanan alanlar pending'e değil redde gider."""
+    labels = {
+        "tek_firsat": "sayfa tek bir fırsat değil",
+        "dogrudan_firsat_sayfasi": "link doğrudan başvuru/resmî fırsat sayfası değil",
+        "son_tarih_dogrulandi": "kayıtlı güncel son tarih sayfayla uyuşmuyor",
+        "finansman_dogrulandi": "finansman bilgisi sayfayla uyuşmuyor",
+        "ulke_dogrulandi": "ülke/global bilgisi sayfayla uyuşmuyor",
+        "uygunluk_dogrulandi": "uygunluk koşulları sayfayla uyuşmuyor",
+    }
+    return [label for field, label in labels.items() if verdict.get(field) is not True]
+
+
 def decide(verdict):
     """Karar dict'i -> (eylem, gerekce). eylem: reddet | onayla | belirsiz.
     Otomatik ONAY yalnızca açık + kategori-uygun + güven yüksek olduğunda;
@@ -759,9 +794,9 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
     print(f"\n• {(sub.get('title') or '(başlıksız)')[:60]}")
     url = (sub.get("url") or "").strip()
     if not url:
-        apply_decision(sub, "belirsiz", "Submission'da URL yok", dry_run)
-        print("  URL yok → BELİRSİZ")
-        return "belirsiz"
+        apply_decision(sub, "reddet", "Eksik kayıt: doğrudan URL yok", dry_run)
+        print("  URL yok → REDDET")
+        return "llm_red"
     print(f"  URL: {url}")
     norm = _norm_url(url)
 
@@ -787,44 +822,71 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
         return "sure_gecti"
 
     # Yayın kapısı 1 — eksik kayıt için LLM çağrısı bile yapma. Agent bu
-    # alanları kendi tahminiyle doldurmaz; kayıt admin kuyruğunda kalır.
+    # alanları kendi tahminiyle doldurmaz; doğrudan reddeder.
     completeness_blockers = submission_completeness_blockers(sub)
     if completeness_blockers:
         reason = "Eksik kayıt: " + "; ".join(completeness_blockers)
-        apply_decision(sub, "belirsiz", reason, dry_run)
-        print(f"  {reason} → BELİRSİZ")
-        return "belirsiz"
+        apply_decision(sub, "reddet", reason, dry_run)
+        print(f"  {reason} → REDDET")
+        return "llm_red"
 
-    # Sayfayı getir
+    link_blockers = direct_link_blockers(sub)
+    if link_blockers:
+        reason = "Hatalı link: " + "; ".join(link_blockers)
+        apply_decision(sub, "reddet", reason, dry_run)
+        print(f"  {reason} → REDDET")
+        return "llm_red"
+
+    # Doğrudan hedefi ve varsa ayrı kaynak/kanıt sayfasını getir. Başvuru formu
+    # az metin taşısa bile agent tarih/kategori bilgisini kaynak sayfadan okur.
     status, final_url, html, err = fetch_page(url)
+    source_url = (sub.get("source_url") or "").strip()
+    source_text = ""
+    if source_url and _norm_url(source_url) != norm:
+        source_status, _source_final, source_html, _source_err = fetch_page(source_url)
+        if source_status == 200 and source_html:
+            source_text = page_to_text(source_html)
 
     # Heuristik 3 — ölü bağlantı (LLM'siz)
     if status in (404, 410):
         apply_decision(sub, "reddet", f"Ölü bağlantı (HTTP {status})", dry_run)
         print(f"  HTTP {status} → REDDET")
         return "olu_link"
+    if final_url and _url_host(final_url) in AGGREGATOR_DOMAINS:
+        apply_decision(sub, "reddet",
+                       "Doğrudan link kaynak/derleme sitesine yönlendiriyor", dry_run)
+        print("  Link kaynak/derleme sitesine yönlendi → REDDET")
+        return "llm_red"
     if status is None:
-        apply_decision(sub, "belirsiz", f"Sayfaya ulaşılamadı: {err}", dry_run)
-        print("  Bağlantı hatası → BELİRSİZ")
-        return "belirsiz"
+        if not source_text:
+            apply_decision(sub, "reddet", f"Doğrudan link doğrulanamadı: {err}", dry_run)
+            print("  Doğrudan link doğrulanamadı → REDDET")
+            return "llm_red"
     if status != 200:
-        # 403/429/5xx — geçici ya da bot koruması olabilir; LLM'e gitme.
-        apply_decision(sub, "belirsiz",
-                       f"Sayfa HTTP {status} döndü (geçici/bot koruması olabilir)", dry_run)
-        print(f"  HTTP {status} → BELİRSİZ")
-        return "belirsiz"
+        # 403/429/5xx hedefte bot koruması olabilir. Ayrı kaynak kanıtı varsa
+        # LLM karar verir; yoksa doğrulanamayan link olarak reddedilir.
+        if not source_text:
+            apply_decision(sub, "reddet",
+                           f"Doğrudan link HTTP {status} döndü; doğrulanamadı", dry_run)
+            print(f"  HTTP {status} → REDDET")
+            return "llm_red"
 
-    # KATMAN 2 — sayfa 200 ama durum belirsiz: LLM devreye girer
-    page_text = page_to_text(html)
+    # KATMAN 2 — hedef sayfa + ayrı kaynak kanıtı birlikte değerlendirilir.
+    target_text = page_to_text(html) if status == 200 and html else ""
+    page_text = target_text
+    if source_text:
+        page_text = (f"DOĞRUDAN HEDEF SAYFA:\n{target_text or '(metin yok / bot koruması)'}\n\n"
+                     f"KAYNAK KANIT SAYFASI:\n{source_text}")[:PAGE_CHAR_LIMIT]
     if len(page_text) < 80:
         apply_decision(sub, "belirsiz",
                        "Sayfadan anlamlı metin çıkmadı (JS-ağırlıklı olabilir)", dry_run)
         print("  İçerik çok ince → BELİRSİZ")
         return "belirsiz"
 
-    http_note = "200" + (f" (yönlendirildi: {final_url})"
-                         if _norm_url(final_url) != norm else "")
-    print(f"  HTTP 200, durum belirsiz → LLM ({LLM_MODEL}) sorgulanıyor...")
+    http_note = str(status) if status is not None else f"ulaşılamadı: {err}"
+    if final_url and _norm_url(final_url) != norm:
+        http_note += f" (yönlendirildi: {final_url})"
+    print(f"  Hedef HTTP {status}, kayıt doğrulaması → LLM ({LLM_MODEL}) sorgulanıyor...")
     stats["llm_calls"] += 1
     verdict = judge_with_llm(sub, url, http_note, page_text)
     time.sleep(LLM_MIN_INTERVAL)                   # sağlayıcı RPM sınırı
@@ -836,6 +898,23 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
 
     print(f"  LLM: durum={verdict['durum']} "
           f"kategori_uygun={verdict['kategori_uygun']} guven={verdict['guven']}")
+
+    evidence_errors = evidence_rejection_reasons(verdict)
+    if evidence_errors:
+        reason = f"{verdict['gerekce']} — " + "; ".join(evidence_errors)
+        apply_decision(sub, "reddet", reason, dry_run)
+        print(f"  → REDDET — {reason}")
+        return "llm_red"
+
+    # Kaynak sayfa hedefi doğrulasa bile agent hedefi HTTP 200 ile açamadıysa
+    # yayınlama. Bu, gerçek teknik belirsizliktir ve admin kuyruğuna girebilir.
+    if status != 200:
+        reason = (f"Tarih ve doğrudan hedef kaynakta doğrulandı; ancak hedef "
+                  f"agent tarafından açılamadı (HTTP {status or 'bağlantı hatası'})")
+        apply_decision(sub, "belirsiz", reason, dry_run)
+        print(f"  → BELİRSİZ — {reason}")
+        return "belirsiz"
+
     eylem, gerekce = decide(verdict)
 
     if eylem == "onayla":
@@ -844,9 +923,9 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
         blockers = auto_approval_blockers(sub, verdict)
         if blockers:
             guarded_reason = "Otomatik yayın kapısı: " + "; ".join(blockers)
-            apply_decision(sub, "belirsiz", guarded_reason, dry_run)
-            print(f"  → BELİRSİZ — {guarded_reason}")
-            return "belirsiz"
+            apply_decision(sub, "reddet", guarded_reason, dry_run)
+            print(f"  → REDDET — {guarded_reason}")
+            return "llm_red"
 
         # Tüm kapılar geçti → RPC ile otomatik onay. RPC aynı alanları ve LLM
         # validation nesnesini DB tarafında tekrar doğrular.

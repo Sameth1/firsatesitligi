@@ -144,6 +144,7 @@ def build_record(sch, base, detail_url, category, deadline_text):
         "title":                (sch.get("nameEn") or sch.get("programmnameEn") or "").strip()
                                 or base.get("title"),
         "url":                  detail_url,
+        "source_url":           detail_url,
         "category_slug":        category,
         "deadline_text":        deadline_text,    # deadlines.js'ten (serbest metin) ya da None
         "host_countries":       ["DE"],           # DAAD → Almanya

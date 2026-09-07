@@ -1,5 +1,6 @@
 import json
 import unittest
+from unittest.mock import patch
 
 import validate_submissions as validator
 
@@ -113,6 +114,27 @@ class ApprovalGateTests(unittest.TestCase):
 
         self.assertIn("kanıta dayalı gerekçe eksik", blockers)
 
+    def test_failed_evidence_becomes_rejection_reason(self):
+        verdict = high_confidence_verdict()
+        verdict["dogrudan_firsat_sayfasi"] = False
+
+        reasons = validator.evidence_rejection_reasons(verdict)
+
+        self.assertIn("link doğrudan başvuru/resmî fırsat sayfası değil", reasons)
+
+    def test_aggregator_url_is_not_a_direct_link(self):
+        submission = complete_submission()
+        submission["url"] = "https://www.youthop.com/example-post"
+        submission["source_url"] = submission["url"]
+
+        self.assertTrue(validator.direct_link_blockers(submission))
+
+    def test_external_apply_url_with_separate_source_can_continue(self):
+        submission = complete_submission()
+        submission["source_url"] = "https://www.youthop.com/example-post"
+
+        self.assertEqual(validator.direct_link_blockers(submission), [])
+
 
 class HistoricApprovalClassificationTests(unittest.TestCase):
     def test_active_expired_record_should_close(self):
@@ -141,6 +163,32 @@ class HistoricApprovalClassificationTests(unittest.TestCase):
         )
         self.assertEqual(classification, "admin_kontrolu")
         self.assertTrue(reasons)
+
+
+class DecisionFlowTests(unittest.TestCase):
+    @patch("validate_submissions.apply_decision")
+    def test_incomplete_record_is_rejected_not_queued(self, apply_decision):
+        submission = complete_submission()
+        submission.update({"id": "test", "deadline_text": None})
+
+        result = validator.process(submission, True, set(), set(), {"llm_calls": 0})
+
+        self.assertEqual(result, "llm_red")
+        self.assertEqual(apply_decision.call_args.args[1], "reddet")
+
+    @patch("validate_submissions.apply_decision")
+    def test_aggregator_source_link_is_rejected_not_queued(self, apply_decision):
+        submission = complete_submission()
+        submission.update({
+            "id": "test",
+            "url": "https://www.nasilgitmis.com/firsat-yazisi",
+            "source_url": "https://www.nasilgitmis.com/firsat-yazisi",
+        })
+
+        result = validator.process(submission, True, set(), set(), {"llm_calls": 0})
+
+        self.assertEqual(result, "llm_red")
+        self.assertEqual(apply_decision.call_args.args[1], "reddet")
 
 
 if __name__ == "__main__":

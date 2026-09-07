@@ -131,13 +131,13 @@ Fırsatlar doğrudan yayına girmez; bir **inceleme hattından** geçer. Bu, hem
 ### Karar mantığı (`validate_submissions.py`)
 
 1. **Katman 1 — Heuristikler (ücretsiz, LLM'siz).** Kopya URL, süresi geçmiş `deadline_text` veya 404/410 dönen bağlantı → otomatik **RED**. Bu kararlar LLM kotası harcamaz.
-2. **Katman 2 — NVIDIA NIM LLM (yalnızca eksiksiz HTTP-200 vakalar).** Eksik kayıt LLM'e gitmeden admin kuyruğuna ayrılır. Model durum/kategori/güvenin yanında tek fırsat, doğrudan fırsat sayfası, son tarih, finansman, ülke ve uygunluk kanıtlarını ayrı ayrı doğrular.
+2. **Katman 2 — NVIDIA NIM LLM (yalnızca eksiksiz kayıtlar).** Eksik alan, eski tarih veya kaynak/derleme sayfasına giden link LLM kotası harcanmadan reddedilir. Kalan kayıt için model durum/kategori/güvenin yanında tek fırsat, doğrudan fırsat sayfası, son tarih, finansman, ülke ve uygunluk kanıtlarını ayrı ayrı doğrular.
 3. **Karar:**
    - `kapalı` + güven yüksek/orta → **RED**
    - `kategori_uygun=false` + güven yüksek → **RED**
    - yalnız `açık` + `kategori_uygun` + güven **yüksek** + bütün zorunlu alanlar ve altı kanıt doğrulanmış → **OTOMATİK ONAY**
-   - eksik başlık/URL/kategori/ülke/tarih/finansman/uygunluk veya doğrulanamayan tek bir kanıt → **belirsiz**, `pending` kalır
-   - diğer tüm durumlar → **belirsiz**, `pending` kalır, insan panelden inceler
+   - eksik/yanlış alan, eski tarih, kaynak yazı linki veya doğrulanamayan kanıt → **RED**
+   - **belirsiz** yalnız tarih güncel, hedef doğrudan ve bütün kayıt alanları doğrulanmışken açık/kapalı kararında gerçek çelişki kalırsa kullanılır
 
 Yanlış reddetmeyi önlemek için olumsuz kararlar yalnızca açık kanıt varken verilir; tereddütte karar insana bırakılır. Otomatik onay yapılan kayıtlarda `reviewed_by` alanı `NULL` bırakılır — "insan değil otomasyon onayladı" denetim sinyali.
 
@@ -197,6 +197,7 @@ PostgreSQL şeması Supabase üzerinde barınır. Migration'lar `docs/sql/` alt�
 | `097_submission_review_memory.sql` | Kullanıcı/agent kuyrukları, kalıcı karar geçmişi, red hafızası ve tek kullanımlık revize bağlantıları |
 | `098_remove_manual_improvement_queue.sql` | Ayrı script/PR öneri kuyruğunu kaldırır; hafıza doğrudan agent kararında kullanılır |
 | `099_strict_agent_approval_gate.sql` | Eksik/kanıtsız agent kaydının yayına çıkmasını Python ve DB katmanında engeller |
+| `100_submission_source_url.sql` | Kanıtın alındığı `source_url` ile doğrudan başvuru/resmî hedef olan `url` alanını ayırır |
 
 Migration'lar `npm run db:0XX` script'leriyle bağlı Supabase projesine uygulanır (bkz. `package.json`).
 
@@ -245,8 +246,9 @@ Proje, **GEO (Generative Engine Optimization)** — web sitelerinin ChatGPT, Cla
 - Site-spesifik scraper'lar (`nasilgitmis_scraper.py`, `idealist_scraper.py`)
 - Genel amaçlı URL scraper'ı (`agent_reach_url_scraper.py`, Jina Reader)
 - Link sağlığı otomasyonu (`link_audit_runner.py`, `fix_broken_links.py`)
-- `agent_approve_submission` service-role onay RPC'si; migration 094/095'in bağlı Supabase projesinde doğrulanması
-- İki katmanlı doğrulama ajanı + otomatik onay mantığı (`validate_submissions.py`); NVIDIA NIM entegrasyonunun canlı API çağrısıyla doğrulanması
+- Fail-closed `agent_approve_submission` RPC'si; migration 099'un bağlı Supabase projesinde doğrulanması
+- Kaynak kanıt sayfası ile doğrudan başvuru hedefinin ayrılması (migration 100)
+- İki katmanlı doğrulama ajanı + kararlı onay/red mantığı (`validate_submissions.py`); NVIDIA NIM canlı API doğrulaması
 - `nasilgitmis_scraper.py` ile toplanan pending submission'ların doğrulama hattından geçirilmesi
 
 ### 🗺️ Planlananlar
@@ -321,6 +323,9 @@ npm run db:097
 
 # Eksik/kanıtsız agent kaydını DB katmanında da engelle
 npm run db:099
+
+# Kaynak kanıt sayfası ile doğrudan başvuru hedefini ayır
+npm run db:100
 ```
 
 > ⚠️ `SUPABASE_SERVICE_ROLE_KEY` ve `NVIDIA_API_KEY`/`GROQ_API_KEY` hassas anahtarlardır. `.env` dosyası asla commit'lenmemelidir.

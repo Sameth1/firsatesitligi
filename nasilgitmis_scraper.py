@@ -452,6 +452,7 @@ def parse_post(url, category_slug):
     rec = {
         "title":                title,
         "url":                  submission_url,
+        "source_url":           url,
         "category_slug":        category_slug,
         "deadline_text":        deadline,      # 'YYYY-MM-DD' ya da None (text)
         "host_countries":       host_countries,
