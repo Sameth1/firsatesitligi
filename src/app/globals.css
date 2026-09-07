@@ -174,3 +174,61 @@ button, a, input, [role="button"] {
 @media (min-width: 1024px) {
   .theme-glyphs { display: block; }
 }
+
+/* ─── Arama ekranı: interaktif kontroller ────────────────────────────── */
+
+.choice-card {
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease,
+    background-color 0.18s ease, border-color 0.18s ease;
+}
+.choice-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 28px -16px rgba(35, 28, 82, 0.45);
+}
+.choice-card:active { transform: translateY(-1px) scale(0.985); }
+.choice-card[data-selected='true']:hover { transform: translateY(-3px) scale(1.01); }
+
+.range-track:focus-visible,
+.range-track:focus { outline: 2px solid rgba(83, 74, 183, 0.5); outline-offset: 6px; border-radius: 999px; }
+
+.range-thumb { will-change: left; }
+
+/* Cam panel — arka plandaki 3B sahne panellerin arkasından görünsün */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.62);
+  backdrop-filter: blur(18px) saturate(1.25);
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  box-shadow: 0 30px 60px -34px rgba(35, 28, 82, 0.45),
+    0 2px 8px -4px rgba(35, 28, 82, 0.12);
+  border-radius: 22px;
+}
+
+/* ─── Sonuç kartları ─────────────────────────────────────────────────── */
+
+.opp-meta-chip {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(83, 74, 183, 0.07);
+  color: #5F5980;
+}
+
+.opp-card .opp-icon {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.opp-card:hover .opp-icon {
+  transform: scale(1.12) rotate(-6deg);
+}
+
+.apply-btn {
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease,
+    filter 0.18s ease;
+}
+.apply-btn:hover {
+  transform: translateY(-2px);
+  filter: saturate(1.15);
+  box-shadow: 0 18px 30px -16px rgba(76, 65, 181, 1);
+}
+.apply-btn:active { transform: translateY(0) scale(0.98); }

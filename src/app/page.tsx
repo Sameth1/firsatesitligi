@@ -10,6 +10,9 @@ import AmbientCanvas from '@/components/hero/AmbientCanvas'
 import ThemeGlyphs from '@/components/hero/ThemeGlyphs'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
+import RangeSlider from '@/components/form/RangeSlider'
+import StepSlider from '@/components/form/StepSlider'
+import ChoiceGrid from '@/components/form/ChoiceGrid'
 
 const COUNTRIES: { code: string; label: string; language: string | null }[] = [
   { code: 'DE', label: '🇩🇪 Almanya',     language: 'Almanca' },
@@ -33,13 +36,6 @@ const CATEGORIES = [
   { slug: 'exchange',      label: 'Değişim' },
 ]
 
-const STUDY_LEVELS = [
-  { value: 'bachelor', label: 'Lisans' },
-  { value: 'master',   label: 'Yüksek Lisans' },
-  { value: 'phd',      label: 'Doktora' },
-  { value: 'any',      label: 'Fark etmez' },
-]
-
 const HIGHEST_EDU_LEVELS = [
   { value: 'lise',          label: 'Lise' },
   { value: 'on_lisans',     label: 'Ön Lisans' },
@@ -48,14 +44,54 @@ const HIGHEST_EDU_LEVELS = [
   { value: 'doktora',       label: 'Doktora' },
 ]
 
-const CEFR_LEVELS = [
-  { value: 'A1', label: 'A1 — Başlangıç' },
-  { value: 'A2', label: 'A2 — Temel' },
-  { value: 'B1', label: 'B1 — Orta' },
-  { value: 'B2', label: 'B2 — İyi' },
-  { value: 'C1', label: 'C1 — İleri' },
-  { value: 'C2', label: 'C2 — Anadil seviyesi' },
-  { value: 'none', label: 'Bilmiyorum' },
+// ChoiceGrid / StepSlider için ikonlu görünüm listeleri. Değerler (value)
+// yukarıdaki listelerle birebir aynı — yalnız sunum katmanı zenginleşiyor,
+// match_opportunities'e giden parametreler değişmiyor.
+const COUNTRY_OPTIONS = COUNTRIES.map(c => ({
+  value: c.code,
+  label: c.label.replace(/^\S+\s/, ''),
+  icon: c.label.split(' ')[0],
+  note: c.language ?? undefined,
+}))
+
+const CATEGORY_ICON_BY_SLUG: Record<string, string> = {
+  scholarship: '🎓', volunteering: '🤝', youth_project: '🚀',
+  internship: '💼', summer_school: '☀️', exchange: '🔁',
+}
+
+const CATEGORY_OPTIONS = [
+  { value: 'scholarship',   label: 'Burs',            icon: '🎓' },
+  { value: 'volunteering',  label: 'Gönüllülük',      icon: '🤝' },
+  { value: 'youth_project', label: 'Gençlik Projesi', icon: '🚀' },
+  { value: 'internship',    label: 'Staj',            icon: '💼' },
+  { value: 'summer_school', label: 'Yaz Okulu',       icon: '☀️' },
+  { value: 'exchange',      label: 'Değişim',         icon: '🔁' },
+]
+
+const STUDY_LEVEL_OPTIONS = [
+  { value: 'bachelor', label: 'Lisans',        icon: '📘' },
+  { value: 'master',   label: 'Yüksek Lisans', icon: '📗' },
+  { value: 'phd',      label: 'Doktora',       icon: '🔬' },
+  { value: 'any',      label: 'Fark etmez',    icon: '✨' },
+]
+
+const HIGHEST_EDU_OPTIONS = [
+  { value: 'lise',          label: 'Lise',          icon: '🏫' },
+  { value: 'on_lisans',     label: 'Ön Lisans',     icon: '📒' },
+  { value: 'lisans',        label: 'Lisans',        icon: '📘' },
+  { value: 'yuksek_lisans', label: 'Yüksek Lisans', icon: '📗' },
+  { value: 'doktora',       label: 'Doktora',       icon: '🎓' },
+]
+
+// Dil barının durakları — "Bilmiyorum" en solda, filtre uygulanmaz.
+const CEFR_STOPS = [
+  { value: 'none', short: '—',  label: 'Bilmiyorum / önemli değil' },
+  { value: 'A1',   short: 'A1', label: 'A1 — Başlangıç' },
+  { value: 'A2',   short: 'A2', label: 'A2 — Temel' },
+  { value: 'B1',   short: 'B1', label: 'B1 — Orta' },
+  { value: 'B2',   short: 'B2', label: 'B2 — İyi' },
+  { value: 'C1',   short: 'C1', label: 'C1 — İleri' },
+  { value: 'C2',   short: 'C2', label: 'C2 — Anadil seviyesi' },
 ]
 
 // Popüler bölümler — kullanıcı dostu etiket + DB'de eşlenebilecek slug
@@ -219,6 +255,17 @@ export default function Home() {
         { opacity: 0, y: 12 },
         { opacity: 1, y: 0, duration: 0.5, delay: 0.25, stagger: 0.045, ease: 'power2.out' })
 
+      // Sonuç sayacı 0'dan gerçek değere saysın
+      const countEl = document.querySelector('[data-count]')
+      if (countEl) {
+        const target = Number(countEl.textContent || '0')
+        const obj = { v: 0 }
+        gsap.to(obj, {
+          v: target, duration: 0.9, ease: 'power2.out',
+          onUpdate: () => { countEl.textContent = String(Math.round(obj.v)) },
+        })
+      }
+
       // Sonuç kartları: görünüm alanına girdikçe teker teker belirir
       ScrollTrigger.batch('.opp-card', {
         start: 'top 92%',
@@ -234,6 +281,9 @@ export default function Home() {
   }, [step, results, activeCategory])
 
   const selectedCountry = COUNTRIES.find(c => c.code === country) ?? null
+  const activeFilterCount = [country, category, studyLevel, highestEdu, field,
+    age === '' ? null : age, languageLevel === 'none' ? null : languageLevel]
+    .filter(Boolean).length
   const targetLanguage = selectedCountry?.language ?? null
 
   function handleCountryChange(newCountry: string | null) {
@@ -330,26 +380,31 @@ export default function Home() {
     <main ref={formRef} style={{
       position: 'relative',
       minHeight: '100vh',
-      padding: '56px 16px 40px',
+      padding: '64px 20px 56px',
       scrollMarginTop: 0,
     }}>
       <AmbientCanvas />
       <ThemeGlyphs />
-      <div key="form" className="page-layer" style={{ maxWidth: 600, margin: '0 auto' }}>
+      <div key="form" className="page-layer" style={{ maxWidth: 1080, margin: '0 auto' }}>
 
         {/* Header */}
         <div data-anim="head">
-        <AppHeader />
-        <div style={{ fontSize: 13, color: '#888', marginBottom: 12 }}>
-          Burs, gönüllülük, staj — bedava yurt dışı fırsatları
-        </div>
-
-        {/* Step pills */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 28 }}>
-          <StepPill label="1 · Profil" active />
-          <span style={{ color: '#ccc', fontSize: 12 }}>›</span>
-          <StepPill label="2 · Sonuçlar" />
-        </div>
+          <AppHeader />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <StepPill label="1 · Profil" active />
+            <span style={{ color: '#C7C3DC', fontSize: 12 }}>›</span>
+            <StepPill label="2 · Sonuçlar" />
+          </div>
+          <h2 style={{
+            fontSize: 'clamp(26px, 4vw, 40px)', fontWeight: 600, letterSpacing: '-0.035em',
+            color: '#231C52', margin: '10px 0 8px', lineHeight: 1.1,
+          }}>
+            Sana uyan fırsatı bulalım.
+          </h2>
+          <p style={{ fontSize: 14, color: '#6F6990', maxWidth: 560, lineHeight: 1.55, marginBottom: 26 }}>
+            Hiçbir alan zorunlu değil — ne kadarını doldurursan eşleşme o kadar isabetli olur.
+            Sonuç çıkmazsa filtreleri biz gevşetiriz.
+          </p>
         </div>
 
         {searchError && (
@@ -357,7 +412,7 @@ export default function Home() {
             style={{
               marginBottom: 16,
               padding: '12px 14px',
-              borderRadius: 10,
+              borderRadius: 12,
               background: '#FDE8E8',
               border: '0.5px solid #E8A8A8',
               fontSize: 13,
@@ -374,152 +429,154 @@ export default function Home() {
           </div>
         )}
 
-        {/* Form card */}
-        <div data-anim="card" style={{
-          background: 'rgba(255,255,255,0.94)',
-          backdropFilter: 'blur(10px)',
-          border: '0.5px solid #e0e0e0',
-          borderRadius: 16, padding: '24px 20px',
-          boxShadow: '0 20px 40px -28px rgba(83, 74, 183, 0.28), 0 1px 2px rgba(0,0,0,0.02)',
+        {/* İki sütun: SEN | HEDEFİN */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(420px, 100%), 1fr))',
+          gap: 20,
+          alignItems: 'start',
         }}>
 
-          <SectionTitle>Profilini gir</SectionTitle>
+          {/* ── SEN ─────────────────────────────────────────── */}
+          <section data-anim="card" className="glass-panel" style={{ padding: '26px 24px' }}>
+            <PanelTitle badge="01" title="Sen" subtitle="Kim olduğun" />
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
-            <Field label="Vatandaşlık">
-              <input
-                value={citizenship}
-                onChange={e => setCitizenship(e.target.value.toUpperCase())}
-                placeholder="TR"
-                maxLength={2}
-                style={inputStyle}
+            <div style={{ display: 'grid', gap: 26 }}>
+              <ChoiceGrid
+                label="Halihazırdaki en yüksek eğitim seviyen"
+                hint="opsiyonel"
+                options={HIGHEST_EDU_OPTIONS}
+                value={highestEdu}
+                onChange={setHighestEdu}
+                accent="#0F6E56"
               />
-            </Field>
-            <Field label="Yaş (opsiyonel)">
-              <input
-                type="number"
-                value={age}
-                onChange={e => setAge(e.target.value)}
-                placeholder="23"
-                style={inputStyle}
+
+              <RangeSlider
+                label="Yaşın"
+                value={age === '' ? null : Number(age)}
+                onChange={v => setAge(v === null ? '' : String(v))}
               />
-            </Field>
+
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#4A4468', marginBottom: 10 }}>
+                  Vatandaşlık
+                </div>
+                <input
+                  value={citizenship}
+                  onChange={e => setCitizenship(e.target.value.toUpperCase())}
+                  placeholder="TR"
+                  maxLength={2}
+                  aria-label="Vatandaşlık kodu"
+                  style={{
+                    width: 96, padding: '11px 14px', borderRadius: 12,
+                    border: '1px solid rgba(83, 74, 183, 0.2)', fontSize: 15, fontWeight: 600,
+                    letterSpacing: '0.08em', textAlign: 'center',
+                    outline: 'none', background: 'rgba(255,255,255,0.85)', color: '#231C52',
+                  }}
+                />
+                <span style={{ fontSize: 11, color: '#A9A4BF', marginLeft: 10 }}>ISO kodu (TR, DE…)</span>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#4A4468', marginBottom: 10 }}>
+                  Bölümün <span style={{ fontWeight: 400, color: '#A9A4BF' }}>· opsiyonel</span>
+                </div>
+                <Picker
+                  placeholder="Bölüm seç"
+                  value={field}
+                  valueLabel={field ? fieldLabel(field) : null}
+                  options={FIELDS.map(f => ({ value: f.value, label: f.label, group: f.group }))}
+                  onChange={setField}
+                  emptyHint="Yükleniyor..."
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* ── HEDEFİN ─────────────────────────────────────── */}
+          <section data-anim="card" className="glass-panel" style={{ padding: '26px 24px' }}>
+            <PanelTitle badge="02" title="Hedefin" subtitle="Nereye, ne için" />
+
+            <div style={{ display: 'grid', gap: 26 }}>
+              <ChoiceGrid
+                label="Nereye gitmek istiyorsun?"
+                hint="opsiyonel"
+                options={COUNTRY_OPTIONS}
+                value={country}
+                onChange={handleCountryChange}
+                columns={4}
+                accent="#4B41B5"
+              />
+
+              {targetLanguage && (
+                <StepSlider
+                  label={`${targetLanguage} seviyen`}
+                  hint="opsiyonel — bilmiyorsan boş bırak"
+                  stops={CEFR_STOPS}
+                  value={languageLevel}
+                  onChange={setLanguageLevel}
+                />
+              )}
+
+              <ChoiceGrid
+                label="Ne arıyorsun?"
+                hint="opsiyonel"
+                options={CATEGORY_OPTIONS}
+                value={category}
+                onChange={setCategory}
+                columns={3}
+                accent="#C9539C"
+              />
+
+              <ChoiceGrid
+                label="Başvurmak istediğin eğitim kademesi"
+                hint="opsiyonel"
+                options={STUDY_LEVEL_OPTIONS}
+                value={studyLevel}
+                onChange={setStudyLevel}
+                columns={4}
+                accent="#534AB7"
+              />
+            </div>
+          </section>
+        </div>
+
+        {/* Aksiyon çubuğu — birincil aksiyon sağ altta */}
+        <div data-anim="card" className="glass-panel action-bar" style={{
+          marginTop: 20, padding: '18px 22px',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: 16, flexWrap: 'wrap',
+        }}>
+          <div style={{ fontSize: 12.5, color: '#6F6990', lineHeight: 1.5 }}>
+            {activeFilterCount === 0
+              ? 'Hiç filtre seçmedin — tüm açık fırsatları getireceğiz.'
+              : `${activeFilterCount} filtre seçili · tam eşleşme çıkmazsa otomatik gevşetiriz.`}
           </div>
-
-          <Field label="Halihazırdaki en yüksek eğitim seviyeniz" style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {HIGHEST_EDU_LEVELS.map(l => (
-                <Tag
-                  key={l.value}
-                  label={l.label}
-                  selected={highestEdu === l.value}
-                  onClick={() => setHighestEdu(highestEdu === l.value ? null : l.value)}
-                  color="#1a6b5a"
-                />
-              ))}
-            </div>
-          </Field>
-
-          <Field label="Başvurmak istediğiniz eğitim kademesi" style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {STUDY_LEVELS.map(l => (
-                <Tag
-                  key={l.value}
-                  label={l.label}
-                  selected={studyLevel === l.value}
-                  onClick={() => setStudyLevel(studyLevel === l.value ? null : l.value)}
-                  color="#534AB7"
-                />
-              ))}
-            </div>
-          </Field>
-
-          {/* Bölüm — gruplandırılmış dropdown */}
-          <Field label="Bölüm (opsiyonel — eşleşme olmazsa otomatik geçeriz)" style={{ marginBottom: 24 }}>
-            <Picker
-              placeholder="Bölüm seç"
-              value={field}
-              valueLabel={field ? fieldLabel(field) : null}
-              options={FIELDS.map(f => ({ value: f.value, label: f.label, group: f.group }))}
-              onChange={setField}
-              emptyHint="Yükleniyor..."
-            />
-          </Field>
-
-          <SectionTitle>Nereye gitmek istiyorsun?</SectionTitle>
-          <p style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>
-            Önce ülke seç — sonra o ülkenin dilindeki seviyeni soracağız.
-          </p>
-
-          {/* Ülke — dropdown */}
-          <Field label="Ülke" style={{ marginBottom: 16 }}>
-            <Picker
-              placeholder="Ülke seç"
-              value={country}
-              valueLabel={selectedCountry?.label ?? null}
-              options={COUNTRIES.map(c => ({ value: c.code, label: c.label }))}
-              onChange={handleCountryChange}
-            />
-          </Field>
-
-          {/* Dil seviyesi — sadece ülke seçildiyse, tamamen opsiyonel */}
-          {targetLanguage && (
-            <Field label={`${targetLanguage} seviyen (opsiyonel)`} style={{ marginBottom: 16 }}>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {CEFR_LEVELS.map(l => (
-                  <Tag
-                    key={l.value}
-                    label={l.label}
-                    selected={languageLevel === l.value}
-                    onClick={() => setLanguageLevel(languageLevel === l.value ? null : l.value)}
-                    color="#0F6E56"
-                  />
-                ))}
-              </div>
-              <div style={{ fontSize: 10, color: '#aaa', marginTop: 6, lineHeight: 1.5 }}>
-                Boş bırakabilirsin — dil bilmeden de başvurabileceğin bol bol fırsat var.
-                Eşleşme düşük çıkarsa bu filtreyi otomatik gevşetiyoruz.
-              </div>
-            </Field>
-          )}
-
-          <Field label="Kategori (opsiyonel)" style={{ marginBottom: 24 }}>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {CATEGORIES.map(c => (
-                <Tag
-                  key={c.slug}
-                  label={c.label}
-                  selected={category === c.slug}
-                  onClick={() => setCategory(category === c.slug ? null : c.slug)}
-                  color="#534AB7"
-                />
-              ))}
-            </div>
-          </Field>
-
           <button
             onClick={handleSearch}
             disabled={loading}
             className="btn-primary"
             style={{
-              width: '100%', padding: '13px', borderRadius: 12,
+              padding: '15px 34px', borderRadius: 999,
               background: loading
                 ? 'linear-gradient(115deg, #AFA9EC 0%, #9FD9D2 100%)'
                 : 'linear-gradient(115deg, #4B41B5 0%, #6C4FD0 55%, #17A79A 100%)',
-              boxShadow: loading ? 'none' : '0 14px 26px -14px rgba(76, 65, 181, 0.75)',
-              color: '#fff', border: 'none', fontSize: 14,
-              fontWeight: 500, cursor: loading ? 'not-allowed' : 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              boxShadow: loading ? 'none' : '0 18px 32px -16px rgba(76, 65, 181, 0.85)',
+              color: '#fff', border: 'none', fontSize: 15,
+              fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+              whiteSpace: 'nowrap',
             }}
           >
             {loading && <Spinner />}
-            {loading ? 'Aranıyor...' : 'Fırsatları Göster →'}
+            {loading ? 'Aranıyor…' : 'Fırsatları göster →'}
           </button>
         </div>
       </div>
     </main>
     </>
   )
+
 
   // ─── RESULTS ────────────────────────────────────────────
   return (
@@ -561,14 +618,14 @@ export default function Home() {
         {/* Filter chips */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
           <FilterChip
-            label={`Tümü (${results.length})`}
+            label={`✨ Tümü (${results.length})`}
             active={activeCategory === null}
             onClick={() => setActiveCategory(null)}
           />
           {CATEGORIES.filter(c => categoryCounts[c.slug] > 0).map(c => (
             <FilterChip
               key={c.slug}
-              label={`${c.label} (${categoryCounts[c.slug]})`}
+              label={`${CATEGORY_ICON_BY_SLUG[c.slug] ?? ''} ${c.label} (${categoryCounts[c.slug]})`}
               active={activeCategory === c.slug}
               onClick={() => setActiveCategory(c.slug)}
             />
@@ -578,8 +635,21 @@ export default function Home() {
         </div>
 
         {/* Result count */}
-        <div style={{ fontSize: 12, color: '#999', marginBottom: 16 }}>
-          {filtered.length} fırsat bulundu
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, margin: '4px 0 14px' }}>
+          <span
+            data-count
+            style={{
+              fontSize: 'clamp(30px, 5vw, 46px)', fontWeight: 700, letterSpacing: '-0.04em',
+              lineHeight: 1,
+              background: 'linear-gradient(115deg, #4B41B5 0%, #6C4FD0 45%, #17A79A 100%)',
+              WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
+            }}
+          >
+            {filtered.length}
+          </span>
+          <span style={{ fontSize: 14, fontWeight: 600, color: '#4A4468' }}>fırsat bulundu</span>
+        </div>
+        <div style={{ fontSize: 12, color: '#8B85A8', marginBottom: 18 }}>
           {country && ` · ${COUNTRIES.find(c => c.code === country)?.label}`}
           {category && ` · ${CATEGORIES.find(c => c.slug === category)?.label}`}
           {(searchSnapshot.highestEdu as string | null) && ` · Mevcut: ${HIGHEST_EDU_LEVELS.find(l => l.value === searchSnapshot.highestEdu)?.label}`}
@@ -795,6 +865,26 @@ function PickerItem({ option, selected, onClick }: {
   )
 }
 
+function PanelTitle({ badge, title, subtitle }: { badge: string; title: string; subtitle: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+      <span style={{
+        fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
+        color: '#fff', background: 'linear-gradient(135deg, #4B41B5, #17A79A)',
+        padding: '6px 10px', borderRadius: 10,
+      }}>
+        {badge}
+      </span>
+      <span style={{ display: 'flex', flexDirection: 'column' }}>
+        <span style={{ fontSize: 17, fontWeight: 600, color: '#231C52', letterSpacing: '-0.02em' }}>
+          {title}
+        </span>
+        <span style={{ fontSize: 11.5, color: '#8B85A8' }}>{subtitle}</span>
+      </span>
+    </div>
+  )
+}
+
 function StepPill({ label, active, done }: { label: string; active?: boolean; done?: boolean }) {
   return (
     <span style={{
@@ -807,45 +897,6 @@ function StepPill({ label, active, done }: { label: string; active?: boolean; do
     }}>
       {label}
     </span>
-  )
-}
-
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ fontSize: 13, fontWeight: 500, color: '#333', marginBottom: 10, marginTop: 4 }}>
-      {children}
-    </div>
-  )
-}
-
-function Field({ label, children, style }: {
-  label: string; children: React.ReactNode; style?: React.CSSProperties
-}) {
-  return (
-    <div style={style}>
-      <div style={{ fontSize: 11, color: '#888', marginBottom: 5 }}>{label}</div>
-      {children}
-    </div>
-  )
-}
-
-function Tag({ label, selected, onClick, color }: {
-  label: string; selected: boolean; onClick: () => void; color: string
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="pill-btn"
-      style={{
-        fontSize: 11, fontWeight: 500, padding: '4px 10px', borderRadius: 20,
-        background: selected ? color : 'transparent',
-        color: selected ? '#fff' : color,
-        border: `0.5px solid ${color}66`,
-        cursor: 'pointer',
-      }}
-    >
-      {label}
-    </button>
   )
 }
 
@@ -882,8 +933,3 @@ function Spinner() {
   )
 }
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '8px 10px', borderRadius: 8,
-  border: '0.5px solid #e0e0e0', fontSize: 13,
-  outline: 'none', background: '#fff', color: '#1a1a1a',
-}
