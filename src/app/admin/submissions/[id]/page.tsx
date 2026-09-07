@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, use } from 'react'
 import { supabase } from '@/lib/supabase'
+import RejectComposer from '../../reject-composer'
 
 const CATEGORIES = [
   { slug: 'scholarship',   label: 'Burs' },
@@ -56,6 +57,7 @@ export default function SubmissionDetailPage({
   const [actionLoading, setActionLoading] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [reviseNote, setReviseNote] = useState('')
+  const [showReject, setShowReject] = useState(false)
 
   // Editable fields
   const [title, setTitle] = useState('')
@@ -162,19 +164,19 @@ export default function SubmissionDetailPage({
     }
   }
 
-  async function handleReject() {
-    const note = prompt('Red sebebi (opsiyonel):') ?? ''
+  async function handleReject(note: string) {
     setActionLoading(true)
     const { error } = await supabase.rpc('reject_submission', {
       p_id: id,
-      p_note: note || null,
+      p_note: note,
     })
     setActionLoading(false)
     if (error) {
       showToast('Hata: ' + error.message)
     } else {
+      setShowReject(false)
       showToast('Reddedildi.')
-      setSub(prev => prev ? { ...prev, status: 'rejected' } : null)
+      setSub(prev => prev ? { ...prev, status: 'rejected', admin_note: note } : null)
     }
   }
 
@@ -325,6 +327,17 @@ export default function SubmissionDetailPage({
             </>
           )}
 
+          {sub.admin_note && (
+            <div style={{
+              background: sub.status === 'rejected' ? '#FDE8E8' : '#FAEEDA',
+              borderRadius: 8, padding: '9px 11px', marginBottom: 12,
+              fontSize: 12, color: sub.status === 'rejected' ? '#7A1F1F' : '#633806',
+              lineHeight: 1.5, wordBreak: 'break-word',
+            }}>
+              <strong>Karar / inceleme notu:</strong> {sub.admin_note}
+            </div>
+          )}
+
           {/* Save button */}
           {isPending && (
             <button
@@ -354,7 +367,7 @@ export default function SubmissionDetailPage({
                 Kaydet ve Onayla
               </button>
               <button
-                onClick={handleReject}
+                onClick={() => setShowReject(true)}
                 disabled={actionLoading}
                 style={{
                   padding: '12px 16px', borderRadius: 10,
@@ -365,6 +378,14 @@ export default function SubmissionDetailPage({
                 Reddet
               </button>
             </div>
+          )}
+
+          {isPending && showReject && (
+            <RejectComposer
+              busy={actionLoading}
+              onCancel={() => setShowReject(false)}
+              onSubmit={handleReject}
+            />
           )}
 
           {/* Revise */}

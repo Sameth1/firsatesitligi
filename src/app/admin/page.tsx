@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import RejectComposer from './reject-composer'
 
 interface Submission {
   id: string
@@ -50,6 +51,7 @@ export default function AdminPage() {
   const [filter, setFilter] = useState<string>('pending')
   const [loading, setLoading] = useState(true)
   const [reviseId, setReviseId] = useState<string | null>(null)
+  const [rejectId, setRejectId] = useState<string | null>(null)
   const [reviseNote, setReviseNote] = useState('')
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
@@ -132,17 +134,17 @@ export default function AdminPage() {
     }
   }
 
-  async function handleReject(id: string) {
-    const note = prompt('Red sebebi (opsiyonel):') ?? ''
+  async function handleReject(id: string, note: string) {
     setActionLoading(id)
     const { error } = await supabase.rpc('reject_submission', {
       p_id: id,
-      p_note: note || null,
+      p_note: note,
     })
     setActionLoading(null)
     if (error) {
       showToast('Hata: ' + error.message)
     } else {
+      setRejectId(null)
       showToast('Reddedildi.')
       refresh()
     }
@@ -338,7 +340,7 @@ export default function AdminPage() {
                         color="#3C3489"
                         bg="#EEEDFE"
                         loading={actionLoading === sub.id}
-                        onClick={() => { setReviseId(sub.id); setReviseNote('') }}
+                        onClick={() => { setReviseId(sub.id); setRejectId(null); setReviseNote('') }}
                       />
                     ) : (
                       <span
@@ -353,7 +355,7 @@ export default function AdminPage() {
                       color="#A32D2D"
                       bg="#FDE8E8"
                       loading={actionLoading === sub.id}
-                      onClick={() => handleReject(sub.id)}
+                      onClick={() => { setRejectId(sub.id); setReviseId(null) }}
                     />
                   </div>
                 )}
@@ -386,6 +388,14 @@ export default function AdminPage() {
                       Gönder
                     </button>
                   </div>
+                )}
+
+                {rejectId === sub.id && (
+                  <RejectComposer
+                    busy={actionLoading === sub.id}
+                    onCancel={() => setRejectId(null)}
+                    onSubmit={note => handleReject(sub.id, note)}
+                  />
                 )}
               </div>
             ))}

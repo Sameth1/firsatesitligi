@@ -55,6 +55,7 @@ import os
 import re
 import sys
 import time
+from collections import Counter
 from datetime import date, datetime, timezone
 
 import requests
@@ -86,6 +87,7 @@ LLM_MIN_INTERVAL = 1.5        # çağrılar arası bekleme — ücretsiz tier RP
 LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "3000"))
 
 AGENT_MARKER = "[ajan]"       # admin_note öneki — tekrar çalıştırmada atlamak için
+HUMAN_REJECT_RE = re.compile(r"^\[insan\]\s+RED:([a-z0-9_]+)\s+—\s+(.+)$")
 PAGE_CHAR_LIMIT = 6000
 
 HTTP_HEADERS = {
@@ -192,6 +194,64 @@ def fetch_known_urls():
     except requests.exceptions.RequestException as e:
         print(f"Uyarı: mevcut URL listesi çekilemedi — kopya kontrolü zayıf ({e})")
         return set()
+
+
+def fetch_human_rejections():
+    """İnsan adminlerin reddettiği kayıtları geri bildirim raporu için çeker.
+
+    Bu kayıtlar yalnızca analiz edilir; agent tarafından yeniden açılmaz veya
+    durumları değiştirilmez.
+    """
+    res = requests.get(
+        f"{SUPABASE_URL}/rest/v1/submissions",
+        headers=sb_headers(),
+        params={
+            "status": "eq.rejected",
+            "reviewed_by": "not.is.null",
+            "select": "submitter_nickname,admin_note,reviewed_at",
+            "order": "reviewed_at.desc",
+            "limit": "5000",
+        },
+        timeout=20,
+    )
+    res.raise_for_status()
+    return res.json()
+
+
+def run_feedback_report():
+    """Yapılandırılmış insan redlerini kaynak ve neden koduna göre özetler."""
+    rows = fetch_human_rejections()
+    by_reason = Counter()
+    by_source = Counter()
+    by_source_reason = Counter()
+
+    for row in rows:
+        source = (row.get("submitter_nickname") or "manual/unknown").strip()
+        note = (row.get("admin_note") or "").strip()
+        match = HUMAN_REJECT_RE.match(note)
+        if match:
+            reason = match.group(1)
+        elif note:
+            reason = "legacy_unstructured"
+        else:
+            reason = "missing_reason"
+        by_reason[reason] += 1
+        by_source[source] += 1
+        by_source_reason[(source, reason)] += 1
+
+    print(f"İnsan tarafından reddedilen toplam kayıt: {len(rows)}")
+    print("\nNedene göre:")
+    for reason, count in by_reason.most_common():
+        print(f"  {reason}: {count}")
+    print("\nKaynağa göre:")
+    for source, count in by_source.most_common():
+        print(f"  {source}: {count}")
+        details = [
+            (reason, n) for (item_source, reason), n in by_source_reason.items()
+            if item_source == source
+        ]
+        for reason, n in sorted(details, key=lambda item: (-item[1], item[0])):
+            print(f"    - {reason}: {n}")
 
 
 def apply_decision(sub, eylem, gerekce, dry_run):
@@ -701,12 +761,23 @@ def main():
                         help="Submission yerine yayındaki fırsatları denetle: "
                              "last_verified_at boş olanların URL'i ölü ya da son "
                              "başvuru tarihi geçmişse is_active=false yapar")
+    parser.add_argument("--feedback-report", action="store_true",
+                        help="İnsan adminlerin red nedenlerini kaynak ve neden "
+                             "koduna göre salt okunur raporla")
     args = parser.parse_args()
 
     if not SUPABASE_KEY:
         print("Eksik ortam değişkeni: SUPABASE_SERVICE_ROLE_KEY — .env kontrol et.",
               file=sys.stderr)
         sys.exit(1)
+
+    if args.feedback_report:
+        try:
+            run_feedback_report()
+        except requests.exceptions.RequestException as e:
+            print(f"Red geri bildirimi okunamadı: {e}", file=sys.stderr)
+            sys.exit(1)
+        return
 
     # Audit modu yalnızca heuristik (URL + tarih) çalışır — LLM yok, anahtar gerekmez.
     if args.audit_opportunities:

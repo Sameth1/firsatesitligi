@@ -25,6 +25,7 @@ interface SubmissionRow {
   deadline_text: string | null
   funding_type: string | null
   status: string
+  admin_note: string | null
   submitter_nickname: string | null
   submitter_email: string | null
   created_at: string
@@ -49,7 +50,7 @@ export default function SubmissionsGrid() {
       const { data, error } = await supabase
         .from('submissions')
         .select('id,title,url,category_slug,host_countries,deadline_text,' +
-                'funding_type,status,submitter_nickname,submitter_email,created_at')
+                'funding_type,status,admin_note,submitter_nickname,submitter_email,created_at')
         .order('created_at', { ascending: false })
       if (!active) return
       if (error) setError(error.message)
@@ -95,6 +96,7 @@ export default function SubmissionsGrid() {
       <ColumnsDirective>
         <ColumnDirective field="title" headerText="Başlık" width="240" template={titleTemplate} />
         <ColumnDirective field="status" headerText="Durum" width="120" template={statusTemplate} />
+        <ColumnDirective field="admin_note" headerText="Karar / Red Nedeni" width="280" />
         <ColumnDirective field="category_slug" headerText="Kategori" width="130" />
         <ColumnDirective field="host_countries" headerText="Ülke" width="110" template={countryTemplate} allowFiltering={false} />
         <ColumnDirective field="deadline_text" headerText="Son başvuru" width="150" />
