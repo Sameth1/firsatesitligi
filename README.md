@@ -300,6 +300,8 @@ python nasilgitmis_scraper.py
 # Bekleyen submission'ları doğrula (DB'ye yazmadan önizleme)
 python validate_submissions.py --dry-run
 python validate_submissions.py --limit 10     # ilk 10 kaydı işle
+python validate_submissions.py --recheck --dry-run --limit 10
+# Daha önce [ajan] notu alan pending kayıtları yeniden değerlendir
 ```
 
 > ⚠️ `SUPABASE_SERVICE_ROLE_KEY` ve `NVIDIA_API_KEY`/`GROQ_API_KEY` hassas anahtarlardır. `.env` dosyası asla commit'lenmemelidir.

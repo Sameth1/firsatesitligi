@@ -29,6 +29,8 @@ Kullanım:
   python validate_submissions.py                # tüm pending'leri işle
   python validate_submissions.py --limit 10     # ilk 10
   python validate_submissions.py --dry-run      # DB'ye yazma, kararı göster
+  python validate_submissions.py --recheck --dry-run --limit 10
+                                               # daha önce ajan notu alan pending'leri yeniden değerlendir
   python validate_submissions.py --audit-opportunities   # aşağıya bak
 
 AUDIT MODU — --audit-opportunities:
@@ -120,6 +122,8 @@ Sana bir submission'ın bilgileri, BUGÜNÜN TARİHİ ve orijinal sayfasının m
 
 TARİH KURALI: Açık/kapalı kararını yalnızca sana verilen "BUGÜNÜN TARİHİ"ne göre ver — kendi tarih bilgine GÜVENME. Sayfadaki son başvuru tarihi, etkinlik tarihi veya proje tarihi bu tarihten önceyse fırsat GEÇMİŞTİR → durum="kapali". Tarihi bütün olarak (gün-ay-yıl) bugünle karşılaştır; yıl tek başına yeterli ipucu değildir.
 
+GÜNCELLİK KURALI: "Apply now", "Applications are invited" veya çalışan bir başvuru linki tek başına fırsatın bugün açık olduğuna yüksek güvenli kanıt değildir; eski ilanlarda bu ifadeler kalabilir. Açık kararı için gelecekte bir tarih, açık olduğu belirtilen güncel dönem/yıl veya başvurunun şu anda kabul edildiğini gösteren eşdeğer güncel kanıt ara. Böyle bir güncellik kanıtı yoksa durum="belirsiz" ve guven en fazla "orta" olsun; otomatik onaya gönderme.
+
 2) kategori_uygun — Sayfa gerçekten bu fırsatı anlatıyor mu ve platforma uygun mu?
    - true: Gerçek bir fırsat ilanı, belirtilen kategoriyle makul örtüşüyor ve gencin ücret ödemesini gerektirmiyor. TEK bir fırsat = tek program, tek son başvuru tarihi, tek başvuru süreci.
    - false: Fırsat ilanı değil (genel blog, ana sayfa, giriş sayfası, alakasız ürün/hizmet, hata sayfası); VEYA ücretli/ticari program; VEYA kategoriyle hiç ilgisi yok.
@@ -143,8 +147,14 @@ def sb_headers():
     }
 
 
-def fetch_pending(limit=None):
-    """pending submission'ları çeker. Service key RLS'i bypass eder."""
+def fetch_pending(limit=None, recheck=False):
+    """Pending submission'ları çeker. Service key RLS'i bypass eder.
+
+    Varsayılan akış, daha önce ajan tarafından işlenen kayıtları idempotentlik
+    için atlar. ``recheck=True`` eski ajan notlu pending kayıtları da yeniden
+    değerlendirir; zamanla geçen deadline'ları ve değişen sayfaları yakalamak
+    için kullanılır.
+    """
     params = {
         "status": "eq.pending",
         "select": "id,title,url,category_slug,eligibility_notes,deadline_text,admin_note",
@@ -154,8 +164,11 @@ def fetch_pending(limit=None):
                        headers=sb_headers(), params=params, timeout=20)
     res.raise_for_status()
     rows = res.json()
-    # Ajanın daha önce işlediklerini atla — idempotent
-    rows = [r for r in rows if not (r.get("admin_note") or "").startswith(AGENT_MARKER)]
+    # Ajanın daha önce işlediklerini varsayılan olarak atla — idempotent.
+    # --recheck özellikle eski pending kararlarını tazelemek için bu süzgeci açar.
+    if not recheck:
+        rows = [r for r in rows
+                if not (r.get("admin_note") or "").startswith(AGENT_MARKER)]
     return rows[:limit] if limit else rows
 
 
@@ -410,9 +423,16 @@ def judge_with_llm(sub, url, http_note, page_text):
         except requests.exceptions.RequestException as e:
             print(f"  ! LLM ağ hatası: {e}")
             return None
-        if res.status_code == 429:               # rate limit aşıldı
-            wait = 20 * (attempt + 1)
-            print(f"  LLM 429 (rate limit) — {wait}s bekleniyor...")
+        if res.status_code in (429, 500, 502, 503, 504) and attempt < 2:
+            # NVIDIA ücretsiz endpoint'i yoğunlukta 503 döndürebiliyor. 429 için
+            # daha uzun, diğer geçici sunucu hataları için kademeli kısa backoff.
+            if res.status_code == 429:
+                wait = 20 * (attempt + 1)
+                reason = "rate limit"
+            else:
+                wait = 5 * (attempt + 1)
+                reason = "geçici sunucu hatası"
+            print(f"  LLM {res.status_code} ({reason}) — {wait}s bekleniyor...")
             time.sleep(wait)
             continue
         break
@@ -672,6 +692,9 @@ def main():
     parser.add_argument("--limit", type=int, help="En fazla bu kadar kayıt işle")
     parser.add_argument("--dry-run", action="store_true",
                         help="DB'ye yazma, sadece kararı göster")
+    parser.add_argument("--recheck", action="store_true",
+                        help="Daha önce [ajan] notu almış pending kayıtları da "
+                             "yeniden değerlendir")
     parser.add_argument("--audit-opportunities", action="store_true",
                         help="Submission yerine yayındaki fırsatları denetle: "
                              "last_verified_at boş olanların URL'i ölü ya da son "
@@ -697,7 +720,7 @@ def main():
 
     print("Pending submission'lar çekiliyor...")
     try:
-        subs = fetch_pending(args.limit)
+        subs = fetch_pending(args.limit, recheck=args.recheck)
     except requests.exceptions.RequestException as e:
         print(f"Supabase'den okuma hatası: {e}", file=sys.stderr)
         sys.exit(1)
