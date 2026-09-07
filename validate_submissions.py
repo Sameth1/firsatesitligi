@@ -266,8 +266,8 @@ def approve_submission(sub, dry_run):
 def parse_deadline(text):
     """submission.deadline_text içinden bir tarih çıkarır (date veya None).
     Sırayla denenen formatlar: ISO (2026-06-25), noktalı (25.06.2026),
-    Türkçe-ay (25 haziran 2026), İngilizce ay-önce (june 25, 2026) ve
-    İngilizce gün-önce (25 june 2026)."""
+    Türkçe-ay (25 haziran 2026), İngilizce ay-önce (june 25, 2026 / april
+    22nd, 2026) ve İngilizce gün-önce (25 june 2026)."""
     if not text:
         return None
     t = str(text).lower()
@@ -285,7 +285,9 @@ def parse_deadline(text):
         if m and m.group(2) in TR_AYLAR:
             d, mo, y = int(m.group(1)), TR_AYLAR[m.group(2)], int(m.group(3))
     if d is None:                                              # EN ay-önce: june 25, 2026
-        m = re.search(r"([a-z]+)\s+(\d{1,2}),?\s+(\d{4})", t)
+        m = re.search(
+            r"([a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})", t
+        )
         if m and m.group(1) in EN_AYLAR:
             mo, d, y = EN_AYLAR[m.group(1)], int(m.group(2)), int(m.group(3))
     if d is None:                                              # EN gün-önce: 25 june 2026
