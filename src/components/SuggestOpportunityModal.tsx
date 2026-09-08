@@ -90,8 +90,8 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
 
   const inputStyle: React.CSSProperties = {
     width: '100%', padding: '8px 10px', borderRadius: 8,
-    border: '0.5px solid #e0e0e0', fontSize: 13,
-    outline: 'none', background: '#fff', color: '#1a1a1a',
+    border: '1px solid rgba(255,255,255,0.14)', fontSize: 13,
+    outline: 'none', background: 'rgba(255,255,255,0.05)', color: 'var(--text-hi)',
   }
 
   return (
@@ -101,21 +101,24 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
       className="fx-fade-in"
       style={{
         position: 'fixed', inset: 0, zIndex: 100,
-        background: 'rgba(0,0,0,0.35)',
+        background: 'rgba(4, 3, 14, 0.72)',
+        backdropFilter: 'blur(6px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 16,
       }}
     >
       <div className="fx-scale-in" style={{
-        background: '#fff', borderRadius: 16,
+        background: 'rgba(16, 12, 44, 0.97)',
+        border: '1px solid rgba(255,255,255,0.12)',
+        boxShadow: '0 40px 90px -30px rgba(0,0,0,0.95)',
+        borderRadius: 22,
         maxWidth: 520, width: '100%', maxHeight: '90vh',
-        overflowY: 'auto', padding: '24px 20px',
-        boxShadow: '0 24px 64px -12px rgba(0,0,0,0.25)',
+        overflowY: 'auto', padding: '26px 22px',
       }}>
         {status === 'done' ? (
           <div style={{ textAlign: 'center', padding: '20px 0' }}>
             <div style={{
-              fontSize: 14, fontWeight: 500, color: '#085041', marginBottom: 8,
+              fontSize: 14, fontWeight: 500, color: '#7BF0DC', marginBottom: 8,
             }}>
               {email
                 ? 'Teşekkürler, ekibimiz inceleyecek. Durum email\'ine düşecek.'
@@ -125,8 +128,8 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
               onClick={onClose}
               style={{
                 marginTop: 8, padding: '8px 20px', borderRadius: 8,
-                background: '#534AB7', color: '#fff', border: 'none',
-                fontSize: 13, fontWeight: 500, cursor: 'pointer',
+                background: 'var(--grad-brand)', color: '#150F35', border: 'none',
+                fontSize: 13, fontWeight: 700, cursor: 'pointer',
               }}
             >
               Kapat
@@ -138,7 +141,7 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
               marginBottom: 16,
             }}>
-              <div style={{ fontSize: 15, fontWeight: 500, color: '#1a1a1a' }}>
+              <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-hi)' }}>
                 Fırsat Öner
               </div>
               <button
@@ -146,7 +149,7 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
                 onClick={onClose}
                 style={{
                   background: 'none', border: 'none', fontSize: 18,
-                  color: '#999', cursor: 'pointer', padding: '0 4px',
+                  color: 'var(--text-low)', cursor: 'pointer', padding: '0 4px',
                 }}
               >
                 ×
@@ -184,9 +187,9 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
                   onClick={() => setCategorySlug(categorySlug === c.slug ? null : c.slug)}
                   style={{
                     fontSize: 11, fontWeight: 500, padding: '4px 10px', borderRadius: 20,
-                    background: categorySlug === c.slug ? '#534AB7' : 'transparent',
-                    color: categorySlug === c.slug ? '#fff' : '#534AB7',
-                    border: '0.5px solid #534AB766', cursor: 'pointer',
+                    background: categorySlug === c.slug ? 'rgba(124, 92, 255, 0.35)' : 'rgba(255,255,255,0.04)',
+                    color: categorySlug === c.slug ? '#fff' : 'var(--text-mid)',
+                    border: `1px solid ${categorySlug === c.slug ? 'rgba(124, 92, 255, 0.8)' : 'rgba(255,255,255,0.12)'}`, cursor: 'pointer',
                   }}
                 >
                   {c.label}
@@ -196,9 +199,9 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
 
             {/* Opsiyonel kimlik bloğu */}
             <div style={{
-              borderTop: '0.5px solid #f0f0f0', paddingTop: 14, marginBottom: 14,
+              borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 14, marginBottom: 14,
             }}>
-              <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-low)', marginBottom: 10 }}>
                 İsteğe bağlı
               </div>
 
@@ -218,7 +221,7 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
                 type="email"
                 style={{ ...inputStyle, marginBottom: 2 }}
               />
-              <div style={{ fontSize: 10, color: '#aaa', marginBottom: 12, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 10.5, color: 'var(--text-low)', marginBottom: 12, lineHeight: 1.5 }}>
                 Revize veya onay durumunda haber vereceğiz. Boş bırakırsan rahatsız etmeyiz.
               </div>
             </div>
@@ -228,7 +231,7 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
               type="button"
               onClick={() => setExpanded(!expanded)}
               style={{
-                background: 'none', border: 'none', color: '#534AB7',
+                background: 'none', border: 'none', color: 'var(--violet)',
                 fontSize: 12, fontWeight: 500, cursor: 'pointer',
                 padding: 0, marginBottom: expanded ? 12 : 0,
               }}
@@ -269,9 +272,9 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
                       onClick={() => setFundingType(fundingType === f.value ? null : f.value)}
                       style={{
                         fontSize: 11, fontWeight: 500, padding: '4px 10px', borderRadius: 20,
-                        background: fundingType === f.value ? '#1a6b5a' : 'transparent',
-                        color: fundingType === f.value ? '#fff' : '#1a6b5a',
-                        border: '0.5px solid #1a6b5a66', cursor: 'pointer',
+                        background: fundingType === f.value ? 'rgba(43, 224, 200, 0.28)' : 'rgba(255,255,255,0.04)',
+                        color: fundingType === f.value ? '#fff' : '#7BF0DC',
+                        border: `1px solid ${fundingType === f.value ? 'rgba(43, 224, 200, 0.75)' : 'rgba(255,255,255,0.12)'}`, cursor: 'pointer',
                       }}
                     >
                       {f.label}
@@ -326,18 +329,18 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
               disabled={status === 'loading' || !title.trim() || !url.trim() || !categorySlug}
               style={{
                 width: '100%', padding: '12px', borderRadius: 10, marginTop: 16,
-                background: status === 'loading' ? '#AFA9EC' : '#534AB7',
-                color: '#fff', border: 'none', fontSize: 14,
-                fontWeight: 500,
+                background: 'var(--grad-brand)',
+                color: '#150F35', border: 'none', fontSize: 14, fontWeight: 700,
                 cursor: status === 'loading' ? 'not-allowed' : 'pointer',
-                opacity: (!title.trim() || !url.trim() || !categorySlug) ? 0.5 : 1,
+                opacity: (status === 'loading' || !title.trim() || !url.trim() || !categorySlug)
+                  ? 0.5 : 1,
               }}
             >
               {status === 'loading' ? 'Gönderiliyor...' : 'Gönder'}
             </button>
 
             {status === 'error' && (
-              <div style={{ fontSize: 11, color: '#A32D2D', marginTop: 8, textAlign: 'center' }}>
+              <div style={{ fontSize: 11, color: '#FFB4B4', marginTop: 8, textAlign: 'center' }}>
                 Bir hata oluştu, tekrar dene.
               </div>
             )}
@@ -350,6 +353,6 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
 
 function Label({ text }: { text: string }) {
   return (
-    <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>{text}</div>
+    <div style={{ fontSize: 11.5, color: 'var(--text-mid)', marginBottom: 4 }}>{text}</div>
   )
 }

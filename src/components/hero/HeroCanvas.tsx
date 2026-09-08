@@ -60,14 +60,15 @@ const FRAG_BACKDROP = /* glsl */ `
     vec3 brandViolet = vec3(0.325, 0.290, 0.717);  // #534AB7
     vec3 teal        = vec3(0.059, 0.431, 0.396);  // #0F6E65
     vec3 magenta     = vec3(0.788, 0.325, 0.612);  // #C9539C
-    vec3 cream       = vec3(0.984, 0.980, 0.996);
+    vec3 space       = vec3(0.027, 0.024, 0.086);  // #070616 — form bölümünün zemini
 
     vec3 col = mix(deepViolet, brandViolet, smoothstep(0.15, 0.75, n));
     col = mix(col, teal,    smoothstep(0.45, 0.95, fbm(p * 1.3 - t * 1.7)));
     col = mix(col, magenta, smoothstep(0.55, 1.0,  fbm(p * 1.9 + t * 1.2)) * 0.55);
 
-    // aşağı doğru krem yıkama — hero'dan form bölümüne yumuşak geçiş
-    col = mix(col, cream, smoothstep(0.42, 0.02, uv.y) * 0.92);
+    // aşağı doğru uzay moruna iniş — hero ile koyu form bölümü arasında
+    // görünür bir kesik kalmasın (eskiden krem'e yıkanıyordu).
+    col = mix(col, space, smoothstep(0.40, 0.0, uv.y) * 0.96);
     // üst tarafı hafif koyulaştır — beyaz başlık için kontrast
     col *= 1.0 - smoothstep(0.55, 1.0, uv.y) * 0.18;
 
@@ -250,6 +251,39 @@ export default function HeroCanvas() {
     let heroObject: THREE.Object3D | null = null
     let cancelled = false
 
+    // GLB'ye uygulanacak iridesan cam materyali (ışık gerektirmez)
+    const heroObjectMaterial = new THREE.ShaderMaterial({
+      vertexShader: /* glsl */ `
+        varying vec3 vNormalW;
+        varying vec3 vViewDir;
+        void main() {
+          vNormalW = normalize(mat3(modelMatrix) * normal);
+          vec4 world = modelMatrix * vec4(position, 1.0);
+          vViewDir = normalize(cameraPosition - world.xyz);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        precision mediump float;
+        varying vec3 vNormalW;
+        varying vec3 vViewDir;
+        uniform float uTime;
+        void main() {
+          vec3 N = normalize(vNormalW);
+          vec3 V = normalize(vViewDir);
+          float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 2.2);
+          float ang = dot(N, V);
+          vec3 irid = 0.5 + 0.5 * cos(6.28318 * (vec3(0.0, 0.33, 0.67) + ang * 2.0 + uTime * 0.05));
+          vec3 col = mix(vec3(0.42, 0.33, 0.90), vec3(0.16, 0.85, 0.78), N.y * 0.5 + 0.5);
+          col = mix(col, irid, 0.42);
+          col = mix(col, min(col * 2.2 + 0.2, vec3(1.0)), fres * 0.75);
+          gl_FragColor = vec4(col, 0.90);
+        }
+      `,
+      uniforms: { uTime: { value: 0 } },
+      transparent: true,
+    })
+
     fetch(MODEL_URL, { method: 'HEAD' })
       .then(res => {
         if (!res.ok || cancelled) return
@@ -264,20 +298,25 @@ export default function HeroCanvas() {
           const maxAxis = Math.max(size.x, size.y, size.z) || 1
           heroObject.position.sub(center)
 
+          // Üretilen mesh dokusuz geliyor; kendi materyalimiz olmadan gri
+          // plastik gibi duruyordu. Sahnenin iridesan cam dilini uyguluyoruz.
+          heroObject.traverse(node => {
+            const mesh = node as THREE.Mesh
+            if (!mesh.isMesh) return
+            const previous = mesh.material
+            for (const m of Array.isArray(previous) ? previous : [previous]) m?.dispose()
+            mesh.material = heroObjectMaterial
+          })
+
           const holder = new THREE.Group()
           holder.add(heroObject)
-          holder.scale.setScalar(1.6 / maxAxis)
+          holder.scale.setScalar(1.15 / maxAxis)
           scene.add(holder)
           heroObject = holder
 
           // GLB geldiyse blob arkada yumuşak bir hale olarak kalsın
           blob.scale.multiplyScalar(0.62)
           blob.position.z -= 0.9
-
-          scene.add(new THREE.HemisphereLight(0xffffff, 0x3b2f9c, 2.1))
-          const key = new THREE.DirectionalLight(0xffffff, 2.4)
-          key.position.set(2, 3, 4)
-          scene.add(key)
         })
       })
       .catch(() => { /* asset yok — prosedürel sahne yeterli */ })
@@ -367,6 +406,7 @@ export default function HeroCanvas() {
       blob.position.y = blobBaseY + Math.sin(t * 0.6) * 0.07
 
       if (heroObject) {
+        heroObjectMaterial.uniforms.uTime.value = t
         heroObject.position.set(blobBaseX, blobBaseY + Math.sin(t * 0.55) * 0.09, -0.4)
         heroObject.rotation.y = t * 0.28 + pointer.x * 0.4
         heroObject.rotation.z = Math.sin(t * 0.4) * 0.09
@@ -400,21 +440,15 @@ export default function HeroCanvas() {
       cancelled = true
       cancelAnimationFrame(raf)
       if (heroObject) {
+        // Materyal tüm mesh'lerde ortak — geometrileri burada, materyali
+        // aşağıda bir kez bırakıyoruz.
         heroObject.traverse(node => {
           const mesh = node as THREE.Mesh
-          if (!mesh.isMesh) return
-          mesh.geometry?.dispose()
-          const mat = mesh.material
-          const mats = Array.isArray(mat) ? mat : [mat]
-          for (const m of mats) {
-            const std = m as THREE.MeshStandardMaterial
-            std.map?.dispose()
-            std.normalMap?.dispose()
-            m?.dispose()
-          }
+          if (mesh.isMesh) mesh.geometry?.dispose()
         })
         scene.remove(heroObject)
       }
+      heroObjectMaterial.dispose()
       io.disconnect()
       resizeObserver.disconnect()
       window.removeEventListener('pointermove', onPointerMove)
@@ -437,7 +471,7 @@ export default function HeroCanvas() {
       style={{
         position: 'absolute', inset: 0, zIndex: 0,
         // WebGL yoksa/geç yüklenirse arkada duran statik gradient
-        background: 'linear-gradient(165deg, #352D8A 0%, #534AB7 38%, #7E6FD6 62%, #F7F6FC 100%)',
+        background: 'linear-gradient(165deg, #352D8A 0%, #534AB7 34%, #2B2270 68%, #070616 100%)',
       }}
     />
   )
