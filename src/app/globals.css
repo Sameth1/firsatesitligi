@@ -116,6 +116,21 @@ button, a, input, [role="button"] {
   .choice-card::after, .opp-card::before { animation: none !important; }
 }
 
+/* Açık zeminli ekranlar (admin, revize) ──────────────────────────────────
+   body artık koyu temanın açık metin rengini taşıyor. Bu sayfalar kendi
+   krem zeminlerini kuruyor ama rengi belirtilmemiş metinleri body'den miras
+   alıyordu ve beyaz-üstüne-krem kalıyordu. Sarmalayan <main>'e bu sınıf
+   eklenerek eski varsayılan renk geri veriliyor. */
+.light-surface {
+  color: #1a1a1a;
+}
+.light-surface input,
+.light-surface textarea,
+.light-surface select,
+.light-surface button {
+  color-scheme: light;
+}
+
 /* ─── Katmanlar ──────────────────────────────────────────────────────── */
 
 /* WebGL sahnesi içeriğin arkasında kalsın */

@@ -12,7 +12,7 @@ const SubmissionsGrid = dynamic(() => import('./submissions-grid'), {
 
 export default function AdminGridPage() {
   return (
-    <main style={{ minHeight: '100vh', background: '#fafaf9', padding: '32px 16px' }}>
+    <main className="light-surface" style={{ minHeight: '100vh', background: '#fafaf9', padding: '32px 16px' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <div style={{ fontSize: 22, fontWeight: 500, color: '#1a1a1a' }}>
