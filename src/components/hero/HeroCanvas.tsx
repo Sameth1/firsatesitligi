@@ -242,6 +242,21 @@ export default function HeroCanvas() {
     }
     placeBlob(host.clientWidth / host.clientHeight)
 
+    // GLB objesinin kendi yerleşimi. Blob gizlendiğinde kep sahnedeki tek
+    // odak olduğu için onun değerlerini paylaşamıyor: dar ekranda hem
+    // rozetin üstüne biniyor hem sağdan kırpılıyordu.
+    let heroBaseX = 1.92
+    let heroBaseY = 0.72
+    let heroFit = 1          // ekran oranına göre ek küçültme
+    let heroNormalize = 1    // modelin birim küreye ölçeklenmesi (yüklenince)
+    function placeHero(aspect: number) {
+      const portrait = aspect < 0.9
+      heroBaseX = portrait ? 0.26 : 1.92
+      heroBaseY = portrait ? 1.24 : 0.72
+      heroFit = portrait ? 0.62 : 1
+      if (heroObject) heroObject.scale.setScalar(heroNormalize * heroFit)
+    }
+
     // ── Üretilmiş 3D obje (varsa) ─────────────────────────────────────────
     // Varsayılan: public/hero/hero-object.glb (repoya konur, sürümlenir).
     // NEXT_PUBLIC_HERO_MODEL_URL verilirse oradan yüklenir — modeli repoya
@@ -310,13 +325,15 @@ export default function HeroCanvas() {
 
           const holder = new THREE.Group()
           holder.add(heroObject)
-          holder.scale.setScalar(1.15 / maxAxis)
           scene.add(holder)
           heroObject = holder
+          heroNormalize = 1.15 / maxAxis
+          placeHero(host!.clientWidth / Math.max(1, host!.clientHeight))
 
-          // GLB geldiyse blob arkada yumuşak bir hale olarak kalsın
-          blob.scale.multiplyScalar(0.62)
-          blob.position.z -= 0.9
+          // GLB geldiyse prosedürel blob'a gerek yok — sahnede yalnız kep kalır.
+          // Mesh sahnede duruyor ama gizli: GLB olmayan kurulumlarda tek
+          // görsel odak o olduğu için tamamen kaldırmıyoruz.
+          blob.visible = false
         })
       })
       .catch(() => { /* asset yok — prosedürel sahne yeterli */ })
@@ -377,6 +394,7 @@ export default function HeroCanvas() {
       camera.updateProjectionMatrix()
       bgUniforms.uAspect.value = w / h
       placeBlob(w / h)
+      placeHero(w / h)
     }
     const resizeObserver = new ResizeObserver(resize)
     resizeObserver.observe(host)
@@ -401,13 +419,15 @@ export default function HeroCanvas() {
       pointer.y += (target.y - pointer.y) * 0.045
       bgUniforms.uMouse.value.set(pointer.x, pointer.y)
 
-      blob.rotation.y = t * 0.16 + pointer.x * 0.35
-      blob.rotation.x = Math.sin(t * 0.22) * 0.14 + pointer.y * 0.22
-      blob.position.y = blobBaseY + Math.sin(t * 0.6) * 0.07
+      if (blob.visible) {
+        blob.rotation.y = t * 0.16 + pointer.x * 0.35
+        blob.rotation.x = Math.sin(t * 0.22) * 0.14 + pointer.y * 0.22
+        blob.position.y = blobBaseY + Math.sin(t * 0.6) * 0.07
+      }
 
       if (heroObject) {
         heroObjectMaterial.uniforms.uTime.value = t
-        heroObject.position.set(blobBaseX, blobBaseY + Math.sin(t * 0.55) * 0.09, -0.4)
+        heroObject.position.set(heroBaseX, heroBaseY + Math.sin(t * 0.55) * 0.09, -0.4)
         heroObject.rotation.y = t * 0.28 + pointer.x * 0.4
         heroObject.rotation.z = Math.sin(t * 0.4) * 0.09
       }
