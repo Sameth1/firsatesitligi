@@ -175,7 +175,7 @@ export default function AdminPage() {
   }
 
   return (
-    <main style={{ minHeight: '100vh', background: '#fafaf9', padding: '32px 16px' }}>
+    <main className="light-surface" style={{ minHeight: '100vh', background: '#fafaf9', padding: '32px 16px' }}>
       <div style={{ maxWidth: 800, margin: '0 auto' }}>
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>

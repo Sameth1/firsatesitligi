@@ -60,14 +60,15 @@ const FRAG_BACKDROP = /* glsl */ `
     vec3 brandViolet = vec3(0.325, 0.290, 0.717);  // #534AB7
     vec3 teal        = vec3(0.059, 0.431, 0.396);  // #0F6E65
     vec3 magenta     = vec3(0.788, 0.325, 0.612);  // #C9539C
-    vec3 cream       = vec3(0.984, 0.980, 0.996);
+    vec3 space       = vec3(0.027, 0.024, 0.086);  // #070616 — form bölümünün zemini
 
     vec3 col = mix(deepViolet, brandViolet, smoothstep(0.15, 0.75, n));
     col = mix(col, teal,    smoothstep(0.45, 0.95, fbm(p * 1.3 - t * 1.7)));
     col = mix(col, magenta, smoothstep(0.55, 1.0,  fbm(p * 1.9 + t * 1.2)) * 0.55);
 
-    // aşağı doğru krem yıkama — hero'dan form bölümüne yumuşak geçiş
-    col = mix(col, cream, smoothstep(0.42, 0.02, uv.y) * 0.92);
+    // aşağı doğru uzay moruna iniş — hero ile koyu form bölümü arasında
+    // görünür bir kesik kalmasın (eskiden krem'e yıkanıyordu).
+    col = mix(col, space, smoothstep(0.40, 0.0, uv.y) * 0.96);
     // üst tarafı hafif koyulaştır — beyaz başlık için kontrast
     col *= 1.0 - smoothstep(0.55, 1.0, uv.y) * 0.18;
 
@@ -241,6 +242,21 @@ export default function HeroCanvas() {
     }
     placeBlob(host.clientWidth / host.clientHeight)
 
+    // GLB objesinin kendi yerleşimi. Blob gizlendiğinde kep sahnedeki tek
+    // odak olduğu için onun değerlerini paylaşamıyor: dar ekranda hem
+    // rozetin üstüne biniyor hem sağdan kırpılıyordu.
+    let heroBaseX = 1.92
+    let heroBaseY = 0.72
+    let heroFit = 1          // ekran oranına göre ek küçültme
+    let heroNormalize = 1    // modelin birim küreye ölçeklenmesi (yüklenince)
+    function placeHero(aspect: number) {
+      const portrait = aspect < 0.9
+      heroBaseX = portrait ? 0.26 : 1.92
+      heroBaseY = portrait ? 1.24 : 0.72
+      heroFit = portrait ? 0.62 : 1
+      if (heroObject) heroObject.scale.setScalar(heroNormalize * heroFit)
+    }
+
     // ── Üretilmiş 3D obje (varsa) ─────────────────────────────────────────
     // Varsayılan: public/hero/hero-object.glb (repoya konur, sürümlenir).
     // NEXT_PUBLIC_HERO_MODEL_URL verilirse oradan yüklenir — modeli repoya
@@ -249,6 +265,39 @@ export default function HeroCanvas() {
     const MODEL_URL = process.env.NEXT_PUBLIC_HERO_MODEL_URL || '/hero/hero-object.glb'
     let heroObject: THREE.Object3D | null = null
     let cancelled = false
+
+    // GLB'ye uygulanacak iridesan cam materyali (ışık gerektirmez)
+    const heroObjectMaterial = new THREE.ShaderMaterial({
+      vertexShader: /* glsl */ `
+        varying vec3 vNormalW;
+        varying vec3 vViewDir;
+        void main() {
+          vNormalW = normalize(mat3(modelMatrix) * normal);
+          vec4 world = modelMatrix * vec4(position, 1.0);
+          vViewDir = normalize(cameraPosition - world.xyz);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        precision mediump float;
+        varying vec3 vNormalW;
+        varying vec3 vViewDir;
+        uniform float uTime;
+        void main() {
+          vec3 N = normalize(vNormalW);
+          vec3 V = normalize(vViewDir);
+          float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 2.2);
+          float ang = dot(N, V);
+          vec3 irid = 0.5 + 0.5 * cos(6.28318 * (vec3(0.0, 0.33, 0.67) + ang * 2.0 + uTime * 0.05));
+          vec3 col = mix(vec3(0.42, 0.33, 0.90), vec3(0.16, 0.85, 0.78), N.y * 0.5 + 0.5);
+          col = mix(col, irid, 0.42);
+          col = mix(col, min(col * 2.2 + 0.2, vec3(1.0)), fres * 0.75);
+          gl_FragColor = vec4(col, 0.90);
+        }
+      `,
+      uniforms: { uTime: { value: 0 } },
+      transparent: true,
+    })
 
     fetch(MODEL_URL, { method: 'HEAD' })
       .then(res => {
@@ -264,20 +313,27 @@ export default function HeroCanvas() {
           const maxAxis = Math.max(size.x, size.y, size.z) || 1
           heroObject.position.sub(center)
 
+          // Üretilen mesh dokusuz geliyor; kendi materyalimiz olmadan gri
+          // plastik gibi duruyordu. Sahnenin iridesan cam dilini uyguluyoruz.
+          heroObject.traverse(node => {
+            const mesh = node as THREE.Mesh
+            if (!mesh.isMesh) return
+            const previous = mesh.material
+            for (const m of Array.isArray(previous) ? previous : [previous]) m?.dispose()
+            mesh.material = heroObjectMaterial
+          })
+
           const holder = new THREE.Group()
           holder.add(heroObject)
-          holder.scale.setScalar(1.6 / maxAxis)
           scene.add(holder)
           heroObject = holder
+          heroNormalize = 1.15 / maxAxis
+          placeHero(host!.clientWidth / Math.max(1, host!.clientHeight))
 
-          // GLB geldiyse blob arkada yumuşak bir hale olarak kalsın
-          blob.scale.multiplyScalar(0.62)
-          blob.position.z -= 0.9
-
-          scene.add(new THREE.HemisphereLight(0xffffff, 0x3b2f9c, 2.1))
-          const key = new THREE.DirectionalLight(0xffffff, 2.4)
-          key.position.set(2, 3, 4)
-          scene.add(key)
+          // GLB geldiyse prosedürel blob'a gerek yok — sahnede yalnız kep kalır.
+          // Mesh sahnede duruyor ama gizli: GLB olmayan kurulumlarda tek
+          // görsel odak o olduğu için tamamen kaldırmıyoruz.
+          blob.visible = false
         })
       })
       .catch(() => { /* asset yok — prosedürel sahne yeterli */ })
@@ -338,6 +394,7 @@ export default function HeroCanvas() {
       camera.updateProjectionMatrix()
       bgUniforms.uAspect.value = w / h
       placeBlob(w / h)
+      placeHero(w / h)
     }
     const resizeObserver = new ResizeObserver(resize)
     resizeObserver.observe(host)
@@ -362,12 +419,15 @@ export default function HeroCanvas() {
       pointer.y += (target.y - pointer.y) * 0.045
       bgUniforms.uMouse.value.set(pointer.x, pointer.y)
 
-      blob.rotation.y = t * 0.16 + pointer.x * 0.35
-      blob.rotation.x = Math.sin(t * 0.22) * 0.14 + pointer.y * 0.22
-      blob.position.y = blobBaseY + Math.sin(t * 0.6) * 0.07
+      if (blob.visible) {
+        blob.rotation.y = t * 0.16 + pointer.x * 0.35
+        blob.rotation.x = Math.sin(t * 0.22) * 0.14 + pointer.y * 0.22
+        blob.position.y = blobBaseY + Math.sin(t * 0.6) * 0.07
+      }
 
       if (heroObject) {
-        heroObject.position.set(blobBaseX, blobBaseY + Math.sin(t * 0.55) * 0.09, -0.4)
+        heroObjectMaterial.uniforms.uTime.value = t
+        heroObject.position.set(heroBaseX, heroBaseY + Math.sin(t * 0.55) * 0.09, -0.4)
         heroObject.rotation.y = t * 0.28 + pointer.x * 0.4
         heroObject.rotation.z = Math.sin(t * 0.4) * 0.09
       }
@@ -400,21 +460,15 @@ export default function HeroCanvas() {
       cancelled = true
       cancelAnimationFrame(raf)
       if (heroObject) {
+        // Materyal tüm mesh'lerde ortak — geometrileri burada, materyali
+        // aşağıda bir kez bırakıyoruz.
         heroObject.traverse(node => {
           const mesh = node as THREE.Mesh
-          if (!mesh.isMesh) return
-          mesh.geometry?.dispose()
-          const mat = mesh.material
-          const mats = Array.isArray(mat) ? mat : [mat]
-          for (const m of mats) {
-            const std = m as THREE.MeshStandardMaterial
-            std.map?.dispose()
-            std.normalMap?.dispose()
-            m?.dispose()
-          }
+          if (mesh.isMesh) mesh.geometry?.dispose()
         })
         scene.remove(heroObject)
       }
+      heroObjectMaterial.dispose()
       io.disconnect()
       resizeObserver.disconnect()
       window.removeEventListener('pointermove', onPointerMove)
@@ -437,7 +491,7 @@ export default function HeroCanvas() {
       style={{
         position: 'absolute', inset: 0, zIndex: 0,
         // WebGL yoksa/geç yüklenirse arkada duran statik gradient
-        background: 'linear-gradient(165deg, #352D8A 0%, #534AB7 38%, #7E6FD6 62%, #F7F6FC 100%)',
+        background: 'linear-gradient(165deg, #352D8A 0%, #534AB7 34%, #2B2270 68%, #070616 100%)',
       }}
     />
   )

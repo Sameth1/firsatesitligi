@@ -1,14 +1,28 @@
 'use client'
 
 /**
- * Seçim kartları — küçük "tag" düğmeleri yerine ikonlu, dokunması kolay,
- * hover'da kalkan kartlar. Tek seçim; aynı karta tekrar basmak seçimi kaldırır
- * (alanlar opsiyonel kalmalı).
+ * Seçim kartları — ikonlu, dokunması kolay, hover'da kalkan kartlar.
+ * Tek seçim; aynı karta tekrar basmak seçimi kaldırır (alanlar opsiyonel).
+ *
+ * İkon iki biçimde gelebilir:
+ *  - `icon`      : emoji / metin (ülke bayrakları gibi)
+ *  - `iconSrc`   : Higgsfield ile üretilmiş cam 3B ikon (public/icons/*.webp)
+ * Seçim yapıldığında sahneye kartın vurgu rengiyle bir darbe gönderilir.
  */
 
-type Option = { value: string; label: string; icon: string; note?: string }
+import Image from 'next/image'
+import { pulseScene, hexToRgb01 } from '@/components/scene/sceneBus'
 
-export default function ChoiceGrid({ options, value, onChange, label, hint, columns = 3, accent = '#534AB7' }: {
+type Option = {
+  value: string; label: string
+  icon?: string; iconSrc?: string; note?: string
+  /** Kartın kendi vurgu rengi — verilmezse ızgaranın `accent`'i kullanılır. */
+  accent?: string
+}
+
+export default function ChoiceGrid({
+  options, value, onChange, label, hint, columns = 3, accent = '#7C5CFF',
+}: {
   options: Option[]
   value: string | null
   onChange: (v: string | null) => void
@@ -17,55 +31,99 @@ export default function ChoiceGrid({ options, value, onChange, label, hint, colu
   columns?: number
   accent?: string
 }) {
+  const minWidth = columns >= 4 ? 104 : 128
+
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: '#4A4468', letterSpacing: '-0.01em' }}>{label}</span>
+      <div style={{
+        display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
+        marginBottom: 12, gap: 12,
+      }}>
+        <span style={{
+          fontSize: 12.5, fontWeight: 600, color: 'var(--text-hi)',
+          letterSpacing: '-0.01em',
+        }}>
+          {label}
+        </span>
         {value ? (
           <button
             type="button"
             onClick={() => onChange(null)}
-            style={{ fontSize: 11, color: '#7A7496', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+            className="ghost-btn"
+            style={{
+              fontSize: 11, color: 'var(--text-low)', background: 'none',
+              border: 'none', cursor: 'pointer', padding: 0, whiteSpace: 'nowrap',
+            }}
           >
             temizle
           </button>
         ) : (
-          hint && <span style={{ fontSize: 11, color: '#A9A4BF' }}>{hint}</span>
+          hint && <span style={{ fontSize: 11, color: 'var(--text-low)', whiteSpace: 'nowrap' }}>{hint}</span>
         )}
       </div>
 
       <div style={{
         display: 'grid',
-        gridTemplateColumns: `repeat(auto-fit, minmax(min(${columns >= 4 ? 92 : 112}px, 100%), 1fr))`,
-        gap: 8,
+        gridTemplateColumns: `repeat(auto-fit, minmax(min(${minWidth}px, 100%), 1fr))`,
+        gap: 10,
       }}>
         {options.map(o => {
           const selected = value === o.value
+          const tint = o.accent ?? accent
           return (
             <button
               key={o.value}
               type="button"
-              onClick={() => onChange(selected ? null : o.value)}
+              onClick={() => {
+                const next = selected ? null : o.value
+                onChange(next)
+                if (next) pulseScene({ color: hexToRgb01(tint), strength: 0.85 })
+              }}
               className="choice-card"
               data-selected={selected ? 'true' : 'false'}
               style={{
-                display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6,
-                padding: '12px 12px 11px',
-                borderRadius: 14,
+                display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8,
+                padding: '14px 14px 13px',
+                borderRadius: 18,
                 cursor: 'pointer',
                 textAlign: 'left',
-                background: selected ? `linear-gradient(140deg, ${accent} 0%, ${accent}D9 100%)` : 'rgba(255,255,255,0.72)',
-                border: `1px solid ${selected ? 'transparent' : 'rgba(83, 74, 183, 0.16)'}`,
-                color: selected ? '#fff' : '#3A3556',
+                // `color` seçiliyken halka ve ikon parlamasının rengini besler
+                color: selected ? tint : 'var(--text-mid)',
+                background: selected
+                  ? `linear-gradient(150deg, ${tint}38 0%, ${tint}14 100%)`
+                  : 'rgba(255,255,255,0.035)',
+                border: `1px solid ${selected ? `${tint}99` : 'rgba(255,255,255,0.09)'}`,
                 boxShadow: selected
-                  ? `0 14px 26px -14px ${accent}CC`
-                  : '0 2px 6px -4px rgba(35, 28, 82, 0.25)',
+                  ? `0 18px 34px -18px ${tint}, inset 0 1px 0 rgba(255,255,255,0.14)`
+                  : 'inset 0 1px 0 rgba(255,255,255,0.05)',
               }}
             >
-              <span style={{ fontSize: 19, lineHeight: 1 }} aria-hidden="true">{o.icon}</span>
-              <span style={{ fontSize: 12.5, fontWeight: 600, lineHeight: 1.25 }}>{o.label}</span>
+              <span
+                className="choice-icon"
+                aria-hidden="true"
+                style={{
+                  display: 'grid', placeItems: 'center',
+                  width: o.iconSrc ? 38 : 26, height: o.iconSrc ? 38 : 26,
+                  fontSize: 22, lineHeight: 1,
+                }}
+              >
+                {o.iconSrc ? (
+                  <Image src={o.iconSrc} alt="" width={38} height={38} style={{ objectFit: 'contain' }} />
+                ) : o.icon}
+              </span>
+              <span style={{
+                fontSize: 13, fontWeight: 600, lineHeight: 1.25,
+                color: selected ? '#fff' : 'var(--text-hi)',
+              }}>
+                {o.label}
+              </span>
               {o.note && (
-                <span style={{ fontSize: 10, opacity: selected ? 0.85 : 0.6 }}>{o.note}</span>
+                <span style={{
+                  fontSize: 11,
+                  color: selected ? 'rgba(255,255,255,0.8)' : 'var(--text-mid)',
+                }}>
+                  {o.note}
+                </span>
               )}
             </button>
           )

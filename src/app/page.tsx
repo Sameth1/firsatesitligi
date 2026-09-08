@@ -1,13 +1,15 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
+import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { Opportunity, MatchParams } from '@/types'
 import OpportunityCard from '@/components/OpportunityCard'
 import EmailCapture from '@/components/EmailCapture'
 import AppHeader from '@/components/AppHeader'
 import Hero from '@/components/hero/Hero'
-import AmbientCanvas from '@/components/hero/AmbientCanvas'
-import ThemeGlyphs from '@/components/hero/ThemeGlyphs'
+import SearchScene from '@/components/scene/SearchScene'
+import { pulseScene, hexToRgb01 } from '@/components/scene/sceneBus'
+import { CATEGORY_ICON_SRC, CATEGORY_ACCENT } from '@/lib/category-assets'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import RangeSlider from '@/components/form/RangeSlider'
@@ -44,8 +46,8 @@ const HIGHEST_EDU_LEVELS = [
   { value: 'doktora',       label: 'Doktora' },
 ]
 
-// ChoiceGrid / StepSlider için ikonlu görünüm listeleri. Değerler (value)
-// yukarıdaki listelerle birebir aynı — yalnız sunum katmanı zenginleşiyor,
+// ChoiceGrid / StepSlider için görünüm listeleri. Değerler (value) yukarıdaki
+// listelerle birebir aynı — yalnız sunum katmanı zenginleşiyor,
 // match_opportunities'e giden parametreler değişmiyor.
 const COUNTRY_OPTIONS = COUNTRIES.map(c => ({
   value: c.code,
@@ -54,19 +56,23 @@ const COUNTRY_OPTIONS = COUNTRIES.map(c => ({
   note: c.language ?? undefined,
 }))
 
-const CATEGORY_ICON_BY_SLUG: Record<string, string> = {
-  scholarship: '🎓', volunteering: '🤝', youth_project: '🚀',
-  internship: '💼', summer_school: '☀️', exchange: '🔁',
-}
+// Kategoriler tek showpiece satırında duruyor: Higgsfield ile üretilmiş cam 3B
+// ikonlar + her kartın kendi vurgu rengi.
+const CATEGORY_OPTIONS = CATEGORIES.map(c => ({
+  value: c.slug,
+  label: c.label,
+  iconSrc: CATEGORY_ICON_SRC[c.slug],
+  accent: CATEGORY_ACCENT[c.slug],
+}))
 
-const CATEGORY_OPTIONS = [
-  { value: 'scholarship',   label: 'Burs',            icon: '🎓' },
-  { value: 'volunteering',  label: 'Gönüllülük',      icon: '🤝' },
-  { value: 'youth_project', label: 'Gençlik Projesi', icon: '🚀' },
-  { value: 'internship',    label: 'Staj',            icon: '💼' },
-  { value: 'summer_school', label: 'Yaz Okulu',       icon: '☀️' },
-  { value: 'exchange',      label: 'Değişim',         icon: '🔁' },
-]
+const CATEGORY_BLURB: Record<string, string> = {
+  scholarship:   'Öğrenim ücreti + yaşam gideri',
+  volunteering:  'Masrafların karşılanır',
+  youth_project: 'Kısa süreli, tam fonlu',
+  internship:    'Şirket / kurum deneyimi',
+  summer_school: '2–6 haftalık programlar',
+  exchange:      'Bir–iki dönem yurt dışı',
+}
 
 const STUDY_LEVEL_OPTIONS = [
   { value: 'bachelor', label: 'Lisans',        icon: '📘' },
@@ -75,12 +81,13 @@ const STUDY_LEVEL_OPTIONS = [
   { value: 'any',      label: 'Fark etmez',    icon: '✨' },
 ]
 
-const HIGHEST_EDU_OPTIONS = [
-  { value: 'lise',          label: 'Lise',          icon: '🏫' },
-  { value: 'on_lisans',     label: 'Ön Lisans',     icon: '📒' },
-  { value: 'lisans',        label: 'Lisans',        icon: '📘' },
-  { value: 'yuksek_lisans', label: 'Yüksek Lisans', icon: '📗' },
-  { value: 'doktora',       label: 'Doktora',       icon: '🎓' },
+// Eğitim seviyesi doğal bir merdiven — bu yüzden kart yerine çekmeli bar.
+const HIGHEST_EDU_STOPS = [
+  { value: 'lise',          short: 'Lise',   label: 'Lise',          icon: '🏫' },
+  { value: 'on_lisans',     short: 'Ön Lis.', label: 'Ön Lisans',    icon: '📒' },
+  { value: 'lisans',        short: 'Lisans', label: 'Lisans',        icon: '📘' },
+  { value: 'yuksek_lisans', short: 'Y.Lis.', label: 'Yüksek Lisans', icon: '📗' },
+  { value: 'doktora',       short: 'Dr.',    label: 'Doktora',       icon: '🎓' },
 ]
 
 // Dil barının durakları — "Bilmiyorum" en solda, filtre uygulanmaz.
@@ -184,6 +191,14 @@ function fieldLabel(slug: string) {
   return FIELD_LOOKUP[slug] ?? slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
+/** Yaş barının altındaki teşvik metni — hangi programlar açık? */
+function ageBlurb(age: number) {
+  if (age < 18) return 'Lise programları ve gençlik değişimleri sana açık.'
+  if (age <= 30) return 'En geniş aralık — Erasmus+, ESC ve çoğu burs bu yaşta açık.'
+  if (age <= 35) return 'Yüksek lisans ve araştırma bursları hâlâ açık.'
+  return 'Araştırma, uzman değişimi ve mesleki programlara odaklanalım.'
+}
+
 type Step = 'form' | 'results'
 
 export default function Home() {
@@ -237,23 +252,28 @@ export default function Home() {
 
     const ctx = gsap.context(() => {
       if (reduced) {
-        gsap.set('[data-anim], .opp-card', { opacity: 1, y: 0 })
+        gsap.set('[data-anim], .opp-card, [data-anim="card"] > *', { opacity: 1, y: 0 })
         return
       }
 
-      // Ekranın üst bloğu: başlık, adım rozetleri, filtreler
+      // Ekranın üst bloğu: başlık, adım rozetleri, ilerleme göstergesi
       gsap.fromTo('[data-anim="head"] > *',
         { opacity: 0, y: 16 },
         { opacity: 1, y: 0, duration: 0.6, stagger: 0.07, ease: 'power3.out' })
 
-      // Form kartı ve içindeki alan grupları
+      // Paneller ve içlerindeki alan grupları
       gsap.fromTo('[data-anim="card"]',
-        { opacity: 0, y: 26 },
-        { opacity: 1, y: 0, duration: 0.7, delay: 0.12, ease: 'power3.out' })
+        { opacity: 0, y: 30 },
+        { opacity: 1, y: 0, duration: 0.75, delay: 0.1, stagger: 0.09, ease: 'power3.out' })
 
       gsap.fromTo('[data-anim="card"] > *',
         { opacity: 0, y: 12 },
-        { opacity: 1, y: 0, duration: 0.5, delay: 0.25, stagger: 0.045, ease: 'power2.out' })
+        { opacity: 1, y: 0, duration: 0.5, delay: 0.28, stagger: 0.05, ease: 'power2.out' })
+
+      // Kategori kartları sırayla "iner" — ekranın showpiece'i
+      gsap.fromTo('[data-anim="showpiece"] .choice-card',
+        { opacity: 0, y: 26, scale: 0.94 },
+        { opacity: 1, y: 0, scale: 1, duration: 0.6, delay: 0.3, stagger: 0.06, ease: 'back.out(1.6)' })
 
       // Sonuç sayacı 0'dan gerçek değere saysın
       const countEl = document.querySelector('[data-count]')
@@ -261,7 +281,7 @@ export default function Home() {
         const target = Number(countEl.textContent || '0')
         const obj = { v: 0 }
         gsap.to(obj, {
-          v: target, duration: 0.9, ease: 'power2.out',
+          v: target, duration: 1.0, ease: 'power2.out',
           onUpdate: () => { countEl.textContent = String(Math.round(obj.v)) },
         })
       }
@@ -270,8 +290,8 @@ export default function Home() {
       ScrollTrigger.batch('.opp-card', {
         start: 'top 92%',
         onEnter: batch => gsap.fromTo(batch,
-          { opacity: 0, y: 28 },
-          { opacity: 1, y: 0, duration: 0.6, stagger: 0.08, ease: 'power3.out', overwrite: true }),
+          { opacity: 0, y: 30, scale: 0.98 },
+          { opacity: 1, y: 0, scale: 1, duration: 0.6, stagger: 0.07, ease: 'power3.out', overwrite: true }),
       })
       gsap.set('.opp-card', { opacity: 0 })
       ScrollTrigger.refresh()
@@ -281,10 +301,15 @@ export default function Home() {
   }, [step, results, activeCategory])
 
   const selectedCountry = COUNTRIES.find(c => c.code === country) ?? null
-  const activeFilterCount = [country, category, studyLevel, highestEdu, field,
-    age === '' ? null : age, languageLevel === 'none' ? null : languageLevel]
-    .filter(Boolean).length
   const targetLanguage = selectedCountry?.language ?? null
+
+  // İlerleme göstergesi: kaç anlamlı alan dolduruldu?
+  const filledFlags = [
+    category, country, age === '' ? null : age, highestEdu, studyLevel, field,
+    languageLevel === 'none' ? null : languageLevel,
+  ]
+  const activeFilterCount = filledFlags.filter(Boolean).length
+  const progress = Math.round((activeFilterCount / filledFlags.length) * 100)
 
   function handleCountryChange(newCountry: string | null) {
     setCountry(newCountry)
@@ -294,6 +319,7 @@ export default function Home() {
   async function handleSearch() {
     setLoading(true)
     setSearchError(null)
+    pulseScene({ color: hexToRgb01('#2BE0C8'), strength: 1.2 })
 
     const baseParams: MatchParams = {
       p_host_country:  country || null,
@@ -380,48 +406,61 @@ export default function Home() {
     <main ref={formRef} style={{
       position: 'relative',
       minHeight: '100vh',
-      padding: '64px 20px 56px',
+      padding: '68px 22px 72px',
       scrollMarginTop: 0,
     }}>
-      <AmbientCanvas />
-      <ThemeGlyphs />
-      <div key="form" className="page-layer" style={{ maxWidth: 1080, margin: '0 auto' }}>
+      <SearchScene />
+      <div key="form" className="page-layer" style={{ maxWidth: 1240, margin: '0 auto' }}>
 
         {/* Header */}
         <div data-anim="head">
           <AppHeader />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
             <StepPill label="1 · Profil" active />
-            <span style={{ color: '#C7C3DC', fontSize: 12 }}>›</span>
+            <span style={{ color: 'var(--text-low)', fontSize: 12 }}>›</span>
             <StepPill label="2 · Sonuçlar" />
           </div>
+
           <h2 style={{
-            fontSize: 'clamp(26px, 4vw, 40px)', fontWeight: 600, letterSpacing: '-0.035em',
-            color: '#231C52', margin: '10px 0 8px', lineHeight: 1.1,
+            fontSize: 'clamp(30px, 5vw, 54px)', fontWeight: 600, letterSpacing: '-0.04em',
+            color: 'var(--text-hi)', margin: '10px 0 12px', lineHeight: 1.04,
+            textWrap: 'balance',
           }}>
-            Sana uyan fırsatı bulalım.
+            Sana uyan fırsatı{' '}
+            <span style={{
+              background: 'var(--grad-brand)',
+              WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
+            }}>
+              bulalım.
+            </span>
           </h2>
-          <p style={{ fontSize: 14, color: '#6F6990', maxWidth: 560, lineHeight: 1.55, marginBottom: 26 }}>
+          <p style={{
+            fontSize: 14.5, color: 'var(--text-mid)', maxWidth: 620,
+            lineHeight: 1.6, marginBottom: 24,
+          }}>
             Hiçbir alan zorunlu değil — ne kadarını doldurursan eşleşme o kadar isabetli olur.
             Sonuç çıkmazsa filtreleri biz gevşetiriz.
           </p>
+
+          <ProgressMeter progress={progress} filled={activeFilterCount} total={filledFlags.length} />
         </div>
 
         {searchError && (
           <div
+            className="fx-fade-in-up"
             style={{
-              marginBottom: 16,
-              padding: '12px 14px',
-              borderRadius: 12,
-              background: '#FDE8E8',
-              border: '0.5px solid #E8A8A8',
+              margin: '22px 0 0',
+              padding: '14px 16px',
+              borderRadius: 14,
+              background: 'rgba(255, 107, 107, 0.12)',
+              border: '1px solid rgba(255, 107, 107, 0.4)',
               fontSize: 13,
-              color: '#A32D2D',
-              lineHeight: 1.45,
+              color: '#FFB4B4',
+              lineHeight: 1.5,
             }}
           >
             <strong>Arama yapılamadı.</strong> {searchError}
-            <div style={{ marginTop: 8, fontSize: 12, color: '#633806' }}>
+            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-mid)' }}>
               Veritabanında güncel SQL yoksa:{' '}
               <code style={{ fontSize: 11 }}>docs/sql/090_one_shot_after_006.sql</code> dosyasını Supabase SQL
               Editor’da bir kez çalıştırın.
@@ -429,57 +468,62 @@ export default function Home() {
           </div>
         )}
 
-        {/* İki sütun: SEN | HEDEFİN */}
+        {/* ── 01 · NE ARIYORSUN — tam genişlik showpiece ─────────────────── */}
+        <section
+          data-anim="card"
+          className="glass-panel"
+          style={{ padding: '28px 26px', marginTop: 26 }}
+        >
+          <PanelTitle
+            badge="01"
+            title="Ne arıyorsun?"
+            subtitle="Bir tür seç — ya da boş bırak, hepsini getirelim"
+          />
+          <div data-anim="showpiece">
+            <ChoiceGrid
+              label="Fırsat türü"
+              hint="opsiyonel"
+              options={CATEGORY_OPTIONS.map(o => ({ ...o, note: CATEGORY_BLURB[o.value] }))}
+              value={category}
+              onChange={setCategory}
+              columns={6}
+              accent="#7C5CFF"
+            />
+          </div>
+        </section>
+
+        {/* ── 02 · SEN | 03 · HEDEFİN ────────────────────────────────────── */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(min(420px, 100%), 1fr))',
-          gap: 20,
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(430px, 100%), 1fr))',
+          gap: 22,
           alignItems: 'start',
+          marginTop: 22,
         }}>
 
-          {/* ── SEN ─────────────────────────────────────────── */}
-          <section data-anim="card" className="glass-panel" style={{ padding: '26px 24px' }}>
-            <PanelTitle badge="01" title="Sen" subtitle="Kim olduğun" />
+          <section data-anim="card" className="glass-panel" style={{ padding: '28px 26px' }}>
+            <PanelTitle badge="02" title="Sen" subtitle="Kim olduğun" />
 
-            <div style={{ display: 'grid', gap: 26 }}>
-              <ChoiceGrid
-                label="Halihazırdaki en yüksek eğitim seviyen"
-                hint="opsiyonel"
-                options={HIGHEST_EDU_OPTIONS}
-                value={highestEdu}
-                onChange={setHighestEdu}
-                accent="#0F6E56"
-              />
-
+            <div style={{ display: 'grid', gap: 30 }}>
               <RangeSlider
                 label="Yaşın"
                 value={age === '' ? null : Number(age)}
                 onChange={v => setAge(v === null ? '' : String(v))}
+                describe={ageBlurb}
+              />
+
+              <StepSlider
+                label="Halihazırdaki en yüksek eğitim seviyen"
+                hint="opsiyonel — barı çek"
+                stops={HIGHEST_EDU_STOPS}
+                value={highestEdu}
+                onChange={setHighestEdu}
+                accent="#2BE0C8"
               />
 
               <div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#4A4468', marginBottom: 10 }}>
-                  Vatandaşlık
-                </div>
-                <input
-                  value={citizenship}
-                  onChange={e => setCitizenship(e.target.value.toUpperCase())}
-                  placeholder="TR"
-                  maxLength={2}
-                  aria-label="Vatandaşlık kodu"
-                  style={{
-                    width: 96, padding: '11px 14px', borderRadius: 12,
-                    border: '1px solid rgba(83, 74, 183, 0.2)', fontSize: 15, fontWeight: 600,
-                    letterSpacing: '0.08em', textAlign: 'center',
-                    outline: 'none', background: 'rgba(255,255,255,0.85)', color: '#231C52',
-                  }}
-                />
-                <span style={{ fontSize: 11, color: '#A9A4BF', marginLeft: 10 }}>ISO kodu (TR, DE…)</span>
-              </div>
-
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#4A4468', marginBottom: 10 }}>
-                  Bölümün <span style={{ fontWeight: 400, color: '#A9A4BF' }}>· opsiyonel</span>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-hi)', marginBottom: 10 }}>
+                  Bölümün <span style={{ fontWeight: 400, color: 'var(--text-low)' }}>· opsiyonel</span>
                 </div>
                 <Picker
                   placeholder="Bölüm seç"
@@ -487,17 +531,38 @@ export default function Home() {
                   valueLabel={field ? fieldLabel(field) : null}
                   options={FIELDS.map(f => ({ value: f.value, label: f.label, group: f.group }))}
                   onChange={setField}
-                  emptyHint="Yükleniyor..."
+                  emptyHint="Sonuç yok"
                 />
+              </div>
+
+              <div>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-hi)', marginBottom: 10 }}>
+                  Vatandaşlık
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <input
+                    value={citizenship}
+                    onChange={e => setCitizenship(e.target.value.toUpperCase())}
+                    placeholder="TR"
+                    maxLength={2}
+                    aria-label="Vatandaşlık kodu"
+                    style={{
+                      width: 96, padding: '12px 14px', borderRadius: 14,
+                      border: '1px solid rgba(255,255,255,0.14)', fontSize: 16, fontWeight: 700,
+                      letterSpacing: '0.1em', textAlign: 'center',
+                      outline: 'none', background: 'rgba(255,255,255,0.05)', color: 'var(--text-hi)',
+                    }}
+                  />
+                  <span style={{ fontSize: 11.5, color: 'var(--text-low)' }}>ISO kodu (TR, DE…)</span>
+                </div>
               </div>
             </div>
           </section>
 
-          {/* ── HEDEFİN ─────────────────────────────────────── */}
-          <section data-anim="card" className="glass-panel" style={{ padding: '26px 24px' }}>
-            <PanelTitle badge="02" title="Hedefin" subtitle="Nereye, ne için" />
+          <section data-anim="card" className="glass-panel" style={{ padding: '28px 26px' }}>
+            <PanelTitle badge="03" title="Hedefin" subtitle="Nereye, ne için" />
 
-            <div style={{ display: 'grid', gap: 26 }}>
+            <div style={{ display: 'grid', gap: 30 }}>
               <ChoiceGrid
                 label="Nereye gitmek istiyorsun?"
                 hint="opsiyonel"
@@ -505,28 +570,21 @@ export default function Home() {
                 value={country}
                 onChange={handleCountryChange}
                 columns={4}
-                accent="#4B41B5"
+                accent="#9B6BFF"
               />
 
               {targetLanguage && (
-                <StepSlider
-                  label={`${targetLanguage} seviyen`}
-                  hint="opsiyonel — bilmiyorsan boş bırak"
-                  stops={CEFR_STOPS}
-                  value={languageLevel}
-                  onChange={setLanguageLevel}
-                />
+                <div className="fx-fade-in-up">
+                  <StepSlider
+                    label={`${targetLanguage} seviyen`}
+                    hint="opsiyonel — bilmiyorsan boş bırak"
+                    stops={CEFR_STOPS}
+                    value={languageLevel}
+                    onChange={setLanguageLevel}
+                    accent="#FFB547"
+                  />
+                </div>
               )}
-
-              <ChoiceGrid
-                label="Ne arıyorsun?"
-                hint="opsiyonel"
-                options={CATEGORY_OPTIONS}
-                value={category}
-                onChange={setCategory}
-                columns={3}
-                accent="#C9539C"
-              />
 
               <ChoiceGrid
                 label="Başvurmak istediğin eğitim kademesi"
@@ -535,19 +593,19 @@ export default function Home() {
                 value={studyLevel}
                 onChange={setStudyLevel}
                 columns={4}
-                accent="#534AB7"
+                accent="#FF5FA2"
               />
             </div>
           </section>
         </div>
 
         {/* Aksiyon çubuğu — birincil aksiyon sağ altta */}
-        <div data-anim="card" className="glass-panel action-bar" style={{
-          marginTop: 20, padding: '18px 22px',
+        <div data-anim="card" className="glass-panel" style={{
+          marginTop: 22, padding: '20px 24px',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          gap: 16, flexWrap: 'wrap',
+          gap: 18, flexWrap: 'wrap',
         }}>
-          <div style={{ fontSize: 12.5, color: '#6F6990', lineHeight: 1.5 }}>
+          <div style={{ fontSize: 13, color: 'var(--text-mid)', lineHeight: 1.55 }}>
             {activeFilterCount === 0
               ? 'Hiç filtre seçmedin — tüm açık fırsatları getireceğiz.'
               : `${activeFilterCount} filtre seçili · tam eşleşme çıkmazsa otomatik gevşetiriz.`}
@@ -557,13 +615,12 @@ export default function Home() {
             disabled={loading}
             className="btn-primary"
             style={{
-              padding: '15px 34px', borderRadius: 999,
-              background: loading
-                ? 'linear-gradient(115deg, #AFA9EC 0%, #9FD9D2 100%)'
-                : 'linear-gradient(115deg, #4B41B5 0%, #6C4FD0 55%, #17A79A 100%)',
-              boxShadow: loading ? 'none' : '0 18px 32px -16px rgba(76, 65, 181, 0.85)',
-              color: '#fff', border: 'none', fontSize: 15,
-              fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer',
+              padding: '16px 36px', borderRadius: 999,
+              color: '#150F35', border: 'none', fontSize: 15.5,
+              fontWeight: 700, letterSpacing: '-0.01em',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              opacity: loading ? 0.65 : 1,
+              boxShadow: '0 20px 40px -18px rgba(124, 92, 255, 0.9)',
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 10,
               whiteSpace: 'nowrap',
             }}
@@ -583,11 +640,10 @@ export default function Home() {
     <main style={{
       position: 'relative',
       minHeight: '100vh',
-      padding: '40px 16px',
+      padding: '48px 22px 64px',
     }}>
-      <AmbientCanvas />
-      <ThemeGlyphs />
-      <div key="results" className="page-layer" style={{ maxWidth: 680, margin: '0 auto' }}>
+      <SearchScene density={0.7} />
+      <div key="results" className="page-layer" style={{ maxWidth: 1180, margin: '0 auto' }}>
 
         {/* Header */}
         <div data-anim="head">
@@ -598,9 +654,10 @@ export default function Home() {
               onClick={() => setStep('form')}
               className="ghost-btn"
               style={{
-                fontSize: 12, color: '#534AB7', background: 'none',
-                border: '0.5px solid #AFA9EC', borderRadius: 8,
-                padding: '6px 12px', cursor: 'pointer',
+                fontSize: 12, fontWeight: 600, color: 'var(--text-mid)',
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.14)', borderRadius: 999,
+                padding: '8px 16px', cursor: 'pointer', whiteSpace: 'nowrap',
               }}
             >
               ← Aramayı düzenle
@@ -609,59 +666,67 @@ export default function Home() {
         />
 
         {/* Step pills */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 22 }}>
           <StepPill label="1 · Profil ✓" done />
-          <span style={{ color: '#ccc', fontSize: 12 }}>›</span>
+          <span style={{ color: 'var(--text-low)', fontSize: 12 }}>›</span>
           <StepPill label="2 · Sonuçlar" active />
         </div>
 
+        {/* Result count */}
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 8 }}>
+          <span
+            data-count
+            style={{
+              fontSize: 'clamp(44px, 8vw, 76px)', fontWeight: 700, letterSpacing: '-0.05em',
+              lineHeight: 1, fontVariantNumeric: 'tabular-nums',
+              background: 'var(--grad-brand)',
+              WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
+            }}
+          >
+            {filtered.length}
+          </span>
+          <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-hi)' }}>
+            fırsat bulundu
+          </span>
+        </div>
+        <div style={{ fontSize: 12.5, color: 'var(--text-low)', marginBottom: 20 }}>
+          {country && `${COUNTRIES.find(c => c.code === country)?.label}`}
+          {category && ` · ${CATEGORIES.find(c => c.slug === category)?.label}`}
+          {(searchSnapshot.highestEdu as string | null) && ` · Mevcut: ${HIGHEST_EDU_LEVELS.find(l => l.value === searchSnapshot.highestEdu)?.label}`}
+          {targetLanguage && languageLevel && languageLevel !== 'none' && ` · ${targetLanguage} ${languageLevel}`}
+        </div>
+
         {/* Filter chips */}
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 22 }}>
           <FilterChip
-            label={`✨ Tümü (${results.length})`}
+            label={`Tümü (${results.length})`}
             active={activeCategory === null}
             onClick={() => setActiveCategory(null)}
           />
           {CATEGORIES.filter(c => categoryCounts[c.slug] > 0).map(c => (
             <FilterChip
               key={c.slug}
-              label={`${CATEGORY_ICON_BY_SLUG[c.slug] ?? ''} ${c.label} (${categoryCounts[c.slug]})`}
+              label={`${c.label} (${categoryCounts[c.slug]})`}
+              iconSrc={CATEGORY_ICON_SRC[c.slug]}
+              accent={CATEGORY_ACCENT[c.slug]}
               active={activeCategory === c.slug}
-              onClick={() => setActiveCategory(c.slug)}
+              onClick={() => {
+                setActiveCategory(c.slug)
+                pulseScene({ color: hexToRgb01(CATEGORY_ACCENT[c.slug]), strength: 0.8 })
+              }}
             />
           ))}
         </div>
 
         </div>
 
-        {/* Result count */}
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, margin: '4px 0 14px' }}>
-          <span
-            data-count
-            style={{
-              fontSize: 'clamp(30px, 5vw, 46px)', fontWeight: 700, letterSpacing: '-0.04em',
-              lineHeight: 1,
-              background: 'linear-gradient(115deg, #4B41B5 0%, #6C4FD0 45%, #17A79A 100%)',
-              WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
-            }}
-          >
-            {filtered.length}
-          </span>
-          <span style={{ fontSize: 14, fontWeight: 600, color: '#4A4468' }}>fırsat bulundu</span>
-        </div>
-        <div style={{ fontSize: 12, color: '#8B85A8', marginBottom: 18 }}>
-          {country && ` · ${COUNTRIES.find(c => c.code === country)?.label}`}
-          {category && ` · ${CATEGORIES.find(c => c.slug === category)?.label}`}
-          {(searchSnapshot.highestEdu as string | null) && ` · Mevcut: ${HIGHEST_EDU_LEVELS.find(l => l.value === searchSnapshot.highestEdu)?.label}`}
-          {targetLanguage && languageLevel && languageLevel !== 'none' && ` · ${targetLanguage} ${languageLevel}`}
-        </div>
-
         {/* Gevşetilen filtreler banner'ı */}
         {relaxedFilters.length > 0 && results.length > 0 && (
           <div className="fx-fade-in-up" style={{
-            background: '#FAEEDA', border: '0.5px solid #E6C79A',
-            borderRadius: 10, padding: '10px 14px', marginBottom: 16,
-            fontSize: 12, color: '#633806', lineHeight: 1.5,
+            background: 'rgba(255, 181, 71, 0.10)',
+            border: '1px solid rgba(255, 181, 71, 0.35)',
+            borderRadius: 14, padding: '13px 16px', marginBottom: 22,
+            fontSize: 12.5, color: '#FFD08A', lineHeight: 1.55,
           }}>
             <strong>Tam eşleşme bulamadık.</strong> Sana en yakın sonuçları
             getirmek için şu filtreleri otomatik gevşettik:{' '}
@@ -671,22 +736,33 @@ export default function Home() {
 
         {/* Cards */}
         {filtered.length === 0 ? (
-          <div className="fx-fade-in" style={{
-            textAlign: 'center', padding: '60px 20px',
-            color: '#aaa', fontSize: 14,
+          <div className="glass-panel fx-fade-in" style={{
+            textAlign: 'center', padding: '70px 24px',
+            color: 'var(--text-mid)', fontSize: 14.5,
           }}>
             Bu kriterlere uygun fırsat bulunamadı.
             <br />
             <button
               onClick={() => setStep('form')}
               className="ghost-btn"
-              style={{ marginTop: 12, color: '#534AB7', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}
+              style={{
+                marginTop: 16, color: '#fff', background: 'rgba(124, 92, 255, 0.22)',
+                border: '1px solid rgba(124, 92, 255, 0.55)', borderRadius: 999,
+                padding: '10px 20px', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+              }}
             >
               Filtreleri genişlet →
             </button>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
+          // Tek sütunlu katı liste yerine ızgara — geniş ekranda iki kart yan yana
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(min(440px, 100%), 1fr))',
+            gap: 18,
+            marginBottom: 30,
+            alignItems: 'stretch',
+          }}>
             {filtered.map(opp => (
               <OpportunityCard key={opp.id} opp={opp} />
             ))}
@@ -694,18 +770,83 @@ export default function Home() {
         )}
 
         {/* Email capture */}
-        <EmailCapture searchSnapshot={searchSnapshot} />
+        <div style={{ maxWidth: 680, margin: '0 auto' }}>
+          <EmailCapture searchSnapshot={searchSnapshot} />
 
-        {/* Disclaimer */}
-        <p style={{ fontSize: 10, color: '#bbb', textAlign: 'center', marginTop: 16, lineHeight: 1.6 }}>
-          Deadline ve şartlar değişebilir. Başvurmadan önce resmi sayfayı mutlaka kontrol edin.
-        </p>
+          {/* Disclaimer */}
+          <p style={{
+            fontSize: 10.5, color: 'var(--text-low)', textAlign: 'center',
+            marginTop: 20, lineHeight: 1.6,
+          }}>
+            Deadline ve şartlar değişebilir. Başvurmadan önce resmi sayfayı mutlaka kontrol edin.
+          </p>
+        </div>
       </div>
     </main>
   )
 }
 
 // ─── KÜÇÜK BİLEŞENLER ───────────────────────────────────
+
+/**
+ * Profil doluluk göstergesi. Zorunlu alan yok — ama "ne kadar doldurursan o
+ * kadar isabetli" mesajını somutlaştırmak eşleşme kalitesini yükseltiyor.
+ */
+function ProgressMeter({ progress, filled, total }: {
+  progress: number; filled: number; total: number
+}) {
+  const message =
+    filled === 0 ? 'Başlamak için bir kart seç' :
+    filled < 3   ? 'İyi gidiyor — birkaç alan daha eşleşmeyi keskinleştirir' :
+    filled < 5   ? 'Güzel profil — sonuçlar isabetli olacak' :
+                   'Harika, profilin neredeyse tam'
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap',
+      padding: '14px 18px', borderRadius: 18,
+      background: 'rgba(255,255,255,0.04)',
+      border: '1px solid rgba(255,255,255,0.09)',
+      maxWidth: 560,
+    }}>
+      <div
+        role="progressbar"
+        aria-valuenow={progress}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label="Profil doluluğu"
+        style={{
+          position: 'relative', width: 46, height: 46, flexShrink: 0,
+          borderRadius: '50%',
+          background: `conic-gradient(#7C5CFF ${progress * 3.6}deg, rgba(255,255,255,0.09) 0deg)`,
+          display: 'grid', placeItems: 'center',
+          transition: 'background 0.4s ease',
+        }}
+      >
+        <div style={{
+          width: 37, height: 37, borderRadius: '50%',
+          background: '#0D0A26', display: 'grid', placeItems: 'center',
+        }}>
+          <span style={{
+            fontSize: 11.5, fontWeight: 700, color: 'var(--text-hi)',
+            fontVariantNumeric: 'tabular-nums',
+          }}>
+            {progress}%
+          </span>
+        </div>
+      </div>
+
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-hi)', marginBottom: 2 }}>
+          {message}
+        </div>
+        <div style={{ fontSize: 11.5, color: 'var(--text-low)' }}>
+          {filled}/{total} alan dolu · hepsi opsiyonel
+        </div>
+      </div>
+    </div>
+  )
+}
 
 type PickerOption = { value: string; label: string; group?: string }
 
@@ -753,36 +894,41 @@ function Picker({ placeholder, value, valueLabel, options, onChange, emptyHint }
         type="button"
         onClick={() => setOpen(!open)}
         style={{
-          width: '100%', padding: '10px 12px', borderRadius: 8,
-          border: '0.5px solid #e0e0e0', background: '#fff',
-          fontSize: 13, color: value ? '#1a1a1a' : '#999',
+          width: '100%', padding: '13px 15px', borderRadius: 14,
+          border: `1px solid ${open ? 'rgba(124, 92, 255, 0.6)' : 'rgba(255,255,255,0.14)'}`,
+          background: 'rgba(255,255,255,0.05)',
+          fontSize: 13.5, color: value ? 'var(--text-hi)' : 'var(--text-low)',
           cursor: 'pointer', textAlign: 'left',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
         }}
       >
-        <span>{valueLabel ?? placeholder}</span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {valueLabel ?? placeholder}
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           {value && (
             <span
               onClick={(e) => { e.stopPropagation(); onChange(null) }}
-              style={{ color: '#aaa', fontSize: 14, padding: '0 4px' }}
+              style={{ color: 'var(--text-low)', fontSize: 15, padding: '0 4px' }}
               role="button"
               aria-label="Temizle"
             >
               ×
             </span>
           )}
-          <span style={{ color: '#aaa', fontSize: 10 }}>{open ? '▲' : '▼'}</span>
+          <span style={{ color: 'var(--text-low)', fontSize: 10 }}>{open ? '▲' : '▼'}</span>
         </span>
       </button>
 
       {open && (
         <div className="fx-scale-in" style={{
-          position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0,
-          background: '#fff', border: '0.5px solid #e0e0e0', borderRadius: 8,
-          boxShadow: '0 12px 28px -8px rgba(0,0,0,0.14)',
+          position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0,
+          background: 'rgba(16, 12, 44, 0.97)',
+          backdropFilter: 'blur(24px)',
+          border: '1px solid rgba(255,255,255,0.14)', borderRadius: 16,
+          boxShadow: '0 30px 60px -20px rgba(0,0,0,0.9)',
           maxHeight: 320, overflowY: 'auto', zIndex: 20,
-          padding: 4,
+          padding: 6,
           transformOrigin: 'top',
         }}>
           {options.length > 8 && (
@@ -792,23 +938,24 @@ function Picker({ placeholder, value, valueLabel, options, onChange, emptyHint }
               onChange={e => setQuery(e.target.value)}
               placeholder="Ara..."
               style={{
-                width: '100%', padding: '8px 10px', borderRadius: 6,
-                border: '0.5px solid #e0e0e0', fontSize: 12,
-                outline: 'none', marginBottom: 4, background: '#fafaf9',
+                width: '100%', padding: '10px 12px', borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.12)', fontSize: 12.5,
+                outline: 'none', marginBottom: 6,
+                background: 'rgba(255,255,255,0.05)', color: 'var(--text-hi)',
               }}
             />
           )}
           {filtered.length === 0 ? (
-            <div style={{ padding: 12, fontSize: 12, color: '#aaa', textAlign: 'center' }}>
+            <div style={{ padding: 14, fontSize: 12.5, color: 'var(--text-low)', textAlign: 'center' }}>
               {emptyHint ?? 'Seçenek bulunamadı'}
             </div>
           ) : hasGroups ? (
             Object.entries(grouped).map(([g, opts]) => (
               <div key={g}>
                 <div style={{
-                  fontSize: 10, fontWeight: 600, color: '#999',
-                  textTransform: 'uppercase', letterSpacing: 0.5,
-                  padding: '8px 10px 4px',
+                  fontSize: 10, fontWeight: 700, color: 'var(--text-low)',
+                  textTransform: 'uppercase', letterSpacing: '0.08em',
+                  padding: '10px 10px 5px',
                 }}>
                   {g}
                 </div>
@@ -847,17 +994,17 @@ function PickerItem({ option, selected, onClick }: {
       onClick={onClick}
       style={{
         display: 'block', width: '100%', textAlign: 'left',
-        padding: '8px 10px', borderRadius: 6,
-        background: selected ? '#EEEDFE' : 'transparent',
-        color: selected ? '#3C3489' : '#1a1a1a',
-        fontWeight: selected ? 500 : 400,
+        padding: '10px 11px', borderRadius: 10,
+        background: selected ? 'rgba(124, 92, 255, 0.28)' : 'transparent',
+        color: selected ? '#fff' : 'var(--text-mid)',
+        fontWeight: selected ? 600 : 400,
         border: 'none', fontSize: 13, cursor: 'pointer',
       }}
       onMouseEnter={(e) => {
-        if (!selected) (e.target as HTMLButtonElement).style.background = '#fafaf9'
+        if (!selected) e.currentTarget.style.background = 'rgba(255,255,255,0.07)'
       }}
       onMouseLeave={(e) => {
-        if (!selected) (e.target as HTMLButtonElement).style.background = 'transparent'
+        if (!selected) e.currentTarget.style.background = 'transparent'
       }}
     >
       {option.label}
@@ -867,19 +1014,22 @@ function PickerItem({ option, selected, onClick }: {
 
 function PanelTitle({ badge, title, subtitle }: { badge: string; title: string; subtitle: string }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 26 }}>
       <span style={{
-        fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
-        color: '#fff', background: 'linear-gradient(135deg, #4B41B5, #17A79A)',
-        padding: '6px 10px', borderRadius: 10,
+        fontSize: 11.5, fontWeight: 800, letterSpacing: '0.06em',
+        color: '#150F35', background: 'var(--grad-brand)',
+        padding: '7px 11px', borderRadius: 12,
+        boxShadow: '0 10px 22px -12px rgba(124, 92, 255, 1)',
       }}>
         {badge}
       </span>
-      <span style={{ display: 'flex', flexDirection: 'column' }}>
-        <span style={{ fontSize: 17, fontWeight: 600, color: '#231C52', letterSpacing: '-0.02em' }}>
+      <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <span style={{
+          fontSize: 19, fontWeight: 600, color: 'var(--text-hi)', letterSpacing: '-0.025em',
+        }}>
           {title}
         </span>
-        <span style={{ fontSize: 11.5, color: '#8B85A8' }}>{subtitle}</span>
+        <span style={{ fontSize: 12, color: 'var(--text-low)' }}>{subtitle}</span>
       </span>
     </div>
   )
@@ -888,11 +1038,12 @@ function PanelTitle({ badge, title, subtitle }: { badge: string; title: string; 
 function StepPill({ label, active, done }: { label: string; active?: boolean; done?: boolean }) {
   return (
     <span style={{
-      fontSize: 11, fontWeight: 500, padding: '4px 10px', borderRadius: 20,
+      fontSize: 11.5, fontWeight: 600, padding: '6px 13px', borderRadius: 999,
       background: done
-        ? '#E1F5EE'
-        : active ? 'linear-gradient(115deg, #4B41B5 0%, #17A79A 140%)' : '#f0f0f0',
-      color: done ? '#085041' : active ? '#fff' : '#aaa',
+        ? 'rgba(43, 224, 200, 0.16)'
+        : active ? 'var(--grad-brand)' : 'rgba(255,255,255,0.05)',
+      border: `1px solid ${done ? 'rgba(43, 224, 200, 0.42)' : active ? 'transparent' : 'rgba(255,255,255,0.1)'}`,
+      color: done ? '#7BF0DC' : active ? '#150F35' : 'var(--text-low)',
       transition: 'background 0.25s ease, color 0.25s ease',
     }}>
       {label}
@@ -900,22 +1051,27 @@ function StepPill({ label, active, done }: { label: string; active?: boolean; do
   )
 }
 
-function FilterChip({ label, active, onClick }: {
+function FilterChip({ label, active, onClick, iconSrc, accent = '#7C5CFF' }: {
   label: string; active: boolean; onClick: () => void
+  iconSrc?: string; accent?: string
 }) {
   return (
     <button
       onClick={onClick}
       className="pill-btn"
       style={{
-        fontSize: 11, fontWeight: 500, padding: '4px 10px', borderRadius: 20,
-        background: active ? 'linear-gradient(115deg, #4B41B5 0%, #17A79A 130%)' : '#fff',
-        color: active ? '#fff' : '#666',
-        border: `0.5px solid ${active ? 'transparent' : '#e0e0e0'}`,
-        boxShadow: active ? '0 8px 16px -10px rgba(76, 65, 181, 0.8)' : 'none',
+        display: 'inline-flex', alignItems: 'center', gap: 7,
+        fontSize: 12, fontWeight: 600, padding: '7px 14px 7px 10px', borderRadius: 999,
+        background: active ? `${accent}2E` : 'rgba(255,255,255,0.04)',
+        color: active ? '#fff' : 'var(--text-mid)',
+        border: `1px solid ${active ? `${accent}AA` : 'rgba(255,255,255,0.1)'}`,
+        boxShadow: active ? `0 10px 24px -14px ${accent}` : 'none',
         cursor: 'pointer',
       }}
     >
+      {iconSrc && (
+        <Image src={iconSrc} alt="" width={18} height={18} style={{ objectFit: 'contain' }} />
+      )}
       {label}
     </button>
   )
@@ -926,10 +1082,9 @@ function Spinner() {
     <span
       className="fx-spin"
       style={{
-        display: 'inline-block', width: 13, height: 13, borderRadius: '50%',
-        border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff',
+        display: 'inline-block', width: 14, height: 14, borderRadius: '50%',
+        border: '2px solid rgba(21, 15, 53, 0.35)', borderTopColor: '#150F35',
       }}
     />
   )
 }
-

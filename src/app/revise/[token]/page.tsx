@@ -78,7 +78,7 @@ export default function RevisionPage({ params }: { params: Promise<{ token: stri
   }
 
   return (
-    <main style={{ minHeight: '100vh', background: '#fafaf9', padding: '32px 16px' }}>
+    <main className="light-surface" style={{ minHeight: '100vh', background: '#fafaf9', padding: '32px 16px' }}>
       <div style={{ maxWidth: 600, margin: '0 auto' }}>
         <h1 style={{ fontSize: 22, fontWeight: 500 }}>
           <span style={{ color: '#534AB7' }}>fırsat</span>eşitliği · Revize

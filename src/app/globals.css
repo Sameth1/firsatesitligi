@@ -1,8 +1,45 @@
 @import "tailwindcss";
 
+/* ─────────────────────────────────────────────────────────────────────────
+   Tasarım jetonları — koyu "uzay" teması.
+
+   Arama ve sonuç ekranları artık WebGL bir sahnenin üstünde duruyor; paneller
+   cam gibi yarı saydam olduğu için zemin rengi jeton olarak burada tanımlı.
+   Tek bir yerden değiştirince tüm ekranlar birlikte kayar.
+   ───────────────────────────────────────────────────────────────────────── */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #070616;
+  --foreground: #F2F0FF;
+
+  /* zemin */
+  --ink-900: #070616;
+  --ink-800: #0D0A26;
+  --ink-700: #151034;
+
+  /* vurgular */
+  --violet: #7C5CFF;
+  --violet-deep: #4B41B5;
+  --teal: #2BE0C8;
+  --teal-deep: #17A79A;
+  --pink: #FF5FA2;
+  --amber: #FFB547;
+  --danger: #FF6B6B;
+
+  /* metin */
+  --text-hi: #F4F2FF;
+  --text-mid: #B3ACDE;
+  --text-low: #7A73A8;
+
+  /* cam yüzeyler */
+  --glass: rgba(255, 255, 255, 0.045);
+  --glass-strong: rgba(255, 255, 255, 0.075);
+  --glass-border: rgba(255, 255, 255, 0.10);
+  --glass-border-hi: rgba(255, 255, 255, 0.20);
+
+  /* marka gradyanı — buton, başlık, dolgu barları hep bunu kullanır */
+  --grad-brand: linear-gradient(115deg, #7C5CFF 0%, #9B6BFF 42%, #2BE0C8 100%);
+  --grad-warm: linear-gradient(115deg, #FF5FA2 0%, #FFB547 100%);
 }
 
 @theme inline {
@@ -12,23 +49,24 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  background: var(--ink-900);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--ink-900);
+  color: var(--text-hi);
   font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
+/* Koyu zeminde form kontrolleri tarayıcı varsayılanına düşmesin */
+input, textarea, select, button { color-scheme: dark; }
+
+::selection { background: rgba(124, 92, 255, 0.45); color: #fff; }
+
 /* ─── Hareket / geçiş sistemi ────────────────────────────────────────── */
-/* Tüm proje aynı zamanlama ve easing eğrisini kullanır ki animasyonlar
-   birbirinden kopuk hissettirmesin. */
 
 button, a, input, [role="button"] {
   transition: background-color 0.16s ease, border-color 0.16s ease,
@@ -40,105 +78,142 @@ button, a, input, [role="button"] {
   from { opacity: 0; transform: translateY(14px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-
 @keyframes fx-fade-in {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
-
 @keyframes fx-scale-in {
   from { opacity: 0; transform: scale(0.97) translateY(-2px); }
   to   { opacity: 1; transform: scale(1) translateY(0); }
 }
-
-@keyframes fx-spin {
-  to { transform: rotate(360deg); }
-}
-
+@keyframes fx-spin { to { transform: rotate(360deg); } }
 @keyframes fx-pulse-dot {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.55; transform: scale(0.85); }
 }
-
-.fx-fade-in-up {
-  animation: fx-fade-in-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+/* seçim yapıldığında kartın etrafından yayılan halka */
+@keyframes fx-ripple {
+  from { opacity: 0.55; transform: scale(0.92); }
+  to   { opacity: 0; transform: scale(1.35); }
+}
+/* gradyan konumunu kaydırarak "akan" ışık */
+@keyframes fx-sheen {
+  from { background-position: 0% 50%; }
+  to   { background-position: 200% 50%; }
 }
 
-.fx-fade-in {
-  animation: fx-fade-in 0.35s ease both;
-}
-
-.fx-scale-in {
-  animation: fx-scale-in 0.16s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-.fx-spin {
-  animation: fx-spin 0.7s linear infinite;
-}
-
-.fx-pulse-dot {
-  animation: fx-pulse-dot 1.4s ease-in-out infinite;
-}
+.fx-fade-in-up { animation: fx-fade-in-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.fx-fade-in    { animation: fx-fade-in 0.35s ease both; }
+.fx-scale-in   { animation: fx-scale-in 0.16s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.fx-spin       { animation: fx-spin 0.7s linear infinite; }
+.fx-pulse-dot  { animation: fx-pulse-dot 1.4s ease-in-out infinite; }
 
 @media (prefers-reduced-motion: reduce) {
   .fx-fade-in-up, .fx-fade-in, .fx-scale-in, .fx-spin, .fx-pulse-dot {
     animation: none !important;
   }
-  button, a, input, [role="button"] {
-    transition: none !important;
-  }
+  button, a, input, [role="button"] { transition: none !important; }
+  .choice-card::after, .opp-card::before { animation: none !important; }
 }
 
-/* ─── Etkileşim katmanı ──────────────────────────────────────────────── */
+/* Açık zeminli ekranlar (admin, revize) ──────────────────────────────────
+   body artık koyu temanın açık metin rengini taşıyor. Bu sayfalar kendi
+   krem zeminlerini kuruyor ama rengi belirtilmemiş metinleri body'den miras
+   alıyordu ve beyaz-üstüne-krem kalıyordu. Sarmalayan <main>'e bu sınıf
+   eklenerek eski varsayılan renk geri veriliyor. */
+.light-surface {
+  color: #1a1a1a;
+}
+.light-surface input,
+.light-surface textarea,
+.light-surface select,
+.light-surface button {
+  color-scheme: light;
+}
 
-.opp-card {
-  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 0.18s ease, border-color 0.18s ease;
+/* ─── Katmanlar ──────────────────────────────────────────────────────── */
+
+/* WebGL sahnesi içeriğin arkasında kalsın */
+.page-layer { position: relative; z-index: 1; }
+
+.theme-glyphs { display: none; }
+@media (min-width: 1024px) { .theme-glyphs { display: block; } }
+
+/* ─── Cam paneller ───────────────────────────────────────────────────── */
+
+.glass-panel {
+  position: relative;
+  /* Arkadaki 3B sahne canlı olduğu için panel yalnız beyaz tülle yetinemiyor;
+     koyu bir taban katmanı metin kontrastını garanti altına alıyor. */
+  background:
+    linear-gradient(160deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.025) 100%),
+    rgba(11, 8, 32, 0.62);
+  backdrop-filter: blur(26px) saturate(1.35);
+  -webkit-backdrop-filter: blur(26px) saturate(1.35);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 40px 80px -40px rgba(0, 0, 0, 0.85),
+    inset 0 1px 0 rgba(255, 255, 255, 0.11);
+  border-radius: 26px;
 }
-.opp-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 12px 24px -12px rgba(83, 74, 183, 0.22), 0 2px 6px rgba(0,0,0,0.04);
+
+/* Panelin üst kenarında ince ışık çizgisi — cam hissini tamamlar */
+.glass-panel::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 12%; right: 12%; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(160, 130, 255, 0.75), transparent);
+  pointer-events: none;
 }
+
+.glass-panel--hover { transition: border-color 0.25s ease, transform 0.25s ease; }
+.glass-panel--hover:hover { border-color: var(--glass-border-hi); }
+
+/* ─── Butonlar ───────────────────────────────────────────────────────── */
 
 .btn-primary {
-  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 0.18s ease, background-color 0.16s ease;
+  position: relative;
+  overflow: hidden;
+  /* İlk ve son durak aynı renk — background-position 0%→200% döngüsü
+     dikişsiz kapansın diye. Tek yönlü gradyanda ortada sert bir iz kalıyordu. */
+  background: linear-gradient(115deg,
+    #7C5CFF 0%, #9B6BFF 25%, #2BE0C8 50%, #9B6BFF 75%, #7C5CFF 100%);
+  background-size: 200% 100%;
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.2s ease, filter 0.2s ease;
 }
 .btn-primary:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 20px -8px rgba(83, 74, 183, 0.45);
+  transform: translateY(-2px);
+  filter: brightness(1.08);
+  box-shadow: 0 22px 44px -18px rgba(124, 92, 255, 0.95);
 }
-.btn-primary:active:not(:disabled) {
-  transform: translateY(0) scale(0.98);
-}
+.btn-primary:active:not(:disabled) { transform: translateY(0) scale(0.98); }
+.btn-primary:not(:disabled) { animation: fx-sheen 6s linear infinite; }
 
-.pill-btn:hover {
-  transform: translateY(-1px);
-  filter: brightness(0.97);
-}
-.pill-btn:active {
-  transform: translateY(0) scale(0.96);
-}
+.pill-btn:hover { transform: translateY(-1px); }
+.pill-btn:active { transform: translateY(0) scale(0.96); }
 
-.apply-link {
-  position: relative;
-}
+.ghost-btn:hover { transform: translateY(-1px); color: var(--text-hi); }
+.ghost-btn:active { transform: translateY(0); }
+
+.apply-link { position: relative; }
 .apply-link .apply-arrow {
   display: inline-block;
   transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.apply-link:hover .apply-arrow {
-  transform: translate(3px, -2px);
-}
+.apply-link:hover .apply-arrow { transform: translate(3px, -2px); }
 
-.ghost-btn:hover {
-  transform: translateY(-1px);
+.apply-btn {
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease,
+    filter 0.18s ease;
 }
-.ghost-btn:active {
-  transform: translateY(0);
+.apply-btn:hover {
+  transform: translateY(-2px);
+  filter: saturate(1.2) brightness(1.06);
+  box-shadow: 0 22px 40px -18px rgba(124, 92, 255, 1);
 }
+.apply-btn:active { transform: translateY(0) scale(0.98); }
 
-/* ─── Hero (WebGL + GSAP) ────────────────────────────────────────────── */
+/* ─── Hero ───────────────────────────────────────────────────────────── */
 
 .hero-cta {
   transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s ease;
@@ -147,9 +222,7 @@ button, a, input, [role="button"] {
   transform: translateY(-2px) scale(1.02);
   box-shadow: 0 26px 50px -20px rgba(10, 6, 45, 0.85);
 }
-.hero-cta:active {
-  transform: translateY(0) scale(0.985);
-}
+.hero-cta:active { transform: translateY(0) scale(0.985); }
 
 .hero-cue {
   transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease,
@@ -159,76 +232,118 @@ button, a, input, [role="button"] {
   background: #fff;
   box-shadow: 0 20px 38px -18px rgba(24, 16, 74, 0.6);
 }
-.hero-cue:active {
-  transform: translateX(-50%) scale(0.97);
-}
+.hero-cue:active { transform: translateX(-50%) scale(0.97); }
 
-/* Ambient WebGL zemini içeriğin arkasında kalsın */
-.page-layer {
-  position: relative;
-  z-index: 1;
-}
-
-/* Tema motifleri yalnız içerik sütununun yanında yer kaldığında görünür */
-.theme-glyphs { display: none; }
-@media (min-width: 1024px) {
-  .theme-glyphs { display: block; }
-}
-
-/* ─── Arama ekranı: interaktif kontroller ────────────────────────────── */
+/* ─── Seçim kartları ─────────────────────────────────────────────────── */
 
 .choice-card {
-  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease,
-    background-color 0.18s ease, border-color 0.18s ease;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease,
+    background-color 0.2s ease, border-color 0.2s ease;
 }
 .choice-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 16px 28px -16px rgba(35, 28, 82, 0.45);
+  transform: translateY(-4px);
+  box-shadow: 0 22px 38px -18px rgba(0, 0, 0, 0.9);
 }
 .choice-card:active { transform: translateY(-1px) scale(0.985); }
-.choice-card[data-selected='true']:hover { transform: translateY(-3px) scale(1.01); }
+.choice-card[data-selected='true']:hover { transform: translateY(-4px) scale(1.015); }
 
-.range-track:focus-visible,
-.range-track:focus { outline: 2px solid rgba(83, 74, 183, 0.5); outline-offset: 6px; border-radius: 999px; }
+/* seçildiği anda karttan dışa yayılan halka */
+.choice-card[data-selected='true']::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  border: 1.5px solid currentColor;
+  opacity: 0;
+  pointer-events: none;
+  animation: fx-ripple 0.55s cubic-bezier(0.16, 1, 0.3, 1);
+}
 
+/* ikonun kendi ışığını zemine taşıyan hafif parlama */
+.choice-icon {
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), filter 0.28s ease;
+}
+.choice-card:hover .choice-icon { transform: scale(1.14) rotate(-5deg); }
+.choice-card[data-selected='true'] .choice-icon {
+  filter: drop-shadow(0 4px 14px currentColor);
+}
+
+/* ─── Sürgülü barlar ─────────────────────────────────────────────────── */
+
+.range-track:focus-visible {
+  outline: 2px solid rgba(124, 92, 255, 0.7);
+  outline-offset: 8px;
+  border-radius: 999px;
+}
 .range-thumb { will-change: left; }
 
-/* Cam panel — arka plandaki 3B sahne panellerin arkasından görünsün */
-.glass-panel {
-  background: rgba(255, 255, 255, 0.62);
-  backdrop-filter: blur(18px) saturate(1.25);
-  -webkit-backdrop-filter: blur(18px) saturate(1.25);
-  border: 1px solid rgba(255, 255, 255, 0.75);
-  box-shadow: 0 30px 60px -34px rgba(35, 28, 82, 0.45),
-    0 2px 8px -4px rgba(35, 28, 82, 0.12);
-  border-radius: 22px;
+/* tutamağı çevreleyen nefes alan hale */
+.range-thumb[data-active='true']::before {
+  content: '';
+  position: absolute;
+  inset: -9px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(124, 92, 255, 0.42) 0%, transparent 70%);
+  pointer-events: none;
 }
 
 /* ─── Sonuç kartları ─────────────────────────────────────────────────── */
+
+.opp-card {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.22s ease, border-color 0.22s ease;
+}
+.opp-card:hover {
+  transform: translateY(-5px);
+  border-color: var(--glass-border-hi);
+  box-shadow: 0 34px 60px -30px rgba(0, 0, 0, 0.95),
+    0 0 0 1px rgba(124, 92, 255, 0.28);
+}
+
+/* imleci takip eden yumuşak ışık — konumu JS'ten --mx/--my ile gelir */
+.opp-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  background: radial-gradient(340px circle at var(--mx, 50%) var(--my, 0%),
+    rgba(124, 92, 255, 0.20), transparent 65%);
+}
+.opp-card:hover::after { opacity: 1; }
+
+.opp-card .opp-icon {
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.opp-card:hover .opp-icon { transform: scale(1.12) rotate(-6deg); }
 
 .opp-meta-chip {
   font-size: 10.5px;
   font-weight: 600;
   padding: 4px 10px;
   border-radius: 999px;
-  background: rgba(83, 74, 183, 0.07);
-  color: #5F5980;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-mid);
 }
 
-.opp-card .opp-icon {
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.opp-card:hover .opp-icon {
-  transform: scale(1.12) rotate(-6deg);
-}
+/* ─── İnce kaydırma çubuğu (koyu tema) ───────────────────────────────── */
 
-.apply-btn {
-  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease,
-    filter 0.18s ease;
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 92, 255, 0.5) transparent;
 }
-.apply-btn:hover {
-  transform: translateY(-2px);
-  filter: saturate(1.15);
-  box-shadow: 0 18px 30px -16px rgba(76, 65, 181, 1);
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: rgba(124, 92, 255, 0.4);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
 }
-.apply-btn:active { transform: translateY(0) scale(0.98); }
+*::-webkit-scrollbar-thumb:hover { background: rgba(124, 92, 255, 0.7); background-clip: content-box; }
