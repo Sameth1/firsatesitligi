@@ -54,6 +54,27 @@ class VerdictParsingTests(unittest.TestCase):
         self.assertIs(parsed["son_tarih_dogrulandi"], False)
 
 
+class RejectionMemoryTests(unittest.TestCase):
+    def test_meaningful_legacy_notes_are_normalized(self):
+        self.assertEqual(
+            validator.normalize_legacy_human_rejection("  TR   YOK ")[0],
+            "not_eligible",
+        )
+        self.assertEqual(
+            validator.normalize_legacy_human_rejection("geçmiş tarihi")[0],
+            "expired",
+        )
+
+    def test_ambiguous_legacy_notes_are_ignored(self):
+        self.assertIsNone(validator.normalize_legacy_human_rejection("yok"))
+        self.assertIsNone(validator.normalize_legacy_human_rejection("am"))
+
+    def test_memory_weight_thresholds(self):
+        self.assertEqual(validator._memory_weight(1), "example")
+        self.assertEqual(validator._memory_weight(3), "warning")
+        self.assertEqual(validator._memory_weight(5), "strong")
+
+
 class ApprovalGateTests(unittest.TestCase):
     def test_complete_record_and_all_evidence_can_pass(self):
         self.assertEqual(

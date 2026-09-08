@@ -90,6 +90,17 @@ LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "3000"))
 
 AGENT_MARKER = "[ajan]"       # admin_note öneki — tekrar çalıştırmada atlamak için
 HUMAN_REJECT_RE = re.compile(r"^\[insan\]\s+RED:([a-z0-9_]+)\s+—\s+(.+)$")
+LEGACY_HUMAN_REJECTION_REASONS = {
+    "başvurular kapalı": (
+        "expired", "Başvurular kapalı veya son başvuru tarihi geçmiş"
+    ),
+    "geçmiş tarihi": (
+        "expired", "Başvurular kapalı veya son başvuru tarihi geçmiş"
+    ),
+    "tr yok": (
+        "not_eligible", "Türkiye'den başvuruya uygun değil"
+    ),
+}
 PAGE_CHAR_LIMIT = 6000
 VALID_FUNDING_TYPES = {"full", "partial", "free", "stipend"}
 AGGREGATOR_DOMAINS = {"youthop.com", "www.youthop.com", "nasilgitmis.com", "www.nasilgitmis.com"}
@@ -326,6 +337,127 @@ def run_feedback_report():
         ]
         for reason, n in sorted(details, key=lambda item: (-item[1], item[0])):
             print(f"    - {reason}: {n}")
+
+
+def normalize_legacy_human_rejection(reason_text):
+    """Yalnızca anlamı kesin eski serbest metin redlerini kodlar.
+
+    ``yok`` veya ``am`` gibi neyin reddedildiğini söylemeyen notları hafızaya
+    almamak bilinçli bir fail-closed tercihidir; belirsiz geri bildirim agent'ın
+    sonraki kararlarını zehirlememelidir.
+    """
+    normalized = " ".join((reason_text or "").casefold().split())
+    return LEGACY_HUMAN_REJECTION_REASONS.get(normalized)
+
+
+def fetch_human_rejection_events(reason_code_filter="is.null"):
+    params = {
+        "actor_type": "eq.human",
+        "decision": "eq.rejected",
+        "select": ("id,submission_id,reason_code,reason_text,source_nickname,"
+                   "category_slug,created_at"),
+        "order": "created_at.asc",
+        "limit": "5000",
+    }
+    if reason_code_filter:
+        params["reason_code"] = reason_code_filter
+    res = requests.get(
+        f"{SUPABASE_URL}/rest/v1/submission_review_events",
+        headers=sb_headers(), params=params, timeout=20,
+    )
+    res.raise_for_status()
+    return res.json()
+
+
+def _memory_weight(evidence_count):
+    if evidence_count >= 5:
+        return "strong"
+    if evidence_count >= 3:
+        return "warning"
+    return "example"
+
+
+def rebuild_agent_memories_from_human_rejections():
+    """Kodlanmış insan redlerinden hafızayı deterministik olarak yeniler."""
+    events = fetch_human_rejection_events(reason_code_filter="not.is.null")
+    grouped = {}
+    for event in events:
+        key = (
+            event.get("source_nickname") or "manual/unknown",
+            event.get("category_slug") or "unknown",
+            event["reason_code"],
+        )
+        grouped.setdefault(key, []).append(event)
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    payload = []
+    for (source, category, reason_code), items in grouped.items():
+        ordered = sorted(items, key=lambda item: item["created_at"])
+        legacy = normalize_legacy_human_rejection(ordered[-1].get("reason_text"))
+        summary = legacy[1] if legacy else ordered[-1].get("reason_text")
+        payload.append({
+            "source_nickname": source,
+            "category_slug": category,
+            "reason_code": reason_code,
+            "summary": summary or reason_code,
+            "evidence_count": len(ordered),
+            "weight": _memory_weight(len(ordered)),
+            "active": True,
+            "first_evidence_at": ordered[0]["created_at"],
+            "last_evidence_at": ordered[-1]["created_at"],
+            "updated_at": now_iso,
+        })
+
+    if not payload:
+        return []
+
+    headers = sb_headers()
+    headers["Prefer"] = "resolution=merge-duplicates,return=representation"
+    res = requests.post(
+        f"{SUPABASE_URL}/rest/v1/agent_memories",
+        headers=headers,
+        params={"on_conflict": "source_nickname,category_slug,reason_code"},
+        json=payload,
+        timeout=20,
+    )
+    res.raise_for_status()
+    return res.json()
+
+
+def run_rejection_memory_backfill(dry_run=False):
+    """Anlamı kesin eski admin redlerini olay geçmişine ve hafızaya alır."""
+    events = fetch_human_rejection_events()
+    classified = []
+    skipped = []
+    for event in events:
+        classification = normalize_legacy_human_rejection(event.get("reason_text"))
+        if classification:
+            classified.append((event, classification))
+        elif event.get("reason_text"):
+            skipped.append(event)
+
+    print(f"Kodlanabilir eski insan reddi: {len(classified)}")
+    counts = Counter(code for _, (code, _) in classified)
+    for code, count in counts.most_common():
+        print(f"  {code}: {count}")
+    print(f"Belirsiz not olduğu için atlanan: {len(skipped)}")
+
+    if dry_run:
+        print("DRY-RUN — veritabanı değiştirilmedi.")
+        return
+
+    for event, (reason_code, _) in classified:
+        res = requests.patch(
+            f"{SUPABASE_URL}/rest/v1/submission_review_events",
+            headers=sb_headers(),
+            params={"id": f"eq.{event['id']}", "reason_code": "is.null"},
+            json={"reason_code": reason_code},
+            timeout=20,
+        )
+        res.raise_for_status()
+
+    memories = rebuild_agent_memories_from_human_rejections()
+    print(f"Hafızaya yazılan kaynak/kategori/neden grubu: {len(memories)}")
 
 
 def fetch_agent_approved_submissions(limit=None):
@@ -1081,6 +1213,9 @@ def main():
     parser.add_argument("--feedback-report", action="store_true",
                         help="İnsan adminlerin red nedenlerini kaynak ve neden "
                              "koduna göre salt okunur raporla")
+    parser.add_argument("--backfill-rejection-memory", action="store_true",
+                        help="Anlamı kesin eski serbest metin insan redlerini "
+                             "kodlayıp agent hafızasına aktar")
     parser.add_argument("--reaudit-agent-approvals", action="store_true",
                         help="Eski gerçek agent onaylarını yeni sıkı kapıya göre "
                              "salt okunur sınıflandır")
@@ -1097,6 +1232,14 @@ def main():
             run_feedback_report()
         except requests.exceptions.RequestException as e:
             print(f"Red geri bildirimi okunamadı: {e}", file=sys.stderr)
+            sys.exit(1)
+        return
+
+    if args.backfill_rejection_memory:
+        try:
+            run_rejection_memory_backfill(dry_run=args.dry_run)
+        except requests.exceptions.RequestException as e:
+            print(f"Red hafızası aktarılamadı: {e}", file=sys.stderr)
             sys.exit(1)
         return
 

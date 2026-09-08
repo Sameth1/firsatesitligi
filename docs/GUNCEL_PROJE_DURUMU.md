@@ -60,6 +60,9 @@ Yeni scraper kayıtları `submissions` tablosuna `submission_origin=agent`, `rev
 - Yeni insan redleri kodlu biçimdedir: `[insan] RED:<neden_kodu> — <açıklama>`.
 - Kalıcı geçmiş: `submission_review_events`.
 - Toplu salt-okunur rapor: `python validate_submissions.py --feedback-report`.
+- Eski serbest metin redlerini güvenli/idempotent aktarım: önce
+  `python validate_submissions.py --backfill-rejection-memory --dry-run`, sonra
+  `python validate_submissions.py --backfill-rejection-memory`.
 
 ## Supabase durumu
 
@@ -72,7 +75,7 @@ Migration 097 sonrası doğrulanan canlı durum:
 - 104 geçmiş insan karar olayı kaydedildi.
 - 377 submission: 130 agent onaylı, 245 agent reddedilmiş, 1 insan onaylı, 1 insan reddedilmiş.
 - O anda pending kayıt yoktu.
-- `agent_memories` başlangıçta 0 idi; eski 84 insan reddinin 68'inde neden yok, 16'sı eski serbest metin biçimindeydi. Yeni panelde yapılandırılmış red geldikçe hafıza otomatik oluşacak.
+- Eski 84 insan reddinin 68'inde neden yok, 16'sı eski serbest metin biçimindeydi. Anlamı kesin 4 eski red (`expired`: 2, `not_eligible`: 2) hafızaya aktarıldı; `yok`/`am` gibi 12 belirsiz not agent'ı yanlış yönlendirmemesi için atlandı. Yeni panelde yapılandırılmış red geldikçe hafıza otomatik güncellenir.
 
 8 Eylül salt-okunur eski onay taraması (`--reaudit-agent-approvals`):
 
@@ -86,10 +89,8 @@ Migration 097 sonrası doğrulanan canlı durum:
 
 ## Kod ve PR durumu
 
-- Çalışma dalı: `claude/proje-durumu-eksikler-vu5n31`.
-- Açık draft PR: [#40](https://github.com/Sameth1/firsatesitligi/pull/40).
-- PR #40 Vercel kontrollerinden geçti fakat henüz production'a merge edilmedi.
-- Migration veritabanında uygulanmış olsa da yeni admin arayüzü ve `/revise/[token]` sayfası PR merge edilene kadar production'da görünmez.
+- Çalışma dalı: `codex/backfill-admin-rejection-memory`.
+- PR [#40](https://github.com/Sameth1/firsatesitligi/pull/40) `master` dalına merge edildi.
 - `supabase/functions/notify-submission/index.ts` içindeki yeni güvenli revize e-postası kodu ayrıca Supabase Edge Function olarak deploy edilmelidir. Bunu frontend merge ile aynı anda yapmak gerekir.
 
 ## Son doğrulamalar
@@ -99,9 +100,11 @@ Migration 097 sonrası doğrulanan canlı durum:
 - Değiştirilen frontend ve Edge Function dosyalarında ESLint: geçti.
 - `next build --webpack`: geçti.
 - Vercel preview kontrolleri: geçti.
-- Yeni agent yayın/onay/red kapıları için 14 birim testi: geçti.
+- Agent yayın/onay/red kapıları ve eski red hafızası için 17 birim testi: geçti.
 - Canlı DB'de `source_url` kolonu: doğrulandı.
 - Canlı DB'de `agent_validation` kolonu ve yeni RPC imzası: doğrulandı.
+- Canlı DB'de 4 anlamlı eski insan reddi 2 hafıza grubuna aktarıldı ve
+  agent bağlamından okunabildiği doğrulandı.
 - NVIDIA NIM izole şema çağrısı: başarılı; bütün yeni doğrulama alanları döndü ve sıkı kapıdan geçti.
 
 ## Sonraki güvenli adım

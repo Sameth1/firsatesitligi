@@ -315,6 +315,10 @@ python validate_submissions.py --recheck --dry-run --limit 10
 # İnsan adminlerin red nedenlerini kaynak/neden bazında raporla (veri değiştirmez)
 python validate_submissions.py --feedback-report
 
+# Eski serbest metin redlerinden yalnızca anlamı kesin olanları hafızaya al
+python validate_submissions.py --backfill-rejection-memory --dry-run
+python validate_submissions.py --backfill-rejection-memory
+
 # Eski gerçek agent onaylarını yeni sıkı kapıya göre raporla (veri değiştirmez)
 python validate_submissions.py --reaudit-agent-approvals --output agent-reaudit.json
 
