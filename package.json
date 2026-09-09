@@ -20,6 +20,7 @@
     "db:098": "npx supabase db query --linked -f docs/sql/098_remove_manual_improvement_queue.sql",
     "db:099": "npx supabase db query --linked -f docs/sql/099_strict_agent_approval_gate.sql",
     "db:100": "npx supabase db query --linked -f docs/sql/100_submission_source_url.sql",
+    "db:101": "npx supabase db query --linked -f docs/sql/101_agent_two_pass_evidence_gate.sql",
     "db:insert-programs": "node scripts/insert_programs.js"
   },
   "dependencies": {
