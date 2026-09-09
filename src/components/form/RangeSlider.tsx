@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { pulseScene, hexToRgb01 } from '@/components/scene/sceneBus'
+import ResetButton from './ResetButton'
 
 type Props = {
   value: number | null
@@ -85,17 +86,7 @@ export default function RangeSlider({
           {label}
         </span>
         {active ? (
-          <button
-            type="button"
-            onClick={() => onChange(null)}
-            className="ghost-btn"
-            style={{
-              fontSize: 11, color: 'var(--text-low)', background: 'none',
-              border: 'none', cursor: 'pointer', padding: 0,
-            }}
-          >
-            temizle
-          </button>
+          <ResetButton onClick={() => onChange(null)} label={`${label} seçimini sıfırla`} />
         ) : (
           <span style={{ fontSize: 11, color: 'var(--text-low)' }}>{hint ?? 'opsiyonel'}</span>
         )}

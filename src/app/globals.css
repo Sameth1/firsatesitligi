@@ -143,6 +143,7 @@ button, a, input, [role="button"] {
 
 .glass-panel {
   position: relative;
+  z-index: 1;
   /* Arkadaki 3B sahne canlı olduğu için panel yalnız beyaz tülle yetinemiyor;
      koyu bir taban katmanı metin kontrastını garanti altına alıyor. */
   background:
@@ -154,6 +155,13 @@ button, a, input, [role="button"] {
   box-shadow: 0 40px 80px -40px rgba(0, 0, 0, 0.85),
     inset 0 1px 0 rgba(255, 255, 255, 0.11);
   border-radius: 26px;
+}
+
+/* Açılır liste taşarken paneli kardeşlerinin üstüne çıkar.
+   backdrop-filter her paneli ayrı bir yığın bağlamı yaptığı için listenin
+   kendi z-index'i yetmiyordu: DOM'da sonra gelen panel üstüne biniyordu. */
+.glass-panel:has(.picker-open) {
+  z-index: 50;
 }
 
 /* Panelin üst kenarında ince ışık çizgisi — cam hissini tamamlar */
@@ -268,6 +276,37 @@ button, a, input, [role="button"] {
 .choice-card:hover .choice-icon { transform: scale(1.14) rotate(-5deg); }
 .choice-card[data-selected='true'] .choice-icon {
   filter: drop-shadow(0 4px 14px currentColor);
+}
+
+/* Alan sıfırlama düğmesi ────────────────────────────────────────────────
+   Eskiden çerçevesiz gri bir "temizle" metniydi; koyu zeminde düğme olduğu
+   anlaşılmıyordu. Çerçeveli hap + ikon, hover'da kırmızıya yaklaşan ton. */
+.reset-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--text-mid);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  transition: background-color 0.16s ease, border-color 0.16s ease,
+    color 0.16s ease, transform 0.16s ease;
+}
+.reset-btn:hover {
+  transform: translateY(-1px);
+  color: #FFB4B4;
+  background: rgba(255, 107, 107, 0.14);
+  border-color: rgba(255, 107, 107, 0.5);
+}
+.reset-btn:active { transform: translateY(0) scale(0.97); }
+.reset-btn:focus-visible {
+  outline: 2px solid rgba(124, 92, 255, 0.7);
+  outline-offset: 2px;
 }
 
 /* ─── Sürgülü barlar ─────────────────────────────────────────────────── */

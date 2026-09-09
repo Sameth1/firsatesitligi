@@ -14,7 +14,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger'
 // WebGL yalnız istemcide — SSR'da canvas oluşturulmaz.
 const HeroCanvas = dynamic(() => import('./HeroCanvas'), { ssr: false })
 
-const HEADLINE = ['Yurt', 'dışı', 'fırsatlar,', 'herkese', 'açık.']
+const HEADLINE = ['Yurt', 'dışı', 'ayrıcalık', 'değil,', 'senin', 'hakkın.']
 
 export default function Hero({ onStart }: { onStart: () => void }) {
   const rootRef = useRef<HTMLElement>(null)
@@ -119,7 +119,7 @@ export default function Hero({ onStart }: { onStart: () => void }) {
         </div>
 
         <h1 style={{
-          fontSize: 'clamp(38px, 8vw, 84px)',
+          fontSize: 'clamp(34px, 7.2vw, 76px)',
           lineHeight: 1.02,
           fontWeight: 600,
           letterSpacing: '-0.035em',
@@ -147,8 +147,12 @@ export default function Hero({ onStart }: { onStart: () => void }) {
             maxWidth: 620, margin: '0 auto 34px',
           }}
         >
-          Burs, staj, gönüllülük, yaz okulu ve değişim programları — profilini gir,
-          sana uyanları saniyeler içinde gör.
+          <span style={{ display: 'block' }}>
+            Burs, staj, gönüllülük, yaz okulu ve değişim programları
+          </span>
+          <span style={{ display: 'block' }}>
+            — profilini gir, sana uyanları saniyeler içinde gör.
+          </span>
         </p>
 
         <div data-fx="cta">

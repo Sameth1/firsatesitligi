@@ -12,10 +12,17 @@
 
 import Image from 'next/image'
 import { pulseScene, hexToRgb01 } from '@/components/scene/sceneBus'
+import ResetButton from './ResetButton'
 
 type Option = {
   value: string; label: string
-  icon?: string; iconSrc?: string; note?: string
+  /** emoji / metin */
+  icon?: string
+  /** kare görsel yolu (Higgsfield 3B ikonları) */
+  iconSrc?: string
+  /** hazır bileşen (ör. <Flag/>) — kare olmayan görseller için */
+  iconNode?: React.ReactNode
+  note?: string
   /** Kartın kendi vurgu rengi — verilmezse ızgaranın `accent`'i kullanılır. */
   accent?: string
 }
@@ -46,17 +53,7 @@ export default function ChoiceGrid({
           {label}
         </span>
         {value ? (
-          <button
-            type="button"
-            onClick={() => onChange(null)}
-            className="ghost-btn"
-            style={{
-              fontSize: 11, color: 'var(--text-low)', background: 'none',
-              border: 'none', cursor: 'pointer', padding: 0, whiteSpace: 'nowrap',
-            }}
-          >
-            temizle
-          </button>
+          <ResetButton onClick={() => onChange(null)} label={`${label} seçimini sıfırla`} />
         ) : (
           hint && <span style={{ fontSize: 11, color: 'var(--text-low)', whiteSpace: 'nowrap' }}>{hint}</span>
         )}
@@ -103,13 +100,16 @@ export default function ChoiceGrid({
                 aria-hidden="true"
                 style={{
                   display: 'grid', placeItems: 'center',
-                  width: o.iconSrc ? 38 : 26, height: o.iconSrc ? 38 : 26,
+                  // iconNode kendi boyutunu taşır (bayraklar 4:3, kare değil)
+                  width: o.iconNode ? 'auto' : o.iconSrc ? 38 : 26,
+                  height: o.iconNode ? 'auto' : o.iconSrc ? 38 : 26,
                   fontSize: 22, lineHeight: 1,
                 }}
               >
-                {o.iconSrc ? (
-                  <Image src={o.iconSrc} alt="" width={38} height={38} style={{ objectFit: 'contain' }} />
-                ) : o.icon}
+                {o.iconNode
+                  ?? (o.iconSrc
+                    ? <Image src={o.iconSrc} alt="" width={38} height={38} style={{ objectFit: 'contain' }} />
+                    : o.icon)}
               </span>
               <span style={{
                 fontSize: 13, fontWeight: 600, lineHeight: 1.25,

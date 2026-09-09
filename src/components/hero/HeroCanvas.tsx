@@ -227,6 +227,9 @@ export default function HeroCanvas() {
       transparent: true,
     })
     const blob = new THREE.Mesh(new THREE.IcosahedronGeometry(0.85, 48), blobMaterial)
+    // Baştan gizli: GLB gelecekse kullanıcı hiç blob görmesin ("önce bulut,
+    // sonra kep" geçişi buydu). Yalnız GLB'nin gelmeyeceği kesinleşince açılır.
+    blob.visible = false
     scene.add(blob)
 
     // Konum ekran oranına bağlı: geniş ekranda metnin sağ omzunda, dar/mobil
@@ -299,9 +302,17 @@ export default function HeroCanvas() {
       transparent: true,
     })
 
+    // GLB yolu tıkanırsa (dosya yok, HEAD hata, loader patladı) prosedürel
+    // blob devreye girer — sahne asla objesiz kalmaz.
+    function fallbackToBlob() {
+      if (cancelled || heroObject) return
+      blob.visible = true
+    }
+
     fetch(MODEL_URL, { method: 'HEAD' })
       .then(res => {
-        if (!res.ok || cancelled) return
+        if (cancelled) return
+        if (!res.ok) { fallbackToBlob(); return }
         new GLTFLoader().load(MODEL_URL, gltf => {
           if (cancelled) return
           heroObject = gltf.scene
@@ -330,13 +341,13 @@ export default function HeroCanvas() {
           heroNormalize = 1.15 / maxAxis
           placeHero(host!.clientWidth / Math.max(1, host!.clientHeight))
 
-          // GLB geldiyse prosedürel blob'a gerek yok — sahnede yalnız kep kalır.
-          // Mesh sahnede duruyor ama gizli: GLB olmayan kurulumlarda tek
-          // görsel odak o olduğu için tamamen kaldırmıyoruz.
+          // GLB geldi — blob zaten gizli, öyle kalır. Mesh sahnede duruyor
+          // ama görünmez: GLB olmayan kurulumlarda tek görsel odak o olduğu
+          // için tamamen kaldırmıyoruz.
           blob.visible = false
-        })
+        }, undefined, () => { fallbackToBlob() })
       })
-      .catch(() => { /* asset yok — prosedürel sahne yeterli */ })
+      .catch(() => { fallbackToBlob() })
 
     // ince parçacık alanı — derinlik hissi
     const count = 420
