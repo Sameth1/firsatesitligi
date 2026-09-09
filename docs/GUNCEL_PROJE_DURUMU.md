@@ -1,6 +1,6 @@
 # Fırsat Eşitliği — Güncel Proje Devralma Notu
 
-Son güncelleme: 8 Eylül 2026
+Son güncelleme: 9 Eylül 2026
 
 ## Amaç
 
@@ -39,10 +39,11 @@ Yeni scraper kayıtları `submissions` tablosuna `submission_origin=agent`, `rev
 1. Agent her `agent_queue` kaydını inceler.
 2. Kopya URL, geçmiş tarih ve 404/410 önce heuristiklerle değerlendirilir.
 3. Eksik başlık, URL, kategori, ülke/global bilgisi, kesin güncel tarih, finansman veya uygunluk koşulu varsa kayıt LLM'e gitmeden reddedilir.
-4. Eksiksiz HTTP-200 kayıtları NVIDIA NIM'e gider. Otomatik onay için güven yüksek olmalı; tek fırsat, doğrudan fırsat sayfası, son tarih, finansman, ülke ve uygunluk kanıtlarının tamamı ayrı ayrı doğrulanmalıdır.
-5. Migration 099 aynı kapıları RPC içinde tekrar denetler; Python hatası dahi eksik kaydı yayımlayamaz ve eksik finansmanı `free` varsaymaz.
-6. Eski tarih, yanlış/eksik bilgi, liste-kaynak sayfası veya doğrudan olmayan link reddedilir. `agent_uncertain` yalnız tarihi güncel, doğrudan hedefi ve bütün alanları doğrulanmış kayıtta açık/kapalı kararı gerçekten çelişkiliyse kullanılır.
-7. Agent kaydında Revize yoktur; admin alanları düzeltebilir, sonra Onayla veya Reddet seçer.
+4. Eksiksiz HTTP-200 kayıtları NVIDIA NIM'e gider. Model güncellik, tarih, kategori, finansman, ülke ve uygunluk için birebir sayfa alıntısı verir; kod bu alıntıları sayfa metniyle eşleştirir.
+5. İlk olumlu karar bağımsız karşı-denetim prompt'uyla ikinci kez incelenir. Yalnızca iki tur da yüksek güvenle aynı olumlu kanıtları bulursa otomatik onay verilir.
+6. Migration 099 temel kapıları, migration 101 ise iki tur + kanıt zorunluluğunu DB içinde tekrar denetler.
+7. Eski tarih, yanlış/eksik bilgi, liste-kaynak sayfası veya doğrudan olmayan link reddedilir. `agent_uncertain` yalnız tarihi güncel, doğrudan hedefi ve bütün alanları doğrulanmış kayıtta açık/kapalı kararı gerçekten çelişkiliyse kullanılır.
+8. Geçici HTTP/LLM hatası admin kuyruğuna gitmez; `agent_queue` içinde yeniden denenir. Agent kaydında Revize yoktur.
 
 ## İnsan redlerinden öğrenme
 
@@ -66,7 +67,7 @@ Yeni scraper kayıtları `submissions` tablosuna `submission_origin=agent`, `rev
 
 ## Supabase durumu
 
-Uygulanan migration'lar: 094, 095, 096, 097, **099 ve 100**. Migration 099 sıkı agent onay kapısını; migration 100 ise kanıt sayfası `source_url` ile doğrudan başvuru/resmî hedef `url` ayrımını canlı Supabase'e ekledi. Migration 098 yalnız eski kullanılmayan görünüm temizliğidir ve henüz uygulanmadı.
+Uygulanan migration'lar: 094, 095, 096, 097, **099, 100 ve 101**. Migration 101 iki olumlu denetim ve iki tur kanıt olmadan agent otomatik onayını DB tetikleyicisiyle engeller. Migration 098 yalnız eski kullanılmayan görünüm temizliğidir ve henüz uygulanmadı.
 
 Doğrudan link geçmişi: Eski `official_url=kaynak yazı` hatası için `audit_apply_links.py` ve `backfill_apply_links.py` yazılmıştı. Youthop ve Nasıl Gitmiş scraper'ları dış Apply linkini çıkarmaya başlamıştı; ancak kaynak ile hedef ayrı DB alanlarında tutulmuyordu. Migration 100 ve güncel scraper'lar bu ayrımı kalıcı hale getirir. Agent hedef linki kontrol ederken tarih/kategori kanıtını ayrı kaynak sayfasından okuyabilir.
 
@@ -100,12 +101,13 @@ Migration 097 sonrası doğrulanan canlı durum:
 - Değiştirilen frontend ve Edge Function dosyalarında ESLint: geçti.
 - `next build --webpack`: geçti.
 - Vercel preview kontrolleri: geçti.
-- Agent yayın/onay/red kapıları ve eski red hafızası için 17 birim testi: geçti.
+- Agent yayın/onay/red kapıları ve eski red hafızası için 22 birim testi: geçti.
 - Canlı DB'de `source_url` kolonu: doğrulandı.
 - Canlı DB'de `agent_validation` kolonu ve yeni RPC imzası: doğrulandı.
 - Canlı DB'de 4 anlamlı eski insan reddi 2 hafıza grubuna aktarıldı ve
   agent bağlamından okunabildiği doğrulandı.
-- NVIDIA NIM izole şema çağrısı: başarılı; bütün yeni doğrulama alanları döndü ve sıkı kapıdan geçti.
+- Canlı DB'de `trg_agent_two_pass_evidence` etkin (`tgenabled=O`) olarak doğrulandı.
+- Güncel Youthop örneği NVIDIA NIM'de iki tur ve birebir kanıt kontrolünden geçti; dry-run sonucu otomatik onay oldu.
 
 ## Sonraki güvenli adım
 
