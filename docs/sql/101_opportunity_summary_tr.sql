@@ -42,6 +42,11 @@
 
 -- ─── 1) Yeni kolonlar (nullable — mevcut veri bozulmaz) ─────────
 
+-- Tamamı tek transaction: drop function ile create arasında canlı sitenin
+-- araması "function does not exist" alırdı. Postgres'te DDL transactional
+-- olduğu için begin/commit bu pencereyi tamamen kapatıyor.
+begin;
+
 alter table public.opportunities
   add column if not exists summary_tr text,
   add column if not exists eligibility_notes_tr text;
@@ -180,3 +185,5 @@ $function$;
 grant execute on function public.match_opportunities(
   text, text, text, integer, text, text, text, text
 ) to anon, authenticated, service_role;
+
+commit;
