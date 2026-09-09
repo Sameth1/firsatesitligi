@@ -10,6 +10,13 @@ import { useEffect, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
+import {
+  claimFlight,
+  releaseFlight,
+  setFlightActive,
+  setFlightProgress,
+  whenFlightSceneReady,
+} from './flightBus'
 
 // WebGL yalnız istemcide — SSR'da canvas oluşturulmaz.
 const HeroCanvas = dynamic(() => import('./HeroCanvas'), { ssr: false })
@@ -22,29 +29,81 @@ export default function Hero({ onStart }: { onStart: () => void }) {
   useEffect(() => {
     gsap.registerPlugin(ScrollTrigger)
 
+    let cancelWaitForScene: (() => void) | null = null
+    let readyTimer = 0
+    let intro: gsap.core.Timeline | null = null
+
     const ctx = gsap.context(() => {
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+      // Animasyonsuz hâl: her şey yerinde ve okunur. Uçuş hiç başlamadığı için
+      // flightBus `active: false` kalır ve HeroCanvas uçağı çizmez.
+      const revealAll = () => gsap.set('[data-fx]', {
+        opacity: 1, y: 0, yPercent: 0, clipPath: 'inset(0% 0 0 0)',
+      })
+
       if (reduced) {
-        gsap.set('[data-fx]', { opacity: 1, y: 0, clipPath: 'inset(0% 0 0 0)' })
+        revealAll()
         return
       }
 
-      const tl = gsap.timeline({ defaults: { ease: 'power3.out' } })
+      // Uçuş yalnız ilk açılışta. Sonraki mount'larda içerik anında görünür.
+      if (!claimFlight()) {
+        revealAll()
+      } else {
+        /**
+         * Uçak ile kelimeler TEK zaman hattından beslenir.
+         *
+         * Uçuş eğrisi ekranın soluna taşan bir noktadan başlar; `t` ~0.15'te
+         * kadraja girer, ~0.32–0.65 arasında başlık bandını soldan sağa kat
+         * eder, ~0.82'de sağdan çıkar. Kelime stagger'ı bilerek bu aralığa
+         * (0.76s → 1.56s) oturtuldu: her kelime, uçak üstünden geçtikten hemen
+         * sonra izin içinde yukarı doğru açılır.
+         */
+        const FLIGHT_DURATION = 2.4
+        const flight = { t: 0 }
 
-      tl.fromTo('[data-fx="eyebrow"]',
-          { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.6 })
-        .fromTo('[data-fx="word"]',
-          { opacity: 0, yPercent: 115 },
-          { opacity: 1, yPercent: 0, duration: 0.9, stagger: 0.075 }, '-=0.3')
-        .fromTo('[data-fx="sub"]',
-          { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.7 }, '-=0.5')
-        .fromTo('[data-fx="cta"]',
-          { opacity: 0, y: 18, scale: 0.96 },
-          { opacity: 1, y: 0, scale: 1, duration: 0.6 }, '-=0.45')
-        .fromTo('[data-fx="proof"] > *',
-          { opacity: 0, y: 12 },
-          { opacity: 1, y: 0, duration: 0.5, stagger: 0.08 }, '-=0.35')
-        .fromTo('[data-fx="cue"]', { opacity: 0 }, { opacity: 1, duration: 0.5 }, '-=0.2')
+        intro = gsap.timeline({
+          defaults: { ease: 'power3.out' },
+          onComplete: () => setFlightActive(false),
+        })
+
+        intro
+          .to(flight, {
+            t: 1,
+            duration: FLIGHT_DURATION,
+            ease: 'none', // eğri yay-uzunluğuna göre örneklendiği için sabit hız
+            onStart: () => { setFlightProgress(0); setFlightActive(true) },
+            onUpdate: () => setFlightProgress(flight.t),
+          }, 0)
+          .fromTo('[data-fx="eyebrow"]',
+            { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.55 }, 0)
+          // uçağın izinde: 6 kelime × 0.16s = uçağın bandı kat ettiği süre
+          .fromTo('[data-fx="word"]',
+            { opacity: 0, yPercent: 115 },
+            { opacity: 1, yPercent: 0, duration: 0.6, stagger: 0.16 }, 0.76)
+          .fromTo('[data-fx="sub"]',
+            { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.65 }, 1.55)
+          .fromTo('[data-fx="cta"]',
+            { opacity: 0, y: 18, scale: 0.96 },
+            { opacity: 1, y: 0, scale: 1, duration: 0.55 }, 1.75)
+          .fromTo('[data-fx="proof"] > *',
+            { opacity: 0, y: 12 },
+            { opacity: 1, y: 0, duration: 0.5, stagger: 0.08 }, 1.95)
+          .fromTo('[data-fx="cue"]', { opacity: 0 }, { opacity: 1, duration: 0.5 }, 2.15)
+
+        // WebGL katmanı dinamik import; hazır olmadan başlarsak uçuşun ilk
+        // kareleri kaçar. Sahne gelmezse (WebGL yok) 600ms'te yine de başlar.
+        intro.pause(0)
+        let started = false
+        const start = () => {
+          if (started || !intro) return
+          started = true
+          intro.play(0)
+        }
+        cancelWaitForScene = whenFlightSceneReady(start)
+        readyTimer = window.setTimeout(start, 600)
+      }
 
       // kaydırınca içerik yukarı süzülür — hero ile form arasında derinlik
       gsap.to('[data-fx="stack"]', {
@@ -69,7 +128,15 @@ export default function Hero({ onStart }: { onStart: () => void }) {
       })
     }, rootRef)
 
-    return () => ctx.revert()
+    return () => {
+      cancelWaitForScene?.()
+      window.clearTimeout(readyTimer)
+      // Uçuş bitmeden söküldüyse (StrictMode çift-mount, hızlı route geçişi)
+      // hakkı geri ver; bittiyse bir daha oynamasın.
+      if (intro && intro.progress() < 1) releaseFlight()
+      else setFlightActive(false)
+      ctx.revert()
+    }
   }, [])
 
   return (

@@ -9,6 +9,10 @@
  *  2) Merkezdeki obje: vertex'i noise ile deforme edilen ikosahedron; üstüne
  *     fresnel + iridescent renk. Higgsfield'dan gelen GLB varsa (public/hero/
  *     hero-object.glb) o yüklenir ve prosedürel obje devre dışı kalır.
+ *  3) Açılış uçuşu: prosedürel bir kağıt uçak, CatmullRom eğrisi üzerinde
+ *     başlık bandını soldan sağa kat eder ve arkasında sönen bir iz bırakır.
+ *     İlerlemeyi Hero'daki GSAP timeline'ı `flightBus` üzerinden verir; kelime
+ *     stagger'ı aynı timeline'da olduğu için kelimeler uçağın izinde açılır.
  *
  * Performans: DPR 1.75 ile sınırlı, hero görünmezken (IntersectionObserver) ve
  * sekme arkadayken rAF durur, prefers-reduced-motion'da tek kare çizilir.
@@ -17,6 +21,7 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { getFlight, markFlightSceneReady } from './flightBus'
 
 const VERT_FULLSCREEN = /* glsl */ `
   varying vec2 vUv;
@@ -175,6 +180,89 @@ const FRAG_BLOB = /* glsl */ `
     gl_FragColor = vec4(col, 0.88);
   }
 `
+
+// ── Açılış uçuşu: kağıt uçak + iz ────────────────────────────────────────────
+
+// Kağıt uçak gövdesi — ışıksız sahnede okunsun diye fresnel tabanlı "kağıt".
+const VERT_PLANE = /* glsl */ `
+  varying vec3 vNormalW;
+  varying vec3 vViewDir;
+  void main() {
+    vNormalW = normalize(mat3(modelMatrix) * normal);
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    vViewDir = normalize(cameraPosition - world.xyz);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`
+
+const FRAG_PLANE = /* glsl */ `
+  precision mediump float;
+  varying vec3 vNormalW;
+  varying vec3 vViewDir;
+  uniform float uFade;
+
+  void main() {
+    vec3 N = normalize(vNormalW);
+    vec3 V = normalize(vViewDir);
+    // çift taraflı geometri: normalin yönü değil, açının keskinliği önemli
+    float facing = abs(dot(N, V));
+    float fres = pow(1.0 - facing, 2.0);
+
+    vec3 paper = vec3(0.97, 0.98, 1.00);
+    vec3 fold  = vec3(0.48, 0.42, 0.94);   // kıvrım gölgesi — marka moru
+    vec3 rim   = vec3(0.36, 0.94, 0.86);   // turkuaz kenar parıltısı
+
+    vec3 col = mix(fold, paper, smoothstep(0.05, 0.80, facing));
+    col = mix(col, rim, fres * 0.55);
+    gl_FragColor = vec4(col, uFade * 0.97);
+  }
+`
+
+// İz — kamera'ya dönük şerit. Alfa hem kuyruğa hem kenarlara doğru söner.
+const VERT_TRAIL = /* glsl */ `
+  attribute float aAlpha;
+  attribute float aU;
+  varying float vAlpha;
+  varying float vU;
+  void main() {
+    vAlpha = aAlpha;
+    vU = aU;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`
+
+const FRAG_TRAIL = /* glsl */ `
+  precision mediump float;
+  varying float vAlpha;
+  varying float vU;
+  uniform float uFade;
+  void main() {
+    vec3 tail = vec3(0.42, 0.33, 0.90);  // mor
+    vec3 head = vec3(0.72, 0.98, 1.00);  // burnun hemen arkası: sıcak beyaz
+    vec3 col = mix(tail, head, vU * vU);
+    gl_FragColor = vec4(col, vAlpha * uFade);
+  }
+`
+
+/** SearchScene'deki dart geometrisiyle aynı katlama — burun +Z'ye bakar. */
+const PLANE_VERTICES = new Float32Array([
+  0, 0, 1.35, -1.0, 0, -0.85, 0, 0, -0.35,
+  0, 0, 1.35, 0, 0, -0.35, 1.0, 0, -0.85,
+  0, 0, 1.35, 0, 0.34, -0.62, 0, 0, -0.35,
+  0, 0, 1.35, 0, 0, -0.35, 0, -0.10, -0.62,
+])
+
+/** İz kaç noktadan örneklenir (her nokta 3 vertex: sol kenar / orta / sağ kenar). */
+const TRAIL_SAMPLES = 56
+/** İzin eğri üzerinde kapladığı `t` uzunluğu. */
+const TRAIL_SPAN = 0.24
+
+const HALF_FOV_TAN = Math.tan((45 * Math.PI) / 360)
+
+function smoothstep(edge0: number, edge1: number, x: number) {
+  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)))
+  return t * t * (3 - 2 * t)
+}
 
 export default function HeroCanvas() {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -386,6 +474,193 @@ export default function HeroCanvas() {
     const dust = new THREE.Points(dustGeometry, dustMaterial)
     scene.add(dust)
 
+    // ── Açılış uçuşu ──────────────────────────────────────────────────────
+    // Uçak ile başlık kelimeleri aynı zaman hattından beslenir: Hero'daki GSAP
+    // timeline'ı flightBus'a 0→1 yazar, burada her karede okunup uçak eğri
+    // üzerine oturtulur. İki ayrı animasyon yok, tek bir `t` var.
+
+    const FLIGHT_Z = 0.3
+
+    const planeGeometry = new THREE.BufferGeometry()
+    planeGeometry.setAttribute('position', new THREE.BufferAttribute(PLANE_VERTICES, 3))
+    planeGeometry.computeVertexNormals()
+
+    const planeMaterial = new THREE.ShaderMaterial({
+      vertexShader: VERT_PLANE,
+      fragmentShader: FRAG_PLANE,
+      uniforms: { uFade: { value: 0 } },
+      transparent: true,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    })
+    const paperPlane = new THREE.Mesh(planeGeometry, planeMaterial)
+    paperPlane.visible = false
+    paperPlane.renderOrder = 3
+    scene.add(paperPlane)
+
+    // İz: önceden ayrılmış tamponlar. Geometri hiçbir karede yeniden kurulmaz,
+    // yalnız position/aAlpha dizileri yerinde güncellenir.
+    const trailPositions = new Float32Array(TRAIL_SAMPLES * 3 * 3)
+    const trailAlphas = new Float32Array(TRAIL_SAMPLES * 3)
+    const trailU = new Float32Array(TRAIL_SAMPLES * 3)
+    const trailIndices = new Uint16Array((TRAIL_SAMPLES - 1) * 12)
+    for (let i = 0; i < TRAIL_SAMPLES; i++) {
+      const u = i / (TRAIL_SAMPLES - 1)
+      trailU[i * 3] = u
+      trailU[i * 3 + 1] = u
+      trailU[i * 3 + 2] = u
+    }
+    for (let i = 0; i < TRAIL_SAMPLES - 1; i++) {
+      const a = i * 3        // sol kenar
+      const b = i * 3 + 1    // orta
+      const c = i * 3 + 2    // sağ kenar
+      const d = a + 3, e = b + 3, f = c + 3
+      trailIndices.set([a, b, d, b, e, d, b, c, e, c, f, e], i * 12)
+    }
+
+    const trailGeometry = new THREE.BufferGeometry()
+    const trailPositionAttr = new THREE.BufferAttribute(trailPositions, 3)
+    const trailAlphaAttr = new THREE.BufferAttribute(trailAlphas, 1)
+    trailPositionAttr.setUsage(THREE.DynamicDrawUsage)
+    trailAlphaAttr.setUsage(THREE.DynamicDrawUsage)
+    trailGeometry.setAttribute('position', trailPositionAttr)
+    trailGeometry.setAttribute('aAlpha', trailAlphaAttr)
+    trailGeometry.setAttribute('aU', new THREE.BufferAttribute(trailU, 1))
+    trailGeometry.setIndex(new THREE.BufferAttribute(trailIndices, 1))
+
+    const trailMaterial = new THREE.ShaderMaterial({
+      vertexShader: VERT_TRAIL,
+      fragmentShader: FRAG_TRAIL,
+      uniforms: { uFade: { value: 0 } },
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+    })
+    const trail = new THREE.Mesh(trailGeometry, trailMaterial)
+    trail.visible = false
+    trail.frustumCulled = false // her karede yeniden yazılıyor; bounding kutusu güvenilmez
+    trail.renderOrder = 2
+    scene.add(trail)
+
+    /**
+     * Başlığın ekrandaki dikey merkezini dünya birimine çevirir. Uçak bandı
+     * böylece gerçekten başlığın üstünden geçer — sabit bir tahmin yerine.
+     */
+    function headlineBandY(halfH: number): number {
+      const h1 = host?.parentElement?.querySelector('h1')
+      const rect = host?.getBoundingClientRect()
+      if (!h1 || !rect || rect.height < 1) return halfH * 0.22
+      const box = h1.getBoundingClientRect()
+      const centerY = box.top + box.height / 2 - rect.top
+      return -((centerY / rect.height) * 2 - 1) * halfH
+    }
+
+    // Eğri kontrol noktaları: [halfW çarpanı, bant merkezine göre y, FLIGHT_Z'ye
+    // göre z]. Uçak solda kadraj dışında ve geride başlar, başlık bandını
+    // kamerayla aynı düzlemde soldan sağa kat eder, sonra süzülerek derinliğe
+    // çekilip sağdan çıkar. Son üç nokta bilerek bandın ALTINA iniyor: sağ üstte
+    // duran kep (heroObject, x≈1.92 / y≈0.72) gölgelenmesin.
+    const PATH: [number, number, number][] = [
+      [-1.45, -0.58, -0.70],
+      [-0.98, -0.14,  0.00],
+      [-0.50,  0.16,  0.28],
+      [ 0.02, -0.02,  0.32],
+      [ 0.56, -0.10,  0.16],
+      [ 1.10, -0.34, -0.45],
+      [ 1.62, -0.72, -1.40],
+    ]
+    const pathPoints = PATH.map(() => new THREE.Vector3())
+    let flightCurve = new THREE.CatmullRomCurve3(pathPoints, false, 'catmullrom', 0.5)
+    let planeScale = 0.16
+    let trailHalfWidth = 0.1
+
+    function buildFlightPath(aspect: number) {
+      const halfH = HALF_FOV_TAN * (camera.position.z - FLIGHT_Z)
+      const halfW = halfH * aspect
+      const bandY = headlineBandY(halfH)
+      // dar ekranda dikey genlik kısılır, yoksa uçak kadrajın dışına savruluyor
+      const amp = Math.min(1, Math.max(0.5, halfW / 2.6))
+      for (let i = 0; i < PATH.length; i++) {
+        const [fx, dy, dz] = PATH[i]
+        pathPoints[i].set(fx * halfW, bandY + dy * amp, FLIGHT_Z + dz)
+      }
+      flightCurve = new THREE.CatmullRomCurve3(pathPoints, false, 'catmullrom', 0.5)
+      planeScale = Math.min(0.17, Math.max(0.055, halfW * 0.058))
+      paperPlane.scale.setScalar(planeScale)
+      trailHalfWidth = planeScale * 0.62
+    }
+    buildFlightPath(host.clientWidth / Math.max(1, host.clientHeight))
+
+    // uçuş hesapları için kalıcı scratch vektörler — karede çöp üretilmesin
+    const vPos = new THREE.Vector3()
+    const vAhead = new THREE.Vector3()
+    const vBehind = new THREE.Vector3()
+    const vT1 = new THREE.Vector3()
+    const vT2 = new THREE.Vector3()
+    const vSample = new THREE.Vector3()
+    const vNext = new THREE.Vector3()
+    const vDir = new THREE.Vector3()
+    const vToCam = new THREE.Vector3()
+    const vSide = new THREE.Vector3()
+    let flightFade = 0
+
+    function updateFlight(progress: number, time: number) {
+      const t = Math.min(1, Math.max(0, progress))
+
+      // konum + yön: eğrinin biraz ilerisine bak
+      flightCurve.getPointAt(t, vPos)
+      flightCurve.getPointAt(Math.min(1, t + 0.012), vAhead)
+      flightCurve.getPointAt(Math.max(0, t - 0.012), vBehind)
+      paperPlane.position.copy(vPos)
+      if (vAhead.distanceToSquared(vPos) > 1e-10) paperPlane.lookAt(vAhead)
+
+      // viraj hissi: ardışık iki teğetin XY düzlemindeki işaretli farkı kadar roll
+      vT1.subVectors(vPos, vBehind)
+      vT2.subVectors(vAhead, vPos)
+      const l1 = vT1.length() || 1
+      const l2 = vT2.length() || 1
+      const turn = (vT1.x / l1) * (vT2.y / l2) - (vT1.y / l1) * (vT2.x / l2)
+      const roll = Math.max(-0.75, Math.min(0.75, turn * 14)) + Math.sin(time * 2.6) * 0.07
+      paperPlane.rotateZ(roll)
+
+      // ── iz ──
+      // Halka tamponu geçmiş karelerden değil doğrudan eğriden örnekliyoruz:
+      // izin uzunluğu kare hızından bağımsız kalsın (120Hz'de kısalmasın).
+      const tail = Math.max(0, t - TRAIL_SPAN)
+      for (let i = 0; i < TRAIL_SAMPLES; i++) {
+        const u = i / (TRAIL_SAMPLES - 1)
+        const st = tail + (t - tail) * u
+        flightCurve.getPointAt(st, vSample)
+        flightCurve.getPointAt(Math.min(1, st + 0.004), vNext)
+        vDir.subVectors(vNext, vSample)
+        if (vDir.lengthSq() < 1e-12) vDir.subVectors(vSample, vPos)
+        vToCam.subVectors(camera.position, vSample)
+        vSide.crossVectors(vDir, vToCam)
+        if (vSide.lengthSq() < 1e-12) vSide.set(0, 1, 0)
+        vSide.normalize().multiplyScalar(trailHalfWidth * (0.12 + 0.88 * u))
+
+        const o = i * 9
+        trailPositions[o]     = vSample.x - vSide.x
+        trailPositions[o + 1] = vSample.y - vSide.y
+        trailPositions[o + 2] = vSample.z - vSide.z
+        trailPositions[o + 3] = vSample.x
+        trailPositions[o + 4] = vSample.y
+        trailPositions[o + 5] = vSample.z
+        trailPositions[o + 6] = vSample.x + vSide.x
+        trailPositions[o + 7] = vSample.y + vSide.y
+        trailPositions[o + 8] = vSample.z + vSide.z
+
+        // kenarlarda 0, ortada dolu → şeridin enine yumuşak sönümü
+        const a = Math.pow(u, 1.7)
+        trailAlphas[i * 3] = 0
+        trailAlphas[i * 3 + 1] = a
+        trailAlphas[i * 3 + 2] = 0
+      }
+      trailPositionAttr.needsUpdate = true
+      trailAlphaAttr.needsUpdate = true
+    }
+
     // ── Etkileşim ─────────────────────────────────────────────────────────
     const pointer = { x: 0, y: 0 }
     const target = { x: 0, y: 0 }
@@ -406,6 +681,7 @@ export default function HeroCanvas() {
       bgUniforms.uAspect.value = w / h
       placeBlob(w / h)
       placeHero(w / h)
+      buildFlightPath(w / Math.max(1, h))
     }
     const resizeObserver = new ResizeObserver(resize)
     resizeObserver.observe(host)
@@ -443,6 +719,23 @@ export default function HeroCanvas() {
         heroObject.rotation.z = Math.sin(t * 0.4) * 0.09
       }
 
+      // Açılış uçuşu — reduced-motion'da hiç çalışmaz (Hero timeline'ı da
+      // başlamaz, `active` false kalır).
+      const flight = getFlight()
+      // zarf: girişte hızlı açıl, sağdan çıkarken sön → sahnede iz kalmaz
+      const envelope = flight.active && !reduced
+        ? Math.min(1, flight.t / 0.05) * (1 - smoothstep(0.84, 1.0, flight.t))
+        : 0
+      flightFade += (envelope - flightFade) * 0.3
+      const flightVisible = flightFade > 0.005
+      paperPlane.visible = flightVisible
+      trail.visible = flightVisible
+      if (flightVisible) {
+        planeMaterial.uniforms.uFade.value = flightFade
+        trailMaterial.uniforms.uFade.value = flightFade * 0.9
+        updateFlight(flight.t, t)
+      }
+
       dust.rotation.y = t * 0.03
       camera.position.x = pointer.x * 0.35
       camera.position.y = pointer.y * 0.22
@@ -465,6 +758,8 @@ export default function HeroCanvas() {
       draw() // tek kare: hareket yok ama sahne görünür
     } else {
       loop()
+      // Sahne çizmeye başladı — Hero açılış timeline'ını şimdi başlatabilir.
+      markFlightSceneReady()
     }
 
     return () => {
@@ -490,6 +785,12 @@ export default function HeroCanvas() {
       dustGeometry.dispose()
       dustMaterial.dispose()
       dustTexture.dispose()
+      scene.remove(paperPlane)
+      scene.remove(trail)
+      planeGeometry.dispose()
+      planeMaterial.dispose()
+      trailGeometry.dispose()
+      trailMaterial.dispose()
       renderer.dispose()
       if (renderer.domElement.parentNode === host) host.removeChild(renderer.domElement)
     }
