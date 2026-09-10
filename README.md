@@ -275,7 +275,23 @@ npm install
 ```
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
+SUPABASE_SERVICE_ROLE_KEY=eyJ...        # sunucu tarafı — NEXT_PUBLIC_ ÖNEKİ YOK
 ```
+
+> **`SUPABASE_SERVICE_ROLE_KEY` neden Next tarafında da gerekiyor?**
+> `/api/submit-opportunity` route'u öneri formunu rate-limit'liyor. Rate limit
+> ancak istemcinin IP'si bilinirse çalışır ve IP'yi yalnız sunucu güvenilir
+> biçimde okuyabilir (tarayıcı kendi IP'sini bilmez, bildirse de yalan
+> söyleyebilir). Route IP'yi okuyup `submit_human_opportunity` RPC'sine
+> veriyor; RPC'nin EXECUTE yetkisi yalnız `service_role`'da olduğu için route
+> atlanarak sahte IP ile limit aşılamıyor.
+>
+> Anahtar **kesinlikle** `NEXT_PUBLIC_` öneki almamalı — aksi hâlde tarayıcı
+> bundle'ına gömülür ve RLS'i bypass eden anahtar herkese açılır.
+>
+> Dağıtımda (Vercel): Project → Settings → Environment Variables → Production
+> + Preview olarak ekle, sonra yeniden dağıt. Anahtar tanımlı değilse route
+> sessizce başarısız olmaz; 503 ve açık bir hata mesajı döner.
 
 ```bash
 npm run dev
