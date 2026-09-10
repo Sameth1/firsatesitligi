@@ -1,7 +1,9 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import RootAuthHashRedirect from "@/components/RootAuthHashRedirect";
+import ServiceWorkerRegistrar from "@/components/pwa/ServiceWorkerRegistrar";
+import InstallHint from "@/components/pwa/InstallHint";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -60,6 +62,24 @@ export const metadata: Metadata = {
   verification: {
     google: "CCtWFTzsam76Ve-zq4EGmiZLMCCbCmqAxKaEvs8ISn0",
   },
+  // PWA: manifest'i Next /manifest.webmanifest olarak kendisi yayınlar ve
+  // <head>'e link'ini ekler (src/app/manifest.ts). Buradakiler iOS tarafı —
+  // Safari manifest'teki ikonları kullanmaz, apple-touch-icon'a bakar.
+  appleWebApp: {
+    capable: true,
+    title: "fırsateşitliği",
+    statusBarStyle: "black-translucent",
+  },
+  icons: {
+    apple: [{ url: "/app-icons/apple-touch-icon.png", sizes: "180x180" }],
+  },
+};
+
+// themeColor bu Next sürümünde metadata'da değil, viewport export'unda.
+// Android'de adres çubuğunu, standalone modda durum çubuğunu boyar.
+export const viewport: Viewport = {
+  themeColor: "#0D0A26",
+  colorScheme: "dark",
 };
 
 export default function RootLayout({
@@ -74,6 +94,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
         <RootAuthHashRedirect />
+        <ServiceWorkerRegistrar />
         <Script
           id="schema-org"
           type="application/ld+json"
@@ -114,6 +135,7 @@ export default function RootLayout({
           />
         ) : null}
         {children}
+        <InstallHint />
       </body>
     </html>
   );
