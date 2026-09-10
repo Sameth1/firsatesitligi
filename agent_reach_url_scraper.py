@@ -590,9 +590,16 @@ def extract_apply_link(page, source_url: str) -> str | None:
 # Yaş şartı çıkarımı — yalnız AÇIK yaş ifadelerinde set edilir; bulunamazsa
 # (None, None) = yaş sınırı yok. Yanlış pozitif (ör. "18 months", "30 credits")
 # riskine karşı bağlam zorunlu (ages/aged/years old/yaş ya da minimum age).
+# DİKKAT: "between" TEK BAŞINA yaş sinyali değil. DAAD sayfalarındaki
+# "awarded for a period of between 10 and 24 months" ifadesi yaş aralığı
+# sanılıp 5 fırsata age_min=10 yazılmıştı; 10..99 guard'ı süre 10 ayın
+# altındayken kazara kurtarıyordu ama üstünde patlıyordu. Artık "between"
+# ancak arkasından bir yaş ibaresi ("years old" / "years of age" / "yaş")
+# gelirse kabul ediliyor; "aged/ages" ise tek başına yeterli sinyal.
 _AGE_RANGE_RE = re.compile(
-    r"(?:ages?|aged|between)\s*(\d{1,2})\s*(?:-|–|—|to|and)\s*(\d{1,2})"
-    r"|(\d{1,2})\s*(?:-|–|—|to)\s*(\d{1,2})\s*(?:years?[ -]?old|yaş)"
+    r"(?:ages?|aged)\s*(\d{1,2})\s*(?:-|–|—|to|and)\s*(\d{1,2})"
+    r"|(\d{1,2})\s*(?:-|–|—|to|and)\s*(\d{1,2})\s*"
+    r"(?:years?[ -]?old|years?\s+of\s+age|yaş)"
     r"|(\d{1,2})\s*[-–]\s*(\d{1,2})\s*yaş",
     re.I,
 )

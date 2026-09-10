@@ -487,6 +487,71 @@ def approve_submission(sub, verdict, dry_run):
     return True, f"opportunity_id={opp_id}" if opp_id else "onaylandı"
 
 
+def fill_summary_tr(opportunity_id, dry_run):
+    """Yeni onaylanan fırsata Türkçe özet + Türkçe uygunluk metni yazar.
+
+    NEDEN BURADA: opportunities.summary_tr'yi yalnızca tek-seferlik backfill
+    dolduruyordu. Bu akıştan geçen her YENİ fırsat özetsiz kalıyor, sonuç
+    kartında açıklama bloğu hiç görünmüyordu — yani kaynak sorun her onayda
+    yeniden üretiliyordu. Onay RPC'si opportunity_id döndürdüğü için üretimi
+    doğrudan buraya bağlıyoruz.
+
+    Özet KOZMETİKTİR: üretilemezse (LLM erişilemedi, JSON bozuk, alan boş)
+    onay geri alınmaz — kayıt özetsiz yayına girer, backfill script'i sonra
+    tamamlayabilir. Bu yüzden tüm hatalar yutulur, yalnız log'lanır.
+    """
+    if dry_run or not opportunity_id:
+        return
+
+    # Lazy import: backfill_summary_tr bu modülü (validate_submissions) import
+    # ediyor — üstte import edersek dairesel import olur.
+    try:
+        import backfill_summary_tr as bf
+    except ImportError as e:
+        print(f"  ! özet üretilemedi (modül yüklenemedi: {e})")
+        return
+
+    try:
+        res = requests.get(
+            f"{SUPABASE_URL}/rest/v1/opportunities",
+            headers=sb_headers(),
+            params={"id": f"eq.{opportunity_id}",
+                    "select": ("id,title,category_id,funding_type,funding_notes,"
+                               "eligibility_notes,deadline,deadline_notes,"
+                               "host_countries,language_requirement,age_min,"
+                               "age_max,study_level")},
+            timeout=20,
+        )
+        res.raise_for_status()
+        rows = res.json()
+    except (requests.exceptions.RequestException, ValueError) as e:
+        print(f"  ! özet üretilemedi (kayıt okunamadı: {e})")
+        return
+
+    if not isinstance(rows, list) or not rows:
+        print("  ! özet üretilemedi (yeni kayıt bulunamadı)")
+        return
+    opp = rows[0]
+
+    categories = bf.fetch_categories()
+    summary, elig = bf.generate(opp, categories.get(opp.get("category_id")))
+    body = {}
+    if summary:
+        body["summary_tr"] = summary
+    if elig:
+        body["eligibility_notes_tr"] = elig
+    if not body:
+        print("  ! özet üretilemedi (model boş döndü) — backfill sonra tamamlar")
+        return
+
+    try:
+        bf.patch(opportunity_id, body)
+    except requests.exceptions.RequestException as e:
+        print(f"  ! özet yazılamadı ({e})")
+        return
+    print(f"  · Türkçe özet yazıldı ({len(body)} alan)")
+
+
 # ─── Heuristikler ─────────────────────────────────────────────────────────────
 
 def parse_deadline(text):
@@ -935,6 +1000,9 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
         ok, detay = approve_submission(sub, verdict, dry_run)
         if ok:
             print(f"  → OTOMATİK ONAY — {gerekce}  [{detay}]")
+            # detay "opportunity_id=<uuid>" biçiminde; özet üretimi için gerekli.
+            new_id = detay.split("=", 1)[1] if detay.startswith("opportunity_id=") else None
+            fill_summary_tr(new_id, dry_run)
             return "onaylandi"
         apply_decision(sub, "oner",
                        f"{gerekce} (otomatik onay başarısız: {detay})", dry_run)

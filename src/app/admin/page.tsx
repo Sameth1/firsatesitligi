@@ -212,6 +212,20 @@ export default function AdminPage() {
             >
               Bağlantı denetimi
             </Link>
+            <Link
+              href="/admin/review"
+              style={{
+                fontSize: 12,
+                color: '#534AB7',
+                textDecoration: 'none',
+                padding: '6px 12px',
+                border: '0.5px solid #e0e0e0',
+                borderRadius: 8,
+                background: '#fff',
+              }}
+            >
+              Belirsizler
+            </Link>
             <button
               onClick={handleLogout}
               style={{
