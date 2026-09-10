@@ -10,6 +10,8 @@ import Hero from '@/components/hero/Hero'
 import SearchScene from '@/components/scene/SearchScene'
 import { pulseScene, hexToRgb01 } from '@/components/scene/sceneBus'
 import { CATEGORY_ICON_SRC, CATEGORY_ACCENT } from '@/lib/category-assets'
+import Flag from '@/components/Flag'
+import { ALL_COUNTRIES, POPULAR_CITIZENSHIP_CODES, countryNameTr } from '@/lib/countries'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import RangeSlider from '@/components/form/RangeSlider'
@@ -49,12 +51,25 @@ const HIGHEST_EDU_LEVELS = [
 // ChoiceGrid / StepSlider için görünüm listeleri. Değerler (value) yukarıdaki
 // listelerle birebir aynı — yalnız sunum katmanı zenginleşiyor,
 // match_opportunities'e giden parametreler değişmiyor.
+// Emoji bayrak (🇩🇪) Windows'ta render olmuyor — kullanıcı sadece "DE" görüyor.
+// Bu yüzden her yerde yerel SVG bayraklar (public/flags) kullanılıyor.
 const COUNTRY_OPTIONS = COUNTRIES.map(c => ({
   value: c.code,
-  label: c.label.replace(/^\S+\s/, ''),
-  icon: c.label.split(' ')[0],
+  label: countryNameTr(c.code),
+  iconNode: <Flag code={c.code} size={28} />,
   note: c.language ?? undefined,
 }))
+
+// 5. Vatandaşlık: ISO kodu yazdırmak yerine bayraklı, aranabilir ülke listesi.
+// Sık seçilenler en üstte; seçilen ülkenin ISO kodu sisteme aynen gidiyor.
+const CITIZENSHIP_OPTIONS = [
+  ...POPULAR_CITIZENSHIP_CODES.map(code => ({
+    value: code, label: countryNameTr(code), group: 'Sık seçilenler',
+  })),
+  ...ALL_COUNTRIES.map(c => ({
+    value: c.code, label: c.nameTr, group: 'Tüm ülkeler',
+  })),
+]
 
 // Kategoriler tek showpiece satırında duruyor: Higgsfield ile üretilmiş cam 3B
 // ikonlar + her kartın kendi vurgu rengi.
@@ -537,24 +552,19 @@ export default function Home() {
 
               <div>
                 <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-hi)', marginBottom: 10 }}>
-                  Vatandaşlık
+                  Vatandaşlığın
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                  <input
-                    value={citizenship}
-                    onChange={e => setCitizenship(e.target.value.toUpperCase())}
-                    placeholder="TR"
-                    maxLength={2}
-                    aria-label="Vatandaşlık kodu"
-                    style={{
-                      width: 96, padding: '12px 14px', borderRadius: 14,
-                      border: '1px solid rgba(255,255,255,0.14)', fontSize: 16, fontWeight: 700,
-                      letterSpacing: '0.1em', textAlign: 'center',
-                      outline: 'none', background: 'rgba(255,255,255,0.05)', color: 'var(--text-hi)',
-                    }}
-                  />
-                  <span style={{ fontSize: 11.5, color: 'var(--text-low)' }}>ISO kodu (TR, DE…)</span>
-                </div>
+                <Picker
+                  placeholder="Ülke seç"
+                  value={citizenship}
+                  valueLabel={citizenship ? countryNameTr(citizenship) : null}
+                  options={CITIZENSHIP_OPTIONS}
+                  onChange={v => setCitizenship(v ?? 'TR')}
+                  renderIcon={code => <Flag code={code} size={20} />}
+                  clearable={false}
+                  searchPlaceholder="Ülke ara…"
+                  emptyHint="Ülke bulunamadı"
+                />
               </div>
             </div>
           </section>
@@ -689,11 +699,23 @@ export default function Home() {
             fırsat bulundu
           </span>
         </div>
-        <div style={{ fontSize: 12.5, color: 'var(--text-low)', marginBottom: 20 }}>
-          {country && `${COUNTRIES.find(c => c.code === country)?.label}`}
-          {category && ` · ${CATEGORIES.find(c => c.slug === category)?.label}`}
-          {(searchSnapshot.highestEdu as string | null) && ` · Mevcut: ${HIGHEST_EDU_LEVELS.find(l => l.value === searchSnapshot.highestEdu)?.label}`}
-          {targetLanguage && languageLevel && languageLevel !== 'none' && ` · ${targetLanguage} ${languageLevel}`}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+          fontSize: 12.5, color: 'var(--text-low)', marginBottom: 20,
+        }}>
+          {country && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Flag code={country} size={16} />
+              {countryNameTr(country)}
+            </span>
+          )}
+          {category && <span>· {CATEGORIES.find(c => c.slug === category)?.label}</span>}
+          {(searchSnapshot.highestEdu as string | null) && (
+            <span>· Mevcut: {HIGHEST_EDU_LEVELS.find(l => l.value === searchSnapshot.highestEdu)?.label}</span>
+          )}
+          {targetLanguage && languageLevel && languageLevel !== 'none' && (
+            <span>· {targetLanguage} {languageLevel}</span>
+          )}
         </div>
 
         {/* Filter chips */}
@@ -850,13 +872,21 @@ function ProgressMeter({ progress, filled, total }: {
 
 type PickerOption = { value: string; label: string; group?: string }
 
-function Picker({ placeholder, value, valueLabel, options, onChange, emptyHint }: {
+function Picker({
+  placeholder, value, valueLabel, options, onChange, emptyHint,
+  renderIcon, clearable = true, searchPlaceholder = 'Ara...',
+}: {
   placeholder: string
   value: string | null
   valueLabel: string | null
   options: PickerOption[]
   onChange: (v: string | null) => void
   emptyHint?: string
+  /** Satır başına konacak görsel (ör. ülke bayrağı). Verilmezse ikonsuz. */
+  renderIcon?: (value: string) => React.ReactNode
+  /** Vatandaşlık gibi hep bir değeri olması gereken alanlarda kapatılır. */
+  clearable?: boolean
+  searchPlaceholder?: string
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -874,8 +904,16 @@ function Picker({ placeholder, value, valueLabel, options, onChange, emptyHint }
   }, [open])
 
   const normalized = query.trim().toLocaleLowerCase('tr')
+  // Aranırken aynı değer birden çok grupta görünmesin: vatandaşlık listesinde
+  // "Almanya" hem "Sık seçilenler" hem "Tüm ülkeler" altında duruyor ve arama
+  // sonucunda iki kez çıkıyordu. Son kaydı tutuyoruz (kanonik/tam liste girdisi);
+  // değerleri zaten tekil olan listelerde (bölümler) bu bir şey değiştirmez.
   const filtered = normalized
-    ? options.filter(o => o.label.toLocaleLowerCase('tr').includes(normalized))
+    ? [...new Map(
+        options
+          .filter(o => o.label.toLocaleLowerCase('tr').includes(normalized))
+          .map(o => [o.value, o]),
+      ).values()]
     : options
 
   const hasGroups = filtered.some(o => o.group)
@@ -889,7 +927,7 @@ function Picker({ placeholder, value, valueLabel, options, onChange, emptyHint }
   }
 
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
+    <div ref={ref} className={open ? 'picker-open' : undefined} style={{ position: 'relative' }}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
@@ -902,11 +940,16 @@ function Picker({ placeholder, value, valueLabel, options, onChange, emptyHint }
           display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
         }}
       >
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {valueLabel ?? placeholder}
+        <span style={{
+          display: 'flex', alignItems: 'center', gap: 10, minWidth: 0,
+        }}>
+          {renderIcon && value && renderIcon(value)}
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {valueLabel ?? placeholder}
+          </span>
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          {value && (
+          {value && clearable && (
             <span
               onClick={(e) => { e.stopPropagation(); onChange(null) }}
               style={{ color: 'var(--text-low)', fontSize: 15, padding: '0 4px' }}
@@ -936,7 +979,7 @@ function Picker({ placeholder, value, valueLabel, options, onChange, emptyHint }
               autoFocus
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="Ara..."
+              placeholder={searchPlaceholder}
               style={{
                 width: '100%', padding: '10px 12px', borderRadius: 10,
                 border: '1px solid rgba(255,255,255,0.12)', fontSize: 12.5,
@@ -963,6 +1006,7 @@ function Picker({ placeholder, value, valueLabel, options, onChange, emptyHint }
                   <PickerItem
                     key={o.value}
                     option={o}
+                    icon={renderIcon?.(o.value)}
                     selected={value === o.value}
                     onClick={() => { onChange(o.value); setOpen(false); setQuery('') }}
                   />
@@ -974,6 +1018,7 @@ function Picker({ placeholder, value, valueLabel, options, onChange, emptyHint }
               <PickerItem
                 key={o.value}
                 option={o}
+                icon={renderIcon?.(o.value)}
                 selected={value === o.value}
                 onClick={() => { onChange(o.value); setOpen(false); setQuery('') }}
               />
@@ -985,15 +1030,17 @@ function Picker({ placeholder, value, valueLabel, options, onChange, emptyHint }
   )
 }
 
-function PickerItem({ option, selected, onClick }: {
+function PickerItem({ option, selected, onClick, icon }: {
   option: PickerOption; selected: boolean; onClick: () => void
+  icon?: React.ReactNode
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       style={{
-        display: 'block', width: '100%', textAlign: 'left',
+        display: 'flex', alignItems: 'center', gap: 10,
+        width: '100%', textAlign: 'left',
         padding: '10px 11px', borderRadius: 10,
         background: selected ? 'rgba(124, 92, 255, 0.28)' : 'transparent',
         color: selected ? '#fff' : 'var(--text-mid)',
@@ -1007,7 +1054,10 @@ function PickerItem({ option, selected, onClick }: {
         if (!selected) e.currentTarget.style.background = 'transparent'
       }}
     >
-      {option.label}
+      {icon}
+      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {option.label}
+      </span>
     </button>
   )
 }

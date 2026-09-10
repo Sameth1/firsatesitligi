@@ -3,6 +3,8 @@ import Image from 'next/image'
 import { useRef } from 'react'
 import { Opportunity } from '@/types'
 import { CATEGORY_ICON_SRC } from '@/lib/category-assets'
+import Flag from '@/components/Flag'
+import { countryNameTr } from '@/lib/countries'
 
 const FUNDING_LABELS: Record<string, string> = {
   full: 'Tam Burs',
@@ -132,12 +134,25 @@ export default function OpportunityCard({ opp }: { opp: Opportunity }) {
             }}>
               {funding.icon} {FUNDING_LABELS[opp.funding_type] || opp.funding_type}
             </span>
-            {opp.host_countries.includes('*') ? (
+            {/* Kullanıcı "DE, FR" gibi ISO kodlarını anlamıyor — bayrak + Türkçe ad.
+                '*' ve 'all' aynı anlama geliyor (kaynağa göre ikisi de yazılabiliyor). */}
+            {opp.host_countries.some(c => c === '*' || c.toLowerCase() === 'all') ? (
               <span className="opp-meta-chip">🌍 Tüm ülkeler</span>
             ) : opp.host_countries.length > 0 && (
-              <span className="opp-meta-chip">
-                📍 {opp.host_countries.slice(0, 3).join(', ')}
-                {opp.host_countries.length > 3 && ` +${opp.host_countries.length - 3}`}
+              <span
+                className="opp-meta-chip"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
+                title={opp.host_countries.map(countryNameTr).join(', ')}
+              >
+                {opp.host_countries.slice(0, 3).map(code => (
+                  <span key={code} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <Flag code={code} size={14} />
+                    {countryNameTr(code)}
+                  </span>
+                ))}
+                {opp.host_countries.length > 3 && (
+                  <span>+{opp.host_countries.length - 3}</span>
+                )}
               </span>
             )}
             {opp.last_url_check_status != null &&
@@ -162,10 +177,18 @@ export default function OpportunityCard({ opp }: { opp: Opportunity }) {
         {days !== null && <DeadlineRing days={days} />}
       </div>
 
-      {opp.eligibility_notes && (
+      {/* 101 SQL'i çalıştırılmadıysa summary_tr undefined gelir — kart eskisi gibi görünür. */}
+      {opp.summary_tr && (
+        <p style={{ fontSize: 13, color: 'var(--text-mid)', lineHeight: 1.65, margin: 0 }}>
+          {opp.summary_tr}
+        </p>
+      )}
+
+      {/* Türkçesi varsa onu göster; yoksa orijinal (çoğunlukla İngilizce) metne düş. */}
+      {(opp.eligibility_notes_tr || opp.eligibility_notes) && (
         <p style={{ fontSize: 12.5, color: 'var(--text-mid)', lineHeight: 1.6, margin: 0 }}>
           <span style={{ fontWeight: 600, color: 'var(--text-hi)' }}>Kimler başvurabilir: </span>
-          {opp.eligibility_notes}
+          {opp.eligibility_notes_tr || opp.eligibility_notes}
         </p>
       )}
 

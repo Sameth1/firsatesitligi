@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { pulseScene, hexToRgb01 } from '@/components/scene/sceneBus'
+import ResetButton from './ResetButton'
 
 export type Stop = { value: string; short: string; label: string; icon?: string }
 
@@ -75,17 +76,7 @@ export default function StepSlider({
       }}>
         <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-hi)' }}>{label}</span>
         {active ? (
-          <button
-            type="button"
-            onClick={() => onChange(null)}
-            className="ghost-btn"
-            style={{
-              fontSize: 11, color: 'var(--text-low)', background: 'none',
-              border: 'none', cursor: 'pointer', padding: 0,
-            }}
-          >
-            temizle
-          </button>
+          <ResetButton onClick={() => onChange(null)} label={`${label} seçimini sıfırla`} />
         ) : (
           <span style={{ fontSize: 11, color: 'var(--text-low)' }}>{hint ?? 'opsiyonel'}</span>
         )}
