@@ -191,5 +191,165 @@ class DecisionFlowTests(unittest.TestCase):
         self.assertEqual(apply_decision.call_args.args[1], "reddet")
 
 
+def revision_submission(**overrides):
+    """Admin'in revize istediği bir insan gönderisi (105 akışı)."""
+    sub = complete_submission()
+    sub.update({
+        "id": "rev-1",
+        "submission_origin": "human",
+        "review_stage": "agent_revision",
+        "admin_note": "[insan] REVİZE İSTENDİ: Son başvuru tarihi doğru mu, kontrol et.",
+    })
+    sub.update(overrides)
+    return sub
+
+
+class RevisionQueueTests(unittest.TestCase):
+    def test_admin_request_is_read_without_the_marker(self):
+        self.assertEqual(
+            validator.admin_revision_request(revision_submission()),
+            "Son başvuru tarihi doğru mu, kontrol et.",
+        )
+
+    def test_only_agent_revision_stage_counts_as_revision(self):
+        self.assertTrue(validator.is_revision(revision_submission()))
+        self.assertFalse(validator.is_revision(complete_submission()))
+
+    def test_empty_fields_lists_only_blank_ones(self):
+        sub = revision_submission(funding_type=None, host_countries=[],
+                                  language_requirement="   ")
+        blanks = validator.empty_fields(sub)
+
+        self.assertIn("funding_type", blanks)
+        self.assertIn("host_countries", blanks)
+        self.assertIn("language_requirement", blanks)
+        self.assertNotIn("category_slug", blanks)      # zaten dolu
+
+    @patch("validate_submissions.process_revision", return_value="revize")
+    def test_revision_skips_the_approval_pipeline(self, process_revision):
+        result = validator.process(revision_submission(), True, set(), set(),
+                                   {"llm_calls": 0})
+
+        self.assertEqual(result, "revize")
+        process_revision.assert_called_once()
+
+
+class RevisionSuggestionTests(unittest.TestCase):
+    def test_filled_fields_are_never_overwritten(self):
+        sub = revision_submission()          # kategori ve ülke dolu
+        patch_data, labels = validator.sanitize_suggestions(sub, {
+            "category_slug": "internship",
+            "host_countries": ["FR"],
+        })
+
+        self.assertEqual(patch_data, {})
+        self.assertEqual(labels, [])
+
+    def test_empty_fields_are_filled_from_suggestions(self):
+        sub = revision_submission(category_slug=None, funding_type=None,
+                                  host_countries=[], study_level=[])
+        patch_data, labels = validator.sanitize_suggestions(sub, {
+            "category_slug": "internship",
+            "funding_type": "stipend",
+            "host_countries": ["de", "fr"],
+            "study_level": ["master", "uydurma"],
+        })
+
+        self.assertEqual(patch_data["category_slug"], "internship")
+        self.assertEqual(patch_data["funding_type"], "stipend")
+        self.assertEqual(patch_data["host_countries"], ["DE", "FR"])
+        self.assertEqual(patch_data["study_level"], ["master"])
+        self.assertIn("kategori", labels)
+
+    def test_invalid_values_are_dropped(self):
+        sub = revision_submission(category_slug=None, funding_type=None,
+                                  host_countries=[], eligibility_notes="")
+        patch_data, _ = validator.sanitize_suggestions(sub, {
+            "category_slug": "uydurma_kategori",
+            "funding_type": "ücretli",
+            "host_countries": ["Almanya"],
+            "eligibility_notes": "kısa",       # 20 karakter eşiğinin altında
+        })
+
+        self.assertEqual(patch_data, {})
+
+    def test_global_program_becomes_star(self):
+        sub = revision_submission(host_countries=[])
+        patch_data, _ = validator.sanitize_suggestions(sub, {"host_countries": ["worldwide"]})
+
+        self.assertEqual(patch_data["host_countries"], ["*"])
+
+    def test_unparseable_or_past_deadline_is_not_written(self):
+        sub = revision_submission(deadline_text=None)
+        for value in ("yakında", "1 Ocak 2020"):
+            with self.subTest(value=value):
+                patch_data, _ = validator.sanitize_suggestions(sub, {"deadline_text": value})
+                self.assertNotIn("deadline_text", patch_data)
+
+    def test_inconsistent_age_range_is_dropped_entirely(self):
+        sub = revision_submission(age_min=None, age_max=None)
+        patch_data, _ = validator.sanitize_suggestions(sub, {"age_min": 30, "age_max": 18})
+
+        self.assertNotIn("age_min", patch_data)
+        self.assertNotIn("age_max", patch_data)
+
+    def test_unknown_verdict_falls_back_to_belirsiz(self):
+        parsed = validator._parse_revision(json.dumps({
+            "karar": "harika", "gerekce": "x", "alan_onerileri": "metin",
+        }))
+
+        self.assertEqual(parsed["karar"], "belirsiz")
+        self.assertEqual(parsed["alan_onerileri"], {})
+
+
+class RevisionWriteTests(unittest.TestCase):
+    """Ajanın revize kaydına yazdıkları — status'a asla dokunulmaz."""
+
+    @patch("validate_submissions.requests.patch")
+    def test_result_returns_record_to_human_without_deciding(self, http_patch):
+        validator.apply_revision_result(revision_submission(), "uygun",
+                                        "Tarih sayfada doğrulandı.", {"funding_type": "full"},
+                                        dry_run=False)
+
+        payload = http_patch.call_args.kwargs["json"]
+        self.assertEqual(payload["review_stage"], "human_review")
+        self.assertEqual(payload["funding_type"], "full")
+        self.assertNotIn("status", payload)
+        self.assertTrue(payload["admin_note"].startswith(validator.AGENT_MARKER))
+        self.assertIn("UYGUN GÖRÜNÜYOR", payload["admin_note"])
+
+    @patch("validate_submissions.requests.patch")
+    def test_heuristic_rejection_on_revision_does_not_reject_the_record(self, http_patch):
+        validator.apply_decision(revision_submission(), "reddet",
+                                 "Ölü bağlantı (HTTP 404)", dry_run=False)
+
+        payload = http_patch.call_args.kwargs["json"]
+        self.assertEqual(payload["review_stage"], "human_review")
+        self.assertNotIn("status", payload)
+        self.assertIn("SORUNLU", payload["admin_note"])
+
+    @patch("validate_submissions.approve_submission")
+    @patch("validate_submissions.apply_revision_result")
+    @patch("validate_submissions.review_revision_with_llm")
+    @patch("validate_submissions.fetch_target_and_source")
+    def test_positive_review_still_leaves_approval_to_the_human(
+        self, fetch_pages, review, apply_result, approve
+    ):
+        fetch_pages.return_value = (200, None, None, "sayfa metni " * 30, "")
+        review.return_value = {
+            "karar": "uygun",
+            "cevap": "Son başvuru tarihi sayfada 15 Eylül 2026 olarak yazıyor.",
+            "gerekce": "Sayfada açık başvuru dönemi var.",
+            "alan_onerileri": {},
+        }
+
+        result = validator.process_revision(revision_submission(), True, set(),
+                                            {"llm_calls": 0})
+
+        self.assertEqual(result, "revize")
+        approve.assert_not_called()
+        self.assertEqual(apply_result.call_args.args[1], "uygun")
+
+
 if __name__ == "__main__":
     unittest.main()

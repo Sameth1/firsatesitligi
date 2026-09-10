@@ -29,10 +29,24 @@ Yeni scraper kayıtları `submissions` tablosuna `submission_origin=agent`, `rev
 ### Kullanıcı gönderisi
 
 1. Doğrudan admin panelindeki **Kullanıcı Kayıtları** sekmesine düşer.
-2. Admin: Onayla / Revize / Reddet seçeneklerini kullanır.
-3. Revize yalnız e-posta bırakılmış kullanıcı kaydında vardır.
-4. Kullanıcı tek kullanımlık, 7 günlük güvenli bağlantıdan düzenleme yapar.
-5. Revize tamamlanınca kayıt yeniden `pending + human_review` olur.
+2. Admin: Onayla / **Ajana yolla** (revize) / Reddet seçeneklerini kullanır.
+3. Revize notu artık kullanıcıya değil **ajana** gider (migration 105). E-posta
+   şartı kalktı: e-posta gönderen bir yol projede hiç olmadı, bu yüzden eski
+   token'lı `/revise/[token]` akışı ilk adımda çıkmaza giriyordu.
+4. `request_revision` kaydı `status=pending` + `review_stage=agent_revision`
+   yapar ve notu `[insan] REVİZE İSTENDİ: ...` önekiyle `admin_note`'a yazar.
+   Kayıt bu sırada **Ajanda (Revize)** sekmesinde görünür, admin listesini
+   meşgul etmez.
+5. `validate_submissions.py` bu kuyruğu ayrıca çeker (`fetch_revision_queue`),
+   kaynağı yeniden indirir ve adminin notunu prompt'un başına koyar. Ajan
+   yalnız **boş** alanlara öneri üretir; dolu alan asla ezilmez, geçersiz öneri
+   (tanınmayan kategori/finansman, çözülemeyen veya geçmiş tarih, tutarsız yaş
+   aralığı) sessizce atılır.
+6. Sonuç `[ajan] REVİZE SONUCU (UYGUN GÖRÜNÜYOR|SORUNLU|BELİRSİZ) — ...`
+   notuyla yazılır ve kayıt `human_review`'e döner. **Ajan bu kayıtlarda onay
+   veya red vermez**; `status` hiç değişmez, karar insanındır (099'daki koruma
+   da `agent_approve_submission`'ı yalnız `submission_origin=agent` kayıtlarla
+   sınırlar).
 
 ### Agent/scraper gönderisi
 

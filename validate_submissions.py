@@ -92,6 +92,12 @@ AGENT_MARKER = "[ajan]"       # admin_note öneki — tekrar çalıştırmada at
 HUMAN_REJECT_RE = re.compile(r"^\[insan\]\s+RED:([a-z0-9_]+)\s+—\s+(.+)$")
 PAGE_CHAR_LIMIT = 6000
 VALID_FUNDING_TYPES = {"full", "partial", "free", "stipend"}
+VALID_CATEGORY_SLUGS = {"scholarship", "volunteering", "youth_project",
+                        "internship", "summer_school", "exchange"}
+VALID_STUDY_LEVELS = {"bachelor", "master", "phd", "any"}
+# 105'te request_revision'ın admin_note'a yazdığı önek. Ajan isteği bu önekten
+# sonrasından okur; not biçimi değişirse tek yerde güncellenir.
+REVISION_MARKER = "[insan] REVİZE İSTENDİ:"
 AGGREGATOR_DOMAINS = {"youthop.com", "www.youthop.com", "nasilgitmis.com", "www.nasilgitmis.com"}
 
 HTTP_HEADERS = {
@@ -189,7 +195,46 @@ def fetch_pending(limit=None, recheck=False):
     if not recheck:
         rows = [r for r in rows
                 if not (r.get("admin_note") or "").startswith(AGENT_MARKER)]
+
+    # Admin'in revize istediği insan gönderileri (105). Ayrı bir istek olarak
+    # çekiliyor: PostgREST'te tek sorguda "origin=agent VEYA (origin=human VE
+    # stage=agent_revision)" yazmak or=() ile okunaksızlaşıyor, iki net sorgu
+    # daha anlaşılır. Bunlar AGENT_MARKER süzgecine takılmamalı — admin aynı
+    # kaydı tekrar revize edebilir ve ajan her seferinde yeniden bakmalı.
+    rows += fetch_revision_queue()
+
     return rows[:limit] if limit else rows
+
+
+def fetch_revision_queue():
+    """Admin'in 'Revize' dediği insan gönderileri (review_stage=agent_revision).
+
+    Bu kayıtlar ajanın normal kuyruğundan ayrı: ajan bunları DEĞERLENDİRİR ama
+    ONAYLAMAZ/REDDETMEZ — kararı insana bırakır (bkz. apply_decision). 099'daki
+    koruma zaten agent_approve_submission'ı yalnız origin='agent' kayıtlarla
+    sınırlıyor, bu ayrım onun üstüne ikinci bir emniyet."""
+    params = {
+        "status": "eq.pending",
+        "submission_origin": "eq.human",
+        "review_stage": "eq.agent_revision",
+        # Normal kuyruktan daha geniş: ajan bu kayıtların BOŞ alanlarını
+        # doldurabildiği için hangilerinin boş olduğunu görmesi gerekiyor.
+        "select": ("id,title,url,source_url,category_slug,host_countries,eligibility_notes,"
+                   "deadline_text,funding_type,funding_notes,language_requirement,"
+                   "age_min,age_max,study_level,description,admin_note,"
+                   "submitter_nickname,submission_origin,review_stage"),
+        "order": "reviewed_at.asc",
+    }
+    try:
+        res = requests.get(f"{SUPABASE_URL}/rest/v1/submissions",
+                           headers=sb_headers(), params=params, timeout=20)
+        res.raise_for_status()
+        rows = res.json()
+    except (requests.exceptions.RequestException, ValueError) as e:
+        # Revize kuyruğu okunamazsa normal kuyruk çalışmaya devam etsin.
+        print(f"  ! revize kuyruğu okunamadı ({e})")
+        return []
+    return rows if isinstance(rows, list) else []
 
 
 def fetch_agent_memories():
@@ -418,6 +463,11 @@ def run_agent_approval_reaudit(args):
         }, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"Rapor: {output}")
 
+def is_revision(sub):
+    """Admin'in revize istediği bir insan gönderisi mi? (105)"""
+    return sub.get("review_stage") == "agent_revision"
+
+
 def apply_decision(sub, eylem, gerekce, dry_run):
     """Kararı submissions tablosuna yazar.
       reddet -> status=rejected + admin_note + reviewed_at
@@ -426,6 +476,23 @@ def apply_decision(sub, eylem, gerekce, dry_run):
                 yazılmıştır (bkz. approve_submission()).
       oner / belirsiz -> sadece admin_note; status 'pending' kalır.
     reviewed_by NULL bırakılır — 'insan değil ajan işledi' sinyali."""
+    # Revize kuyruğundaki kayıtlarda ajan YALNIZ görüş bildirir. Onay da red de
+    # insanın: admin bu kaydı bilerek elde tutmuş, ajan onun kararını
+    # kendiliğinden veremez. Her sonuç human_review'e döner, gerekçe notta.
+    if is_revision(sub):
+        etiket = {"reddet": "SORUNLU", "onayla": "UYGUN GÖRÜNÜYOR",
+                  "oner": "UYGUN GÖRÜNÜYOR"}.get(eylem, "BELİRSİZ")
+        note = f"{AGENT_MARKER} REVİZE SONUCU ({etiket}) — {gerekce}"
+        patch = {"admin_note": note, "review_stage": "human_review"}
+        if not dry_run:
+            res = requests.patch(
+                f"{SUPABASE_URL}/rest/v1/submissions",
+                headers={**sb_headers(), "Prefer": "return=minimal"},
+                params={"id": f"eq.{sub['id']}"},
+                json=patch, timeout=20)
+            res.raise_for_status()
+        return note
+
     if eylem == "reddet":
         note = f"{AGENT_MARKER} RED — {gerekce}"
         patch = {
@@ -680,6 +747,67 @@ def _parse_verdict(text):
     }
 
 
+def _llm_chat(system_prompt, user_text):
+    """Sağlayıcıya (OpenAI-uyumlu chat/completions) tek istek atar.
+
+    (icerik, finish_reason) döndürür; hata hâlinde (None, None). Karar
+    ayrıştırma bilinçli olarak DIŞARIDA: aynı taşıyıcıyı hem doğrulama
+    kararı hem revize değerlendirmesi kullanıyor, yalnız şemaları farklı.
+    """
+    body = {
+        "model": LLM_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_text},
+        ],
+        "temperature": 0,
+        "max_tokens": LLM_MAX_TOKENS,
+        # response_format json_object KULLANILMIYOR: gpt-oss'ta aralıklı olarak
+        # geçerli nesnenin başına '{"' artefaktı ekleyip JSON'u bozuyordu. Sistem
+        # prompt'u zaten ham JSON dayatıyor; _parse_verdict de dengeli bloğu
+        # ayıklıyor (bkz. _loads_lenient).
+    }
+    headers = {
+        "Authorization": f"Bearer {LLM_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    res = None
+    for attempt in range(3):
+        try:
+            res = requests.post(
+                f"{LLM_BASE_URL}/chat/completions",
+                headers=headers, json=body, timeout=45,
+            )
+        except requests.exceptions.RequestException as e:
+            print(f"  ! LLM ağ hatası: {e}")
+            return None, None
+        if res.status_code in (429, 500, 502, 503, 504) and attempt < 2:
+            # NVIDIA ücretsiz endpoint'i yoğunlukta 503 döndürebiliyor. 429 için
+            # daha uzun, diğer geçici sunucu hataları için kademeli kısa backoff.
+            if res.status_code == 429:
+                wait = 20 * (attempt + 1)
+                reason = "rate limit"
+            else:
+                wait = 5 * (attempt + 1)
+                reason = "geçici sunucu hatası"
+            print(f"  LLM {res.status_code} ({reason}) — {wait}s bekleniyor...")
+            time.sleep(wait)
+            continue
+        break
+    if res is None or res.status_code != 200:
+        detail = res.text[:200] if res is not None else "yanıt yok"
+        print(f"  ! LLM HTTP {getattr(res, 'status_code', '?')}: {detail}")
+        return None, None
+    try:
+        choice = res.json()["choices"][0]
+        text = choice["message"]["content"]
+        finish = choice.get("finish_reason")
+    except (KeyError, IndexError, ValueError):
+        print("  ! LLM yanıtı beklenen yapıda değil")
+        return None, None
+    return text, finish
+
+
 def judge_with_llm(sub, url, http_note, page_text):
     """LLM'e (OpenAI-uyumlu chat/completions) sorar, karar dict'i döndürür
     (hata → None). SYSTEM_PROMPT ve user_text sağlayıcıdan bağımsızdır; yalnızca
@@ -709,56 +837,8 @@ def judge_with_llm(sub, url, http_note, page_text):
         "script değişikliği veya PR işi üretmez, kararın içinde kullanılır.\n\n"
         f"SAYFA METNİ (kısaltılmış):\n{page_text}"
     )
-    body = {
-        "model": LLM_MODEL,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_text},
-        ],
-        "temperature": 0,
-        "max_tokens": LLM_MAX_TOKENS,
-        # response_format json_object KULLANILMIYOR: gpt-oss'ta aralıklı olarak
-        # geçerli nesnenin başına '{"' artefaktı ekleyip JSON'u bozuyordu. Sistem
-        # prompt'u zaten ham JSON dayatıyor; _parse_verdict de dengeli bloğu
-        # ayıklıyor (bkz. _loads_lenient).
-    }
-    headers = {
-        "Authorization": f"Bearer {LLM_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    res = None
-    for attempt in range(3):
-        try:
-            res = requests.post(
-                f"{LLM_BASE_URL}/chat/completions",
-                headers=headers, json=body, timeout=45,
-            )
-        except requests.exceptions.RequestException as e:
-            print(f"  ! LLM ağ hatası: {e}")
-            return None
-        if res.status_code in (429, 500, 502, 503, 504) and attempt < 2:
-            # NVIDIA ücretsiz endpoint'i yoğunlukta 503 döndürebiliyor. 429 için
-            # daha uzun, diğer geçici sunucu hataları için kademeli kısa backoff.
-            if res.status_code == 429:
-                wait = 20 * (attempt + 1)
-                reason = "rate limit"
-            else:
-                wait = 5 * (attempt + 1)
-                reason = "geçici sunucu hatası"
-            print(f"  LLM {res.status_code} ({reason}) — {wait}s bekleniyor...")
-            time.sleep(wait)
-            continue
-        break
-    if res is None or res.status_code != 200:
-        detail = res.text[:200] if res is not None else "yanıt yok"
-        print(f"  ! LLM HTTP {getattr(res, 'status_code', '?')}: {detail}")
-        return None
-    try:
-        choice = res.json()["choices"][0]
-        text = choice["message"]["content"]
-        finish = choice.get("finish_reason")
-    except (KeyError, IndexError, ValueError):
-        print("  ! LLM yanıtı beklenen yapıda değil")
+    text, finish = _llm_chat(SYSTEM_PROMPT, user_text)
+    if text is None:
         return None
     verdict = _parse_verdict(text)
     if verdict is None:
@@ -852,10 +932,336 @@ def decide(verdict):
     return "belirsiz", verdict["gerekce"]
 
 
+def fetch_target_and_source(sub, url):
+    """Doğrudan hedefi ve (varsa) ayrı kaynak/kanıt sayfasını getirir.
+
+    (status, final_url, err, target_text, source_text) döndürür. Başvuru formu
+    az metin taşısa bile ajan tarih/kategori bilgisini kaynak sayfadan okuyabilsin
+    diye ikisi birlikte toplanır. Hem doğrulama hem revize akışı bunu kullanır.
+    """
+    status, final_url, html, err = fetch_page(url)
+    source_url = (sub.get("source_url") or "").strip()
+    source_text = ""
+    if source_url and _norm_url(source_url) != _norm_url(url):
+        source_status, _source_final, source_html, _source_err = fetch_page(source_url)
+        if source_status == 200 and source_html:
+            source_text = page_to_text(source_html)
+    target_text = page_to_text(html) if status == 200 and html else ""
+    return status, final_url, err, target_text, source_text
+
+
+# ─── Revize akışı (105) ───────────────────────────────────────────────────────
+# Admin panelinde "Revize" denen insan gönderileri buraya düşer. Ajan bu
+# kayıtlarda KARAR VERMEZ: adminin notunu okur, kaynağı yeniden çeker, notu
+# kanıtla yanıtlar ve YALNIZ BOŞ alanlara öneri üretir. Sonuç human_review'e
+# döner; onay da red de insanındır (099'daki koruma da bunu DB'de zorunlu kılar).
+
+REVISION_SYSTEM_PROMPT = """Sen "Fırsat Eşitliği" platformunun submission doğrulama ajanısın. Bu platform Türkiye'deki gençlere yurt dışı burs, staj, gönüllülük, yaz okulu, gençlik projesi ve değişim programı gibi ÜCRETSİZ veya FONLU fırsatları toplar.
+
+Bu görevde bir ADMIN, kullanıcıdan gelen bir kaydı yayına almadan önce senden REVİZE istedi. Sana adminin isteği, kaydın mevcut hâli, BUGÜNÜN TARİHİ ve fırsatın kaynak sayfasının metni verilir.
+
+GÖREVİN:
+1) ADMİNİN İSTEĞİNİ DOĞRUDAN YANITLA. Asıl işin bu. Cevabını YALNIZCA sayfa metnindeki kanıta dayandır; sayfada karşılığı yoksa "sayfada doğrulanamadı" de. Tahmin etme, uydurma.
+2) Sana "BOŞ ALANLAR" olarak verilen alanlar için öneri üret. Listede olmayan hiçbir alana değer verme — dolu alanlar admin/kullanıcı verisidir, sana ait değildir. Bir boş alanın değerini sayfadan kesin okuyamıyorsan o alanı null bırak; yanlış doldurmak boş bırakmaktan kötüdür.
+3) karar ver:
+   - "uygun": Adminin sorduğu şey sayfada doğrulandı ve kayıt yayına uygun görünüyor.
+   - "sorunlu": Sayfada kayıtla çelişen ya da yayına engel bir durum var (başvurular kapanmış, ücretli/ticari program, kategori yanlış, link doğrudan fırsat sayfası değil, sayfa birden çok fırsatı listeleyen bir derleme...).
+   - "belirsiz": Kanıt yetersiz; insanın bakması gerekiyor.
+
+TARİH KURALI: Açık/kapalı yorumunu yalnız sana verilen "BUGÜNÜN TARİHİ"ne göre yap, kendi tarih bilgine güvenme.
+
+ALAN BİÇİMLERİ (uymayan öneri atılır):
+- category_slug: scholarship | volunteering | youth_project | internship | summer_school | exchange
+- funding_type: full (tam burs) | partial (kısmi) | free (ücretsiz katılım) | stipend (harçlık)
+- host_countries: ISO 3166-1 alfa-2 kod dizisi, ör. ["DE","FR"]. Program dünyanın her yerinde/uzaktan ise ["*"].
+- deadline_text: gün-ay-yıl içeren tam tarih, ör. "15 Eylül 2026". Yıl veya ay eksikse null ver.
+- study_level: bachelor | master | phd | any değerlerinden dizi
+- age_min / age_max: tam sayı
+- eligibility_notes / funding_notes / language_requirement: Türkçe kısa metin
+
+ÇIKTI: Yanıtını yalnızca şu alanlara sahip TEK bir JSON nesnesi olarak ver. Markdown, ``` işareti veya açıklama EKLEME:
+{"karar": "uygun|sorunlu|belirsiz", "admin_notu_cevabi": "<adminin isteğine Türkçe doğrudan cevap, 1-2 cümle>", "gerekce": "<kararını dayandıran kanıtı belirten Türkçe tek cümle>", "alan_onerileri": {"category_slug": null, "host_countries": null, "deadline_text": null, "funding_type": null, "funding_notes": null, "eligibility_notes": null, "language_requirement": null, "study_level": null, "age_min": null, "age_max": null}}"""
+
+# Ajanın doldurabileceği alanlar → admin panelinde göründükleri Türkçe adları.
+# Sıra notta ve ekranda aynı okunsun diye anlamlı: önce sınıflandırma, sonra
+# koşullar. title/url bilerek YOK — kaydın kimliği ajana emanet edilmez.
+FILLABLE_FIELDS = {
+    "category_slug": "kategori",
+    "host_countries": "ev sahibi ülke",
+    "deadline_text": "son başvuru tarihi",
+    "funding_type": "finansman türü",
+    "funding_notes": "finansman notu",
+    "eligibility_notes": "uygunluk koşulları",
+    "language_requirement": "dil şartı",
+    "study_level": "eğitim kademesi",
+    "age_min": "min yaş",
+    "age_max": "max yaş",
+}
+
+REVISION_LABELS = {"uygun": "UYGUN GÖRÜNÜYOR", "sorunlu": "SORUNLU", "belirsiz": "BELİRSİZ"}
+
+
+def admin_revision_request(sub):
+    """admin_note içinden yalnız adminin yazdığı revize isteğini ayıklar."""
+    note = (sub.get("admin_note") or "").strip()
+    if note.startswith(REVISION_MARKER):
+        return note[len(REVISION_MARKER):].strip()
+    return note
+
+
+def _is_blank(value):
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, (list, tuple)):
+        return not value or all(not str(v).strip() for v in value)
+    return False
+
+
+def empty_fields(sub):
+    """Kayıtta boş duran ve ajanın doldurabileceği alanların anahtarları."""
+    return [f for f in FILLABLE_FIELDS if _is_blank(sub.get(f))]
+
+
+def sanitize_suggestions(sub, oneriler):
+    """LLM'in alan önerilerini DB'ye yazılabilir hâle süzer → (patch, etiketler).
+
+    İKİ KURAL:
+      1) Yalnız BOŞ alanlar doldurulur. Kullanıcının veya adminin yazdığı hiçbir
+         değer ajan tarafından ezilmez — revize "yeniden yaz" değil "tamamla".
+      2) Her değer bu projedeki geçerli kümeye/biçime uymak zorunda; uymayan
+         öneri sessizce atılır ve alan boş kalır (insan doldurur).
+    """
+    if not isinstance(oneriler, dict):
+        return {}, []
+    blanks = set(empty_fields(sub))
+    patch = {}
+
+    def offered(field):
+        return field in blanks and oneriler.get(field) is not None
+
+    if offered("category_slug"):
+        v = str(oneriler["category_slug"]).strip().lower()
+        if v in VALID_CATEGORY_SLUGS:
+            patch["category_slug"] = v
+
+    if offered("funding_type"):
+        v = str(oneriler["funding_type"]).strip().lower()
+        if v in VALID_FUNDING_TYPES:
+            patch["funding_type"] = v
+
+    if offered("host_countries"):
+        raw = oneriler["host_countries"]
+        codes = []
+        for c in (raw if isinstance(raw, list) else [raw])[:8]:
+            c = str(c).strip().upper()
+            if c in ("*", "ALL", "GLOBAL", "WORLDWIDE"):
+                codes = ["*"]
+                break
+            if re.fullmatch(r"[A-Z]{2}", c):
+                codes.append(c)
+        if codes:
+            patch["host_countries"] = codes
+
+    if offered("deadline_text"):
+        v = str(oneriler["deadline_text"]).strip()[:120]
+        dl = parse_deadline(v)
+        # Ajan tarih uyduramasın: metin gerçekten bir güne çözülmeli ve geçmişte
+        # olmamalı. Çözülmüyorsa alan boş kalır; eksik tarih zaten yayın kapısı.
+        if dl is not None and dl >= date.today():
+            patch["deadline_text"] = v
+
+    if offered("eligibility_notes"):
+        v = " ".join(str(oneriler["eligibility_notes"]).split())[:600]
+        if len(v) >= 20:                      # completeness kapısıyla aynı eşik
+            patch["eligibility_notes"] = v
+
+    for field, limit in (("funding_notes", 300), ("language_requirement", 200)):
+        if offered(field):
+            v = " ".join(str(oneriler[field]).split())[:limit]
+            if v:
+                patch[field] = v
+
+    if offered("study_level"):
+        raw = oneriler["study_level"]
+        levels = sorted({str(x).strip().lower() for x in
+                         (raw if isinstance(raw, list) else [raw])}
+                        & VALID_STUDY_LEVELS)
+        if levels:
+            patch["study_level"] = levels
+
+    for field in ("age_min", "age_max"):
+        if offered(field):
+            try:
+                v = int(oneriler[field])
+            except (TypeError, ValueError):
+                continue
+            if 10 <= v <= 99:
+                patch[field] = v
+    lo = patch.get("age_min", sub.get("age_min"))
+    hi = patch.get("age_max", sub.get("age_max"))
+    if lo is not None and hi is not None and lo > hi:
+        patch.pop("age_min", None)           # tutarsız aralık hiç yazılmasın
+        patch.pop("age_max", None)
+
+    return patch, [label for field, label in FILLABLE_FIELDS.items() if field in patch]
+
+
+def _parse_revision(text):
+    """LLM'in revize yanıtından değerlendirmeyi çıkarır (savunmacı)."""
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = re.sub(r"^```[a-zA-Z]*\s*", "", t)
+        t = re.sub(r"\s*```$", "", t).strip()
+    v = _loads_lenient(t)
+    if v is None:
+        return None
+    karar = str(v.get("karar") or "").strip().lower()
+    if karar not in REVISION_LABELS:
+        karar = "belirsiz"                    # tanınmayan karar → temkinli
+    oneriler = v.get("alan_onerileri")
+    return {
+        "karar": karar,
+        "cevap": str(v.get("admin_notu_cevabi") or "").strip()[:400],
+        "gerekce": str(v.get("gerekce") or "").strip()[:300],
+        "alan_onerileri": oneriler if isinstance(oneriler, dict) else {},
+    }
+
+
+def review_revision_with_llm(sub, url, http_note, page_text, istek, blanks):
+    """Revize kaydını LLM'e sorar. Hata → None."""
+    alan_listesi = ", ".join(f"{f} ({FILLABLE_FIELDS[f]})" for f in blanks) or "(boş alan yok)"
+    user_text = (
+        f"BUGÜNÜN TARİHİ: {date.today().isoformat()}\n\n"
+        "ADMİNİN REVİZE İSTEĞİ (asıl görevin bu):\n"
+        f"{istek or '(not yazılmamış — kaydı genel olarak denetle)'}\n\n"
+        "SUBMISSION (kayıttaki hâli)\n"
+        f"Başlık: {sub.get('title') or '(yok)'}\n"
+        f"Kategori slug: {sub.get('category_slug') or '(BOŞ)'}\n"
+        f"Ev sahibi ülkeler: {', '.join(sub.get('host_countries') or []) or '(BOŞ)'}\n"
+        f"Son başvuru metni: {sub.get('deadline_text') or '(BOŞ)'}\n"
+        f"Finansman türü: {sub.get('funding_type') or '(BOŞ)'}\n"
+        f"Finansman notu: {sub.get('funding_notes') or '(BOŞ)'}\n"
+        f"Eğitim kademesi: {', '.join(sub.get('study_level') or []) or '(BOŞ)'}\n"
+        f"Dil şartı: {sub.get('language_requirement') or '(BOŞ)'}\n"
+        f"Yaş aralığı: {sub.get('age_min') if sub.get('age_min') is not None else '(BOŞ)'}"
+        f" - {sub.get('age_max') if sub.get('age_max') is not None else '(BOŞ)'}\n"
+        f"Uygunluk notu: {(sub.get('eligibility_notes') or '(BOŞ)')[:400]}\n"
+        f"Gönderenin açıklaması: {(sub.get('description') or '(yok)')[:300]}\n"
+        f"Doğrudan başvuru/resmî fırsat URL'i: {url}\n"
+        f"Doğrudan URL HTTP: {http_note}\n"
+        f"Bilginin alındığı kaynak URL: {sub.get('source_url') or url}\n\n"
+        f"BOŞ ALANLAR (yalnız bunlara öneri ver): {alan_listesi}\n\n"
+        "İNSAN REDLERİNDEN ÖĞRENİLEN İLGİLİ HAFIZA\n"
+        f"{sub.get('_memory_context') or '(yok)'}\n"
+        "Bu hafıza geçmiş insan kararlarından öğrenilmiş emsaldir; aynı sorunu "
+        "bu sayfada da görüyorsan karara yansıt, yalnız hafızaya bakarak "
+        "kanıtsız 'sorunlu' deme.\n\n"
+        f"SAYFA METNİ (kısaltılmış):\n{page_text}"
+    )
+    text, finish = _llm_chat(REVISION_SYSTEM_PROMPT, user_text)
+    if text is None:
+        return None
+    result = _parse_revision(text)
+    if result is None:
+        snippet = (text or "").strip()[:120] or "(boş content)"
+        print(f"  ! LLM revize JSON'u çözülemedi (finish={finish}): {snippet}")
+    return result
+
+
+def apply_revision_result(sub, karar, ozet, field_patch, dry_run):
+    """Revize sonucunu yazar: doldurulan alanlar + not + human_review.
+
+    status'a DOKUNULMAZ ('pending' kalır) ve hiçbir onay/red RPC'si çağrılmaz —
+    admin bu kaydı bilerek elde tutmuş, kararı ajan kendiliğinden veremez."""
+    note = f"{AGENT_MARKER} REVİZE SONUCU ({REVISION_LABELS.get(karar, 'BELİRSİZ')}) — {ozet}"[:2000]
+    patch = {**field_patch, "admin_note": note, "review_stage": "human_review"}
+    if not dry_run:
+        res = requests.patch(
+            f"{SUPABASE_URL}/rest/v1/submissions",
+            headers={**sb_headers(), "Prefer": "return=minimal"},
+            params={"id": f"eq.{sub['id']}"},
+            json=patch, timeout=20)
+        res.raise_for_status()
+    return note
+
+
+def process_revision(sub, dry_run, known_urls, stats):
+    """Admin'in revize istediği tek kaydı işler. Tally etiketi döndürür."""
+    istek = admin_revision_request(sub)
+    print(f"\n• [REVİZE] {(sub.get('title') or '(başlıksız)')[:60]}")
+    print(f"  Admin isteği: {(istek or '(not yok)')[:120]}")
+
+    url = (sub.get("url") or "").strip()
+    if not url:
+        apply_decision(sub, "reddet", "Kayıtta doğrudan URL yok — kaynak doğrulanamıyor", dry_run)
+        print("  URL yok → SORUNLU")
+        return "revize"
+
+    if _norm_url(url) in known_urls:
+        apply_decision(sub, "reddet",
+                       "Kopya: bu URL zaten yayındaki bir fırsatta mevcut", dry_run)
+        print("  KOPYA (opportunities'te var) → SORUNLU")
+        return "revize"
+
+    status, final_url, err, target_text, source_text = fetch_target_and_source(sub, url)
+    if status in (404, 410):
+        apply_decision(sub, "reddet", f"Ölü bağlantı (HTTP {status})", dry_run)
+        print(f"  HTTP {status} → SORUNLU")
+        return "revize"
+
+    page_text = target_text
+    if source_text:
+        page_text = (f"DOĞRUDAN HEDEF SAYFA:\n{target_text or '(metin yok / bot koruması)'}\n\n"
+                     f"KAYNAK KANIT SAYFASI:\n{source_text}")[:PAGE_CHAR_LIMIT]
+    if len(page_text.strip()) < 80:
+        apply_decision(sub, "belirsiz",
+                       f"Sayfadan anlamlı metin çıkmadı (HTTP {status or err}) — "
+                       "adminin isteği kaynaktan doğrulanamadı", dry_run)
+        print("  İçerik çok ince → BELİRSİZ")
+        return "revize"
+
+    blanks = empty_fields(sub)
+    http_note = str(status) if status is not None else f"ulaşılamadı: {err}"
+    if final_url and _norm_url(final_url) != _norm_url(url):
+        http_note += f" (yönlendirildi: {final_url})"
+    print(f"  Boş alanlar: {', '.join(FILLABLE_FIELDS[f] for f in blanks) or 'yok'}")
+    print(f"  Hedef HTTP {status}, revize değerlendirmesi → LLM ({LLM_MODEL}) sorgulanıyor...")
+    stats["llm_calls"] += 1
+    result = review_revision_with_llm(sub, url, http_note, page_text, istek, blanks)
+    time.sleep(LLM_MIN_INTERVAL)
+
+    if result is None:
+        apply_decision(sub, "belirsiz",
+                       "LLM revize değerlendirmesi alınamadı — tekrar çalıştır", dry_run)
+        print("  LLM hatası → BELİRSİZ")
+        return "revize"
+
+    field_patch, filled = sanitize_suggestions(sub, result["alan_onerileri"])
+    kalan = [FILLABLE_FIELDS[f] for f in blanks if f not in field_patch]
+
+    parcalar = [p for p in (result["cevap"], result["gerekce"]) if p] or ["(gerekçe yok)"]
+    if filled:
+        parcalar.append("Ajanın doldurduğu alanlar: " + ", ".join(filled))
+    if kalan:
+        parcalar.append("Hâlâ boş: " + ", ".join(kalan))
+    ozet = " | ".join(parcalar)
+
+    apply_revision_result(sub, result["karar"], ozet, field_patch, dry_run)
+    print(f"  → REVİZE SONUCU ({REVISION_LABELS[result['karar']]}) — {ozet[:200]}")
+    return "revize"
+
+
 # ─── Akış ─────────────────────────────────────────────────────────────────────
 
 def process(sub, dry_run, known_urls, seen_urls, stats):
     """Tek submission — heuristikler, gerekirse LLM. Tally etiketi döndürür."""
+    # Admin'in revize istediği kayıt bu hattan geçmez: orada ajan onay/red
+    # kapılarını değil, adminin sorusunu işletir (bkz. process_revision).
+    if is_revision(sub):
+        return process_revision(sub, dry_run, known_urls, stats)
+
     print(f"\n• {(sub.get('title') or '(başlıksız)')[:60]}")
     url = (sub.get("url") or "").strip()
     if not url:
@@ -902,15 +1308,7 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
         print(f"  {reason} → REDDET")
         return "llm_red"
 
-    # Doğrudan hedefi ve varsa ayrı kaynak/kanıt sayfasını getir. Başvuru formu
-    # az metin taşısa bile agent tarih/kategori bilgisini kaynak sayfadan okur.
-    status, final_url, html, err = fetch_page(url)
-    source_url = (sub.get("source_url") or "").strip()
-    source_text = ""
-    if source_url and _norm_url(source_url) != norm:
-        source_status, _source_final, source_html, _source_err = fetch_page(source_url)
-        if source_status == 200 and source_html:
-            source_text = page_to_text(source_html)
+    status, final_url, err, target_text, source_text = fetch_target_and_source(sub, url)
 
     # Heuristik 3 — ölü bağlantı (LLM'siz)
     if status in (404, 410):
@@ -937,7 +1335,6 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
             return "llm_red"
 
     # KATMAN 2 — hedef sayfa + ayrı kaynak kanıtı birlikte değerlendirilir.
-    target_text = page_to_text(html) if status == 200 and html else ""
     page_text = target_text
     if source_text:
         page_text = (f"DOĞRUDAN HEDEF SAYFA:\n{target_text or '(metin yok / bot koruması)'}\n\n"
@@ -1211,7 +1608,7 @@ def main():
     stats = {"llm_calls": 0}
     tally = {k: 0 for k in
              ("kopya", "sure_gecti", "olu_link", "llm_red",
-              "onaylandi", "oner", "belirsiz")}
+              "onaylandi", "oner", "belirsiz", "revize")}
 
     mode = "DRY-RUN — DB'ye yazılmayacak" if args.dry_run else "CANLI — DB'ye yazılacak"
     print(f"{len(subs)} submission · {len(known_urls)} mevcut URL biliniyor · {mode}")
@@ -1232,6 +1629,9 @@ def main():
     print(f"ONAYLANDI  : {tally['onaylandi']}   (otomatik onay — opportunities'e eklendi)")
     print(f"ÖNERİLDİ   : {tally['oner']}   (otomatik onay başarısız — pending; elle onayla)")
     print(f"BELİRSİZ   : {tally['belirsiz']}   (pending kaldı)")
+    if tally["revize"]:
+        print(f"REVİZE     : {tally['revize']}   (admin isteği incelendi — "
+              f"kayıt human_review'e döndü, kararı insan verir)")
     heuristik = reddedildi - tally["llm_red"]
     print(f"\nLLM çağrısı: {stats['llm_calls']} / {len(subs)} "
           f"— heuristikler {heuristik} kararı LLM'siz çözdü.")

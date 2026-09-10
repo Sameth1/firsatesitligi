@@ -42,6 +42,10 @@ interface Submission {
   review_stage: string
 }
 
+// 105 akışındaki not önekleri — notu kimin yazdığını ayırmak için.
+const AGENT_REPORT_PREFIX = '[ajan] REVİZE SONUCU'
+const HUMAN_REVISION_PREFIX = '[insan] REVİZE İSTENDİ'
+
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '8px 10px', borderRadius: 8,
   border: '0.5px solid #e0e0e0', fontSize: 13,
@@ -160,8 +164,14 @@ export default function SubmissionDetailPage({
     if (error) {
       showToast('Hata: ' + error.message)
     } else {
-      showToast('Revize istendi.')
-      setSub(prev => prev ? { ...prev, status: 'needs_revision' } : null)
+      showToast('Ajana gönderildi — inceleyip notunu bırakacak.')
+      // status 'pending' KALIR; kaydı ajanın elinde tutan review_stage'dir.
+      setSub(prev => prev ? {
+        ...prev,
+        status: 'pending',
+        review_stage: 'agent_revision',
+        admin_note: `${HUMAN_REVISION_PREFIX}: ${reviseNote.trim()}`,
+      } : null)
       setReviseNote('')
     }
   }
@@ -200,6 +210,10 @@ export default function SubmissionDetailPage({
 
   const isPending = sub.status === 'pending'
   const isHuman = sub.submission_origin === 'human'
+  const atAgent = isPending && sub.review_stage === 'agent_revision'
+  const note = sub.admin_note ?? ''
+  const isAgentReport = note.startsWith(AGENT_REPORT_PREFIX)
+  const isRevisionRequest = note.startsWith(HUMAN_REVISION_PREFIX)
 
   return (
     <main className="light-surface" style={{ minHeight: '100vh', background: '#fafaf9', padding: '32px 16px' }}>
@@ -230,13 +244,22 @@ export default function SubmissionDetailPage({
         }}>
           <span>Gönderen: <strong>{sub.submitter_nickname ? `@${sub.submitter_nickname}` : 'Anonim'}</strong></span>
           <span><strong>{isHuman ? 'Kullanıcı kaydı' : 'Agent kaydı'}</strong></span>
-          {sub.submitter_email ? (
-            <span>✉ {sub.submitter_email}</span>
-          ) : isHuman ? (
-            <span style={{ color: '#ccc' }}>✉ yok — revize maili gönderilemez</span>
-          ) : null}
+          {sub.submitter_email && <span>✉ {sub.submitter_email}</span>}
           <span>{new Date(sub.created_at).toLocaleDateString('tr-TR')}</span>
         </div>
+
+        {atAgent && (
+          <div style={{
+            background: '#E6F1FB', border: '0.5px solid #B9D5F0', borderRadius: 10,
+            padding: '10px 14px', fontSize: 12, color: '#0C447C',
+            marginBottom: 16, lineHeight: 1.5,
+          }}>
+            <strong>Ajanda.</strong> Revize isteğin ajanın kuyruğunda. Ajan kaynağı
+            yeniden çekip isteğini yanıtlayacak ve boş alanları doldurmayı deneyecek;
+            sonra kayıt bu listeye geri döner. Onay yine sende — ajan bu kaydı
+            kendi başına yayına alamaz.
+          </div>
+        )}
 
         {/* Editable form */}
         <div style={{
@@ -333,12 +356,20 @@ export default function SubmissionDetailPage({
 
           {sub.admin_note && (
             <div style={{
-              background: sub.status === 'rejected' ? '#FDE8E8' : '#FAEEDA',
+              background: isAgentReport ? '#E6F1FB' : sub.status === 'rejected' ? '#FDE8E8' : '#FAEEDA',
               borderRadius: 8, padding: '9px 11px', marginBottom: 12,
-              fontSize: 12, color: sub.status === 'rejected' ? '#7A1F1F' : '#633806',
+              fontSize: 12,
+              color: isAgentReport ? '#0C447C' : sub.status === 'rejected' ? '#7A1F1F' : '#633806',
               lineHeight: 1.5, wordBreak: 'break-word',
             }}>
-              <strong>Karar / inceleme notu:</strong> {sub.admin_note}
+              <strong>
+                {isAgentReport ? 'Ajan revize raporu:'
+                  : isRevisionRequest ? 'Ajana ilettiğin revize isteği:'
+                  : 'Karar / inceleme notu:'}
+              </strong>{' '}
+              {isAgentReport ? note.slice(AGENT_REPORT_PREFIX.length).replace(/^[\s—-]+/, '')
+                : isRevisionRequest ? note.slice(HUMAN_REVISION_PREFIX.length).replace(/^[\s:]+/, '')
+                : note}
             </div>
           )}
 
@@ -392,15 +423,16 @@ export default function SubmissionDetailPage({
             />
           )}
 
-          {/* Revise */}
-          {isPending && isHuman && sub.submitter_email && (
+          {/* Revize — not kullanıcıya değil AJANA gider (105). E-posta şartı
+              kalktı: mail gönderen bir yol hiç olmadı, kaydı ajan düzeltiyor. */}
+          {isPending && isHuman && !atAgent && (
             <div>
-              <Label text="Revize notu (kullanıcıya gider)" />
+              <Label text="Revize notu (ajana gider)" />
               <div style={{ display: 'flex', gap: 8 }}>
                 <textarea
                   value={reviseNote}
                   onChange={e => setReviseNote(e.target.value)}
-                  placeholder="Kullanıcıya not yaz..."
+                  placeholder="Ajan neyi araştırsın / neyi düzeltsin?"
                   rows={2}
                   style={{
                     flex: 1, padding: '8px 10px', borderRadius: 8,
@@ -419,7 +451,7 @@ export default function SubmissionDetailPage({
                     opacity: reviseNote.trim() ? 1 : 0.5,
                   }}
                 >
-                  Revize İste
+                  Ajana gönder
                 </button>
               </div>
             </div>
