@@ -23,6 +23,7 @@
     "db:101": "npx supabase db query --linked -f docs/sql/101_opportunity_summary_tr.sql",
     "db:102": "npx supabase db query --linked -f docs/sql/102_opportunity_review_queue.sql",
     "db:103": "npx supabase db query --linked -f docs/sql/103_fix_submission_insert_policy.sql",
+    "db:104": "npx supabase db query --linked -f docs/sql/104_submission_rate_limit.sql",
     "db:insert-programs": "node scripts/insert_programs.js"
   },
   "dependencies": {
