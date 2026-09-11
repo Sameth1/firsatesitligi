@@ -362,8 +362,16 @@ def resolve_application_route(
                 return ApplicationRoute(candidate.url, details_url, "email", True, None,
                                         candidate.url, evidence, "e-posta başvurusu doğrulandı")
             if candidate.method == "online_form" and _is_form_provider(candidate.url):
-                return ApplicationRoute(candidate.url, details_url, "online_form", True, None,
-                                        candidate.url, evidence, "bilinen form sağlayıcısı doğrulandı")
+                target = fetcher(candidate.url)
+                if _healthy_target(target):
+                    return ApplicationRoute(
+                        target.final_url, details_url, "online_form", True,
+                        target.status, target.final_url, evidence,
+                        "form sağlayıcısı anonim erişimle açıldı",
+                    )
+                if best_unverified is None or candidate.score > best_unverified[0].score:
+                    best_unverified = (candidate, target)
+                continue
 
             target = fetcher(candidate.url)
             if _healthy_target(target):

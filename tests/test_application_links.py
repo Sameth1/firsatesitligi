@@ -147,7 +147,9 @@ class ApplicationRouteTests(unittest.TestCase):
             }),
         )
         form_route = resolve_application_route(
-            "https://official.test/program", form, fetcher=map_fetcher({})
+            "https://official.test/program", form, fetcher=map_fetcher({
+                "https://forms.gle/abc123": "<html><title>Application form</title></html>"
+            })
         )
         self.assertEqual(pdf_route.application_method, "document")
         self.assertTrue(pdf_route.verified)
@@ -157,10 +159,31 @@ class ApplicationRouteTests(unittest.TestCase):
     def test_turkish_click_label_to_known_form_is_actionable(self):
         source = '<a href="https://docs.google.com/forms/d/e/abc/viewform">TIKLAYINIZ</a>'
         route = resolve_application_route(
-            "https://nasilgitmis.com/program", source, fetcher=map_fetcher({})
+            "https://nasilgitmis.com/program", source, fetcher=map_fetcher({
+                "https://docs.google.com/forms/d/e/abc/viewform": (
+                    "<html><title>Application form</title></html>"
+                )
+            })
         )
         self.assertTrue(route.verified)
         self.assertEqual(route.application_method, "online_form")
+
+    def test_known_form_provider_must_be_publicly_accessible(self):
+        source = '<a href="https://docs.google.com/forms/d/e/private/viewform">Apply</a>'
+        route = resolve_application_route(
+            "https://official.test/program",
+            source,
+            fetcher=map_fetcher({
+                "https://docs.google.com/forms/d/e/private/viewform": FetchResult(
+                    401,
+                    "https://docs.google.com/forms/d/e/private/viewform",
+                    "",
+                )
+            }),
+        )
+
+        self.assertFalse(route.verified)
+        self.assertIsNone(route.application_url)
 
 
 if __name__ == "__main__":
