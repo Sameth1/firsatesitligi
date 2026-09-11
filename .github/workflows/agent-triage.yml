@@ -1,0 +1,65 @@
+name: Agent Triage & Revision
+
+on:
+  schedule:
+    # Her 4 saatte bir otomatik çalıştır
+    - cron: '0 */4 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry Run (Veritabanına yazmadan sadece test et)'
+        type: boolean
+        default: false
+        required: false
+      recheck:
+        description: 'Daha önce ajan notu almış pending kayıtları da yeniden değerlendir'
+        type: boolean
+        default: false
+        required: false
+      limit:
+        description: 'Maksimum incelenecek kayıt sayısı (Varsayılan: 50)'
+        type: string
+        default: '50'
+        required: false
+
+jobs:
+  triage:
+    name: Run Agent Triage & Human Revision
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Agent Triage
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+        run: |
+          ARGS=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          if [ "${{ github.event.inputs.recheck }}" = "true" ]; then
+            ARGS="$ARGS --recheck"
+          fi
+          
+          LIMIT="${{ github.event.inputs.limit || '50' }}"
+          if [ -n "$LIMIT" ] && [ "$LIMIT" != "0" ] && [ "$LIMIT" != "all" ]; then
+            ARGS="$ARGS --limit $LIMIT"
+          fi
+          
+          echo "Running: python validate_submissions.py $ARGS"
+          python validate_submissions.py $ARGS

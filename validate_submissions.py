@@ -2311,6 +2311,29 @@ def main():
     print(f"\nLLM çağrısı: {stats['llm_calls']} / {len(subs)} "
           f"— heuristikler {heuristik} kararı LLM'siz çözdü.")
 
+    summary_file = os.getenv("GITHUB_STEP_SUMMARY")
+    if summary_file:
+        try:
+            md = [
+                "## 🤖 Agent Submission Değerlendirme ve Revize Raporu",
+                f"**Tarih:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
+                "",
+                "| Metrik | Sayı | Açıklama |",
+                "| :--- | :---: | :--- |",
+                f"| Toplam İncelenen Kayıt | **{len(subs)}** | agent_queue + agent_revision |",
+                f"| ✍️ Revize Tamamlanan (İnsan Kaydı) | **{tally['revision_done']}** | Boş alanlar dolduruldu, insan onayına döndü |",
+                f"| ✅ Otomatik Onaylanan | **{tally['onaylandi']}** | İki aşamalı kapıdan geçti, yayına alındı |",
+                f"| 🚫 Otomatik Reddedilen | **{reddedildi}** | Kopya, ölü link, süresi geçmiş veya LLM red |",
+                f"| ⚠️ Önerilen / Belirsiz | **{tally['oner'] + tally['belirsiz']}** | Admin incelemesi için pending bırakıldı |",
+                f"| 🔄 Tekrar Denenecek | **{tally['tekrar'] + tally['revision_retry']}** | Geçici teknik hata |",
+                f"| 🧠 Toplam LLM Çağrısı | **{stats['llm_calls']}** | NVIDIA NIM ({LLM_MODEL}) |",
+                "",
+            ]
+            with open(summary_file, "a", encoding="utf-8") as f:
+                f.write("\n".join(md) + "\n")
+        except Exception as e:
+            print(f"GitHub Summary yazılamadı: {e}", file=sys.stderr)
+
 
 if __name__ == "__main__":
     main()
