@@ -32,6 +32,7 @@
     "db:110": "npx supabase db query --linked -f docs/sql/110_approval_carries_filters.sql",
     "db:111": "npx supabase db query --linked -f docs/sql/111_filter_fields_backfill.sql",
     "db:112": "npx supabase db query --linked -f docs/sql/112_age_limits_evidence_only.sql",
+    "db:114": "npx supabase db query --linked -f docs/sql/114_direct_application_routes.sql",
     "db:insert-programs": "node scripts/insert_programs.js"
   },
   "dependencies": {

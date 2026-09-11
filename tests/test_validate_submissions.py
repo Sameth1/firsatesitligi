@@ -1,5 +1,6 @@
 import json
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 import validate_submissions as validator
@@ -15,6 +16,11 @@ def complete_submission():
         "funding_type": "full",
         "eligibility_notes": "Lisans öğrencileri programa başvurabilir.",
         "study_level": ["undergraduate"],
+        "details_url": "https://example.org/program",
+        "application_route_status": "verified",
+        "application_method": "portal",
+        "application_url_verified_at": datetime.now(timezone.utc).isoformat(),
+        "application_url_final": "https://example.org/program/apply",
     }
 
 
@@ -42,6 +48,8 @@ def verdict_with_quotes(page_text):
         "finansman": "Fully funded",
         "ulke": "Hosted in Germany",
         "uygunluk": "Bachelor students may apply",
+        "uyruk": "",
+        "bolum": "",
     }
     return verdict
 
@@ -461,6 +469,24 @@ class CitizenshipTests(unittest.TestCase):
 
     def test_country_names_are_not_accepted_as_codes(self):
         self.assertIsNone(validator.clean_citizenships(['China', 'Türkiye']))
+
+    def test_unknown_two_letter_code_is_not_accepted(self):
+        self.assertIsNone(validator.clean_citizenships(['ZZ']))
+
+    def test_restriction_requires_a_verbatim_quote(self):
+        page = "Only citizens of China may apply. Scholarship programme."
+        verdict = verdict_with_quotes(page)
+        verdict['uyruk_kisiti'] = ['CN']
+
+        self.assertIn(
+            "uyruk kısıtı alıntısı eksik",
+            validator.evidence_quote_blockers(page, verdict),
+        )
+        verdict['kanitlar']['uyruk'] = "Only citizens of China may apply"
+        self.assertNotIn(
+            "uyruk kısıtı alıntısı eksik",
+            validator.evidence_quote_blockers(page, verdict),
+        )
 
     def test_verdict_carries_citizenship_restriction(self):
         verdict = high_confidence_verdict()

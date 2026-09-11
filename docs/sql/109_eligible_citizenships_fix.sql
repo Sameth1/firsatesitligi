@@ -75,11 +75,9 @@ set eligible_citizenships = array['AL','BA','BG','CZ','HR','EE','HU','XK','LV',
 where id = 'fe611f1b-f280-4e73-a893-0438fba1c36e'
   and eligible_citizenships = array['all'];
 
--- Afrika Birliği üyesi ülke vatandaşlarına açık üç kayıt.
+-- Afrika Birliği üyesi ülke vatandaşlarına açık iki kayıt.
 --   • African Union Internship — "Internship Program for citizens of AU Member States"
 --   • Nelson Mandela Essay Prize — "Open to citizens of African countries"
---   • Afreximbank Internship — "nationals of the Bank's member countries"
---     (Afreximbank üyeleri Afrika devletleridir; Türkiye üye değil)
 update public.opportunities
 set eligible_citizenships = array[
   'DZ','AO','BJ','BW','BF','BI','CV','CM','CF','TD','KM','CG','CD','CI','DJ',
@@ -88,8 +86,7 @@ set eligible_citizenships = array[
   'ZA','SS','SD','TZ','TG','TN','UG','ZM','ZW','EH']
 where id in (
   '164e48e7-78cb-4958-a24f-e34b56132b93',  -- African Union Internship Program
-  '700ed165-b09d-4929-bb85-1c4afd05d815',  -- Nelson Mandela Essay Prize
-  'c7f0f575-73fd-4f71-bbc5-911bc4877e85'   -- Afreximbank Internship
+  '700ed165-b09d-4929-bb85-1c4afd05d815'   -- Nelson Mandela Essay Prize
 )
 and eligible_citizenships = array['all'];
 

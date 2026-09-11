@@ -143,8 +143,15 @@ def build_record(sch, base, detail_url, category, deadline_text):
     return {
         "title":                (sch.get("nameEn") or sch.get("programmnameEn") or "").strip()
                                 or base.get("title"),
-        "url":                  detail_url,
+        "url":                  base.get("url") or detail_url,
+        "details_url":          base.get("details_url") or detail_url,
         "source_url":           detail_url,
+        "application_route_status": base.get("application_route_status", "unverified"),
+        "application_method":   base.get("application_method"),
+        "application_url_verified_at": base.get("application_url_verified_at"),
+        "application_url_check_status": base.get("application_url_check_status"),
+        "application_url_final": base.get("application_url_final"),
+        "application_url_evidence": base.get("application_url_evidence"),
         "category_slug":        category,
         "deadline_text":        deadline_text,    # deadlines.js'ten (serbest metin) ya da None
         "host_countries":       ["DE"],           # DAAD → Almanya
@@ -160,6 +167,8 @@ def build_record(sch, base, detail_url, category, deadline_text):
         "status":               "pending",
         "submission_origin":    "agent",
         "review_stage":         "agent_queue",
+        "admin_note":           (None if base.get("application_url_verified_at") else
+                                  "[uyarı] doğrulanmış doğrudan başvuru adımı bulunamadı"),
     }
 
 

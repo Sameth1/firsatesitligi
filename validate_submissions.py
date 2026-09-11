@@ -60,13 +60,15 @@ import re
 import sys
 import time
 from collections import Counter
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
+
+from application_links import resolve_application_route
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -116,6 +118,21 @@ VALID_CATEGORY_SLUGS = {
     "internship", "summer_school", "exchange",
 }
 VALID_STUDY_LEVELS = {"bachelor", "master", "phd", "any"}
+# ISO 3166-1 alpha-2 + uygulamada kullanılan iki bölgesel kod (EU, XK).
+# Yalnız ``[A-Z]{2}`` kontrolü ZZ gibi uydurma kodların kullanıcıları yanlış
+# elemesine izin veriyordu; filtre alanları fail-closed doğrulanır.
+VALID_COUNTRY_CODES = set("""
+AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL
+BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV
+CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD
+GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM
+IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK
+LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW
+MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR
+PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS
+ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY
+UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW EU XK
+""".split())
 # UI'daki bölüm listesiyle (src/app/page.tsx → FIELDS) BİREBİR aynı olmalı;
 # eşleşmeyen bir slug yazmak kaydı o bölümü seçen kullanıcıdan gizler.
 VALID_FIELDS = {
@@ -153,6 +170,10 @@ EVIDENCE_QUOTE_FIELDS = {
     "finansman": "finansman alıntısı",
     "ulke": "ülke/global kapsam alıntısı",
     "uygunluk": "başvuru uygunluğu alıntısı",
+}
+RESTRICTION_EVIDENCE_FIELDS = {
+    "uyruk_kisiti": ("uyruk", "uyruk kısıtı alıntısı"),
+    "bolum_kisiti": ("bolum", "bölüm kısıtı alıntısı"),
 }
 
 HTTP_HEADERS = {
@@ -205,7 +226,7 @@ GÜNCELLİK KURALI: "Apply now", "Applications are invited" veya çalışan bir 
 
 4) Yayın güvenlik doğrulamaları — Her alan yalnız sayfadaki açık kanıtla true olabilir:
    - tek_firsat: Sayfa yalnız TEK fırsatı anlatıyor.
-   - dogrudan_firsat_sayfasi: URL genel ana sayfa, giriş ekranı, arama sonucu, etiket/kategori veya çoklu fırsat listesi değil; bu fırsatın kendi detay/başvuru sayfası.
+   - dogrudan_firsat_sayfasi: URL kullanıcıyı yeniden başvuru yeri aratmadan doğrudan form, başvuru portalı, başvuru e-postası veya başvuru belgesine götürüyor. Yalnız bilgi/koşul sayfası true OLAMAZ.
    - son_tarih_dogrulandi: Submission'daki son tarih sayfadaki tarihle aynı, tam olarak gün-ay-yıl içeriyor ve BUGÜNDEN ÖNCE değil.
    - finansman_dogrulandi: Submission'daki finansman türü (full/partial/free/stipend) sayfadaki açık bilgiyle uyuşuyor. Bilgi yoksa false; tahmin etme.
    - ulke_dogrulandi: Submission'daki ev sahibi ülke veya gerçekten global olduğu sayfada doğrulanıyor.
@@ -216,7 +237,9 @@ Bu doğrulamaların herhangi birinde kanıt yoksa veya kayıtla çelişiyorsa fa
 5) Kanıt alıntıları — `kanitlar` içindeki her değeri SAYFA METNİNDEN
 BİREBİR, kısa bir alıntı olarak kopyala. Uydurma, özet veya yorum yazma.
 Güncellik, son tarih, kategori, finansman, ülke ve uygunluk için ayrı alıntı
-bulamıyorsan ilgili doğrulama alanı false olmalıdır.
+bulamıyorsan ilgili doğrulama alanı false olmalıdır. uyruk_kisiti veya
+bolum_kisiti dolduruyorsan bunların her biri için de ayrı, birebir alıntı ver;
+alıntı yoksa ilgili kısıtı null bırak.
 
 KRİTİK: Eksik zorunlu bilgi de kayıt hatasıdır. "kapali", kategori_uygun=false veya yayın doğrulamalarından herhangi birinin false olması submission'ın OTOMATİK REDDEDİLMESİNE yol açar. Kanıt görmeden true üretme. "belirsiz" yalnız bütün yayın doğrulamaları true olduğu halde genel karar güveni orta/düşük kaldığında kullanılabilir.
 
@@ -232,7 +255,7 @@ EK ALANLAR — kimin göreceğini belirler, bu yüzden fazladan temkinli ol:
    Bu iki alanı YANLIŞ doldurmak, uygun bir adayı sonuçlardan tamamen siler; boş bırakmak daha güvenlidir.
 
 ÇIKTI: Yanıtını yalnızca şu alanlara sahip TEK bir JSON nesnesi olarak ver. Markdown, ``` işareti veya açıklama EKLEME:
-{"durum": "acik|kapali|belirsiz", "kategori_uygun": true|false, "guven": "yuksek|orta|dusuk", "tek_firsat": true|false, "dogrudan_firsat_sayfasi": true|false, "son_tarih_dogrulandi": true|false, "finansman_dogrulandi": true|false, "ulke_dogrulandi": true|false, "uygunluk_dogrulandi": true|false, "uyruk_kisiti": null, "bolum_kisiti": null, "kanitlar": {"guncellik": "<birebir alıntı>", "son_tarih": "<birebir alıntı>", "kategori": "<birebir alıntı>", "finansman": "<birebir alıntı>", "ulke": "<birebir alıntı>", "uygunluk": "<birebir alıntı>"}, "gerekce": "<kararını dayandıran kanıtı belirten Türkçe tek cümle>"}"""
+{"durum": "acik|kapali|belirsiz", "kategori_uygun": true|false, "guven": "yuksek|orta|dusuk", "tek_firsat": true|false, "dogrudan_firsat_sayfasi": true|false, "son_tarih_dogrulandi": true|false, "finansman_dogrulandi": true|false, "ulke_dogrulandi": true|false, "uygunluk_dogrulandi": true|false, "uyruk_kisiti": null, "bolum_kisiti": null, "kanitlar": {"guncellik": "<birebir alıntı>", "son_tarih": "<birebir alıntı>", "kategori": "<birebir alıntı>", "finansman": "<birebir alıntı>", "ulke": "<birebir alıntı>", "uygunluk": "<birebir alıntı>", "uyruk": "<kısıt varsa birebir alıntı, yoksa boş>", "bolum": "<kısıt varsa birebir alıntı, yoksa boş>"}, "gerekce": "<kararını dayandıran kanıtı belirten Türkçe tek cümle>"}"""
 
 REVISION_SYSTEM_PROMPT = """Sen Fırsat Eşitliği platformunun kayıt revize ajanısın.
 Bir insan adminin revize notunu ve fırsat sayfasını okuyup yalnız kayıtta BOŞ
@@ -286,7 +309,10 @@ def fetch_pending(limit=None, recheck=False):
     params = {
         "status": "eq.pending",
         "review_stage": f"in.({stages})",
-        "select": ("id,title,url,source_url,category_slug,host_countries,eligibility_notes,"
+        "select": ("id,title,url,source_url,details_url,application_route_status,"
+                   "application_method,application_url_verified_at,application_url_final,"
+                   "application_url_check_status,application_url_evidence,"
+                   "category_slug,host_countries,eligibility_notes,"
                    "deadline_text,funding_type,funding_notes,study_level,"
                    "language_requirement,age_min,age_max,description,admin_note,"
                    "submitter_nickname,submission_origin,review_stage"),
@@ -326,7 +352,10 @@ def fetch_evaluation_candidates(limit):
         params={
             "submission_origin": "eq.agent",
             "url": "not.is.null",
-            "select": ("id,title,url,source_url,category_slug,host_countries,"
+            "select": ("id,title,url,source_url,details_url,application_route_status,"
+                       "application_method,application_url_verified_at,application_url_final,"
+                       "application_url_check_status,application_url_evidence,"
+                       "category_slug,host_countries,"
                        "eligibility_notes,deadline_text,funding_type,study_level,"
                        "language_requirement,description,submitter_nickname,status,"
                        "created_at"),
@@ -659,7 +688,10 @@ def fetch_agent_approved_submissions(limit=None):
         "status": "eq.approved",
         "submission_origin": "eq.agent",
         "reviewed_by": "is.null",
-        "select": ("id,title,url,source_url,category_slug,host_countries,eligibility_notes,"
+        "select": ("id,title,url,source_url,details_url,application_route_status,"
+                   "application_method,application_url_verified_at,application_url_final,"
+                   "application_url_check_status,application_url_evidence,"
+                   "category_slug,host_countries,eligibility_notes,"
                    "deadline_text,funding_type,study_level,admin_note,"
                    "created_opportunity_id,reviewed_at"),
         "order": "reviewed_at.desc",
@@ -1033,7 +1065,7 @@ def clean_citizenships(raw):
         c = str(c).strip().upper()
         if c in ("*", "ALL", "GLOBAL", "WORLDWIDE", "ANY"):
             return None                      # şart yok demek
-        if re.fullmatch(r"[A-Z]{2}", c) and c not in codes:
+        if c in VALID_COUNTRY_CODES and c not in codes:
             codes.append(c)
     return codes or None
 
@@ -1087,7 +1119,7 @@ def _parse_verdict(text):
         "bolum_kisiti": clean_fields(v.get("bolum_kisiti")),
         "kanitlar": {
             field: str(raw_evidence.get(field) or "").strip()[:500]
-            for field in EVIDENCE_QUOTE_FIELDS
+            for field in (*EVIDENCE_QUOTE_FIELDS, "uyruk", "bolum")
         },
         "gerekce": (str(v.get("gerekce") or "").strip()[:300] or "(gerekçe yok)"),
     }
@@ -1205,7 +1237,12 @@ def submission_completeness_blockers(sub):
     url = (sub.get("url") or "").strip()
     if len(title) < 8:
         blockers.append("başlık eksik veya çok kısa")
-    if not re.match(r"^https?://[^\s]+$", url, flags=re.IGNORECASE):
+    is_http = re.match(r"^https?://[^\s]+$", url, flags=re.IGNORECASE)
+    is_email_route = (
+        sub.get("application_method") == "email"
+        and re.match(r"^mailto:[^@\s]+@[^\s]+$", url, flags=re.IGNORECASE)
+    )
+    if not (is_http or is_email_route):
         blockers.append("geçerli HTTP(S) URL yok")
     if not (sub.get("category_slug") or "").strip():
         blockers.append("kategori eksik")
@@ -1227,6 +1264,10 @@ def submission_completeness_blockers(sub):
 def auto_approval_blockers(sub, verdict):
     """Eksiksizlik + LLM kanıt kapısı. Boş liste dışında yayın YASAK."""
     blockers = submission_completeness_blockers(sub)
+    if sub.get("application_route_status") != "verified":
+        blockers.append("doğrudan başvuru adımı doğrulanmadı")
+    if not sub.get("application_url_verified_at") or not sub.get("application_url_final"):
+        blockers.append("başvuru linki teknik doğrulama kaydı eksik")
     if verdict.get("durum") != "acik":
         blockers.append("fırsatın açık olduğu kesin değil")
     if verdict.get("guven") != "yuksek":
@@ -1261,6 +1302,14 @@ def evidence_quote_blockers(page_text, verdict):
         evidence = {}
     blockers = []
     for field, label in EVIDENCE_QUOTE_FIELDS.items():
+        quote = _normalize_evidence_text(evidence.get(field))
+        if len(quote) < 5:
+            blockers.append(f"{label} eksik")
+        elif quote not in haystack:
+            blockers.append(f"{label} sayfa metninde bulunamadı")
+    for restriction, (field, label) in RESTRICTION_EVIDENCE_FIELDS.items():
+        if not verdict.get(restriction):
+            continue
         quote = _normalize_evidence_text(evidence.get(field))
         if len(quote) < 5:
             blockers.append(f"{label} eksik")
@@ -1523,6 +1572,52 @@ def process_agent_revision(sub, dry_run, stats):
 
 # ─── Akış ─────────────────────────────────────────────────────────────────────
 
+def verify_and_store_application_route(sub, dry_run):
+    """Submission'ın bilgi kaynağından gerçek başvuru adımını çözer.
+
+    Doğrulanmış rota bulunursa ``sub`` yerinde güncellenir ve canlı modda DB'ye
+    yazılır. Bulunamazsa kayıt yayın kapısından geçemez.
+    """
+    verified_at = sub.get("application_url_verified_at")
+    if (sub.get("application_route_status") == "verified"
+            and sub.get("application_method")
+            and sub.get("application_url_final") and verified_at):
+        try:
+            checked = datetime.fromisoformat(str(verified_at).replace("Z", "+00:00"))
+            if datetime.now(timezone.utc) - checked.astimezone(timezone.utc) < timedelta(hours=24):
+                return True, "son 24 saat içinde doğrulandı"
+        except (TypeError, ValueError):
+            pass
+
+    start_url = (
+        (sub.get("source_url") or "").strip()
+        or (sub.get("details_url") or "").strip()
+        or (sub.get("url") or "").strip()
+    )
+    if not re.match(r"^https?://[^\s]+$", start_url, flags=re.IGNORECASE):
+        return False, "başvuru rotasını arayacak geçerli bilgi/kaynak URL'i yok"
+
+    route = resolve_application_route(start_url, max_hops=2)
+    if not route.verified or not route.application_url:
+        return False, route.reason
+
+    patch = {
+        **route.submission_fields(),
+        "application_route_status": "verified",
+        "application_url_verified_at": datetime.now(timezone.utc).isoformat(),
+    }
+    sub.update(patch)
+    if not dry_run:
+        response = requests.patch(
+            f"{SUPABASE_URL}/rest/v1/submissions",
+            headers={**sb_headers(), "Prefer": "return=minimal"},
+            params={"id": f"eq.{sub['id']}"},
+            json=patch,
+            timeout=20,
+        )
+        response.raise_for_status()
+    return True, route.reason
+
 def process(sub, dry_run, known_urls, seen_urls, stats):
     """Tek submission — heuristikler, gerekirse LLM. Tally etiketi döndürür."""
     print(f"\n• {(sub.get('title') or '(başlıksız)')[:60]}")
@@ -1533,6 +1628,7 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
         return "llm_red"
     print(f"  URL: {url}")
     norm = _norm_url(url)
+    original_norm = norm
 
     # Heuristik 1 — kopya URL (LLM'siz)
     if norm in known_urls:
@@ -1555,6 +1651,37 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
         print(f"  SÜRESİ GEÇMİŞ ({dl}) → REDDET")
         return "sure_gecti"
 
+    # Bilgi/koşul sayfasından gerçek form/portal/e-posta/belgeye en fazla iki
+    # adımda ulaş. Bu kapı LLM'den önce çalışır; kullanıcıyı yeniden link
+    # aramaya mecbur bırakan kayıt otomatik yayına giremez.
+    try:
+        route_ok, route_note = verify_and_store_application_route(sub, dry_run)
+    except requests.RequestException as exc:
+        apply_decision(sub, "tekrar", f"Başvuru rotası yazılamadı: {exc}", dry_run)
+        print("  Başvuru rotası kaydedilemedi → TEKRAR DENE")
+        return "tekrar"
+    if not route_ok:
+        reason = f"Doğrudan başvuru adımı yok: {route_note}"
+        apply_decision(sub, "reddet", reason, dry_run)
+        print(f"  {reason} → REDDET")
+        return "llm_red"
+
+    url = sub["url"]
+    norm = _norm_url(url)
+    if norm in known_urls:
+        apply_decision(sub, "reddet",
+                       "Kopya: çözülen başvuru URL'i zaten yayında", dry_run)
+        print("  Çözülen başvuru URL'i opportunities'te var → REDDET")
+        return "kopya"
+    if norm not in seen_urls:
+        seen_urls.add(norm)
+    elif norm != original_norm:
+        apply_decision(sub, "reddet",
+                       "Kopya: aynı çözülen başvuru URL'i bu partide mevcut", dry_run)
+        print("  Çözülen başvuru URL'i partide tekrar → REDDET")
+        return "kopya"
+    print(f"  Doğrudan başvuru doğrulandı: {url}")
+
     # Yayın kapısı 1 — eksik kayıt için LLM çağrısı bile yapma. Agent bu
     # alanları kendi tahminiyle doldurmaz; doğrudan reddeder.
     completeness_blockers = submission_completeness_blockers(sub)
@@ -1573,8 +1700,11 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
 
     # Doğrudan hedefi ve varsa ayrı kaynak/kanıt sayfasını getir. Başvuru formu
     # az metin taşısa bile agent tarih/kategori bilgisini kaynak sayfadan okur.
-    status, final_url, html, err = fetch_page(url)
-    source_url = (sub.get("source_url") or "").strip()
+    if sub.get("application_method") == "email":
+        status, final_url, html, err = 200, url, "", None
+    else:
+        status, final_url, html, err = fetch_page(url)
+    source_url = ((sub.get("details_url") or sub.get("source_url") or "").strip())
     source_text = ""
     if source_url and _norm_url(source_url) != norm:
         source_status, _source_final, source_html, _source_err = fetch_page(source_url)

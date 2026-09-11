@@ -23,6 +23,10 @@ interface Submission {
   id: string
   title: string
   url: string
+  source_url: string | null
+  details_url: string | null
+  application_route_status: 'verified' | 'unverified' | 'missing'
+  application_method: 'online_form' | 'portal' | 'email' | 'document' | null
   category_slug: string | null
   host_countries: string[]
   eligible_citizenships: string[] | null
@@ -66,6 +70,9 @@ export default function SubmissionDetailPage({
   // Editable fields
   const [title, setTitle] = useState('')
   const [url, setUrl] = useState('')
+  const [detailsUrl, setDetailsUrl] = useState('')
+  const [applicationMethod, setApplicationMethod] = useState<Submission['application_method']>('portal')
+  const [routeVerified, setRouteVerified] = useState(false)
   const [categorySlug, setCategorySlug] = useState<string | null>(null)
   const [hostCountries, setHostCountries] = useState('')
   const [citizenships, setCitizenships] = useState('')
@@ -91,6 +98,9 @@ export default function SubmissionDetailPage({
         setSub(s)
         setTitle(s.title)
         setUrl(s.url)
+        setDetailsUrl(s.details_url ?? s.source_url ?? s.url)
+        setApplicationMethod(s.application_method ?? 'portal')
+        setRouteVerified(s.application_route_status === 'verified')
         setCategorySlug(s.category_slug)
         setHostCountries(s.host_countries?.join(', ') ?? '')
         setCitizenships(s.eligible_citizenships?.join(', ') ?? '')
@@ -121,6 +131,12 @@ export default function SubmissionDetailPage({
       .update({
         title,
         url,
+        details_url: detailsUrl || url,
+        application_route_status: routeVerified ? 'verified' : 'unverified',
+        application_method: routeVerified ? applicationMethod : null,
+        application_url_verified_at: routeVerified ? new Date().toISOString() : null,
+        application_url_final: routeVerified ? url : null,
+        application_url_evidence: routeVerified ? 'İnsan admin bağlantıyı açarak doğruladı' : null,
         category_slug: categorySlug,
         host_countries: hostCountries ? hostCountries.split(',').map(s => s.trim().toUpperCase()) : [],
         // 107: onay RPC'si bu iki alanı submission'dan okuyor. Boş = kısıt yok
@@ -268,8 +284,32 @@ export default function SubmissionDetailPage({
           <Label text="Başlık" />
           <input value={title} onChange={e => setTitle(e.target.value)} style={{ ...inputStyle, marginBottom: 12 }} />
 
-          <Label text="URL" />
+          <Label text="Doğrudan başvuru URL'si" />
           <input value={url} onChange={e => setUrl(e.target.value)} style={{ ...inputStyle, marginBottom: 12 }} />
+
+          <Label text="Resmî bilgi / koşullar URL'si" />
+          <input value={detailsUrl} onChange={e => setDetailsUrl(e.target.value)} style={{ ...inputStyle, marginBottom: 12 }} />
+
+          <Label text="Başvuru yöntemi" />
+          <select
+            value={applicationMethod ?? 'portal'}
+            onChange={e => setApplicationMethod(e.target.value as Submission['application_method'])}
+            style={{ ...inputStyle, marginBottom: 10 }}
+          >
+            <option value="portal">Başvuru portalı</option>
+            <option value="online_form">Online form</option>
+            <option value="email">E-posta</option>
+            <option value="document">İndirilebilir form</option>
+          </select>
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 14, fontSize: 12, color: '#555' }}>
+            <input
+              type="checkbox"
+              checked={routeVerified}
+              onChange={e => setRouteVerified(e.target.checked)}
+              style={{ marginTop: 2 }}
+            />
+            Bu bağlantıyı açtım; kullanıcı doğrudan başvuruyu başlatabiliyor.
+          </label>
 
           <Label text="Kategori" />
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
