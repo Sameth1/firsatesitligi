@@ -1,6 +1,5 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { supabase } from '@/lib/supabase'
 
 const CATEGORIES = [
   { slug: 'scholarship',   label: 'Burs' },
@@ -53,7 +52,7 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
 
   // State
   const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
-  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [errorMessage, setErrorMessage] = useState('')
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -69,75 +68,35 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
     if (honeypot) return // bot
 
     setStatus('loading')
-    setErrorMsg(null)
+    setErrorMessage('')
 
-    const payload = {
-      title: title.trim(),
-      url: url.trim(),
-      category_slug: categorySlug,
-      submitter_nickname: nickname.trim() || null,
-      submitter_email: email.trim() || null,
-      host_countries: hostCountry ? [hostCountry.toUpperCase()] : [],
-      deadline_text: deadlineText || null,
-      funding_type: fundingType,
-      eligibility_notes: eligibility || null,
-      language_requirement: languageReq || null,
-      description: description || null,
-    }
-
-    // Öneri artık doğrudan Supabase'e değil kendi sunucumuza gidiyor: rate
-    // limit ancak IP bilinirse çalışır, IP'yi de yalnız sunucu güvenilir
-    // biçimde bilebilir (bkz. src/app/api/submit-opportunity/route.ts).
     try {
-      const res = await fetch('/api/submit-opportunity', {
+      const response = await fetch('/api/submit-opportunity', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          title: title.trim(),
+          url: url.trim(),
+          category_slug: categorySlug,
+          submitter_nickname: nickname.trim() || null,
+          submitter_email: email.trim() || null,
+          host_countries: hostCountry ? [hostCountry.toUpperCase()] : [],
+          deadline_text: deadlineText || null,
+          funding_type: fundingType,
+          eligibility_notes: eligibility || null,
+          language_requirement: languageReq || null,
+          description: description || null,
+        }),
       })
-
-      if (res.ok) {
-        setStatus('done')
-        return
+      const result = await response.json().catch(() => null) as { error?: string } | null
+      if (!response.ok) {
+        throw new Error(result?.error || `Öneri gönderilemedi (HTTP ${response.status}).`)
       }
-
-      // 503 = SUPABASE_SERVICE_ROLE_KEY ortamda yok. Bu yapılandırma eksiği
-      // yüzünden kullanıcının önerisi kaybolmasın: eski doğrudan yol hâlâ
-      // çalışıyor (submissions'ta anon INSERT politikası duruyor). Anahtar
-      // Vercel'e eklendiğinde bu dal bir daha çalışmaz; o zaman hem bu
-      // fallback hem anon INSERT politikası kaldırılmalı.
-      if (res.status === 503) {
-        console.warn(
-          '[öneri] Sunucu ucu devre dışı (SUPABASE_SERVICE_ROLE_KEY yok) — '
-          + 'doğrudan kayda düşülüyor, rate limit UYGULANMIYOR.',
-        )
-      } else {
-        const body = await res.json().catch(() => null)
-        setErrorMsg(
-          typeof body?.error === 'string'
-            ? body.error
-            : 'Bir hata oluştu, tekrar dene.',
-        )
-        setStatus('error')
-        return
-      }
-    } catch {
-      // Ağ hatası — aşağıdaki doğrudan yol da denensin.
-    }
-
-    // try/catch şart: `supabase` tembel bir Proxy ve NEXT_PUBLIC_SUPABASE_*
-    // eksikse İLK ERİŞİMDE senkron patlıyor. Yakalanmazsa istisna handleSubmit'i
-    // yarıda kesiyor, status 'loading' kalıyor ve form sonsuza dek
-    // "Gönderiliyor..." yazıp duruyor (tarayıcıda görüldü).
-    try {
-      const { error } = await supabase.from('submissions').insert({
-        ...payload,
-        submission_origin: 'human',
-        review_stage: 'human_review',
-      })
-      if (error) throw error
       setStatus('done')
-    } catch {
-      setErrorMsg('Bir hata oluştu, tekrar dene.')
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Öneri gönderilemedi. Tekrar dene.',
+      )
       setStatus('error')
     }
   }
@@ -174,9 +133,7 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
             <div style={{
               fontSize: 14, fontWeight: 500, color: '#7BF0DC', marginBottom: 8,
             }}>
-              {email
-                ? 'Teşekkürler, ekibimiz inceleyecek. Gerekirse e-postandan ulaşırız.'
-                : 'Teşekkürler, ekibimiz inceleyecek.'}
+              Teşekkürler, ekibimiz inceleyecek.
             </div>
             <button
               onClick={onClose}
@@ -276,7 +233,7 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
                 style={{ ...inputStyle, marginBottom: 2 }}
               />
               <div style={{ fontSize: 10.5, color: 'var(--text-low)', marginBottom: 12, lineHeight: 1.5 }}>
-                Bir şey sormamız gerekirse buradan ulaşırız. Boş bırakabilirsin.
+                Gerekirse seninle iletişime geçebilmemiz için bırakabilirsin.
               </div>
             </div>
 
@@ -394,11 +351,8 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
             </button>
 
             {status === 'error' && (
-              <div style={{
-                fontSize: 11, color: '#FFB4B4', marginTop: 8,
-                textAlign: 'center', lineHeight: 1.5,
-              }}>
-                {errorMsg ?? 'Bir hata oluştu, tekrar dene.'}
+              <div style={{ fontSize: 11, color: '#FFB4B4', marginTop: 8, textAlign: 'center' }}>
+                {errorMessage}
               </div>
             )}
           </form>

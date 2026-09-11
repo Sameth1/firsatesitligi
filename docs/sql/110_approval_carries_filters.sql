@@ -1,8 +1,8 @@
 -- ============================================================
--- 107 · Onay RPC'leri filtre alanlarını SABİT yazmayı bıraksın
+-- 110 · Onay RPC'leri filtre alanlarını SABİT yazmayı bıraksın
 -- Supabase Dashboard → SQL Editor → tek seferde çalıştır
 -- ============================================================
--- SORUN (106'daki veri bozukluğunun KAYNAĞI):
+-- SORUN (109'daki veri bozukluğunun KAYNAĞI):
 --   approve_submission ve agent_approve_submission, opportunities'e INSERT
 --   ederken üç filtre kolonunu submission'dan okumak yerine sabit yazıyordu:
 --
@@ -99,9 +99,9 @@ begin
     sub.url,
     coalesce(sub.host_countries, '{}'::text[]),
     array['all']::text[],                                             -- hedef ülke: submission'da alan yok
-    coalesce(nullif(sub.eligible_citizenships, '{}'), array['all']),   -- 107
-    coalesce(nullif(sub.target_fields, '{}'), array['all']),           -- 107
-    coalesce(nullif(sub.study_level, '{}'), array['any']),             -- 107 (095'in niyeti)
+    coalesce(nullif(sub.eligible_citizenships, '{}'), array['all']),   -- 110
+    coalesce(nullif(sub.target_fields, '{}'), array['all']),           -- 110
+    coalesce(nullif(sub.study_level, '{}'), array['any']),             -- 110 (095'in niyeti)
     coalesce(sub.funding_type, 'free'),
     sub.funding_notes,
     sub.eligibility_notes,
@@ -247,8 +247,8 @@ begin
     new_opp_id, sub.title, sub.url, v_deadline,
     sub.host_countries,
     array['all']::text[],                                             -- hedef ülke: alan yok
-    coalesce(nullif(sub.eligible_citizenships, '{}'), array['all']),   -- 107
-    coalesce(nullif(sub.target_fields, '{}'), array['all']),           -- 107
+    coalesce(nullif(sub.eligible_citizenships, '{}'), array['all']),   -- 110
+    coalesce(nullif(sub.target_fields, '{}'), array['all']),           -- 110
     coalesce(nullif(sub.study_level, '{}'), array['any']),
     sub.funding_type, sub.funding_notes, sub.eligibility_notes,
     sub.language_requirement, sub.age_min, sub.age_max,

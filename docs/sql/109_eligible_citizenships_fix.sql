@@ -1,5 +1,5 @@
 -- ============================================================
--- 106 · eligible_citizenships: yanlış "herkese açık" kayıtlarının düzeltilmesi
+-- 109 · eligible_citizenships: yanlış "herkese açık" kayıtlarının düzeltilmesi
 -- Supabase Dashboard → SQL Editor → tek seferde çalıştır
 -- ============================================================
 -- SORUN (ölçüldü):

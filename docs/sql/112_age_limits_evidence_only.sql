@@ -1,5 +1,5 @@
 -- ============================================================
--- 109 · Kanıtsız yaş sınırlarının temizlenmesi
+-- 112 · Kanıtsız yaş sınırlarının temizlenmesi
 -- Supabase Dashboard → SQL Editor → tek seferde çalıştır
 -- ============================================================
 -- SORUN: Yaş sınırı, kaydı SESSİZCE gizleyen tek filtredir — kullanıcı

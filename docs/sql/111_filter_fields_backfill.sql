@@ -1,5 +1,5 @@
 -- ============================================================
--- 108 · Filtre alanlarının kaynaktan doğrulanmış backfill'i
+-- 111 · Filtre alanlarının kaynaktan doğrulanmış backfill'i
 -- Supabase Dashboard → SQL Editor → tek seferde çalıştır
 -- ============================================================
 -- KAPSAM: 141 aktif kaydın resmî sayfası tek tek indirildi (111'i alınabildi;
@@ -20,7 +20,7 @@
 
 begin;
 
--- ─── 1) 106'DA YAPTIĞIM HATANIN DÜZELTİLMESİ ────────────────────
+-- ─── 1) 109'DA YAPTIĞIM HATANIN DÜZELTİLMESİ ────────────────────
 -- Afreximbank stajını "yalnız Afrika Birliği üyeleri" diye daralttım. Kaynak
 -- sayfanın tam cümlesi bunu YALANLIYOR:
 --   "...open to students who are nationals of the Bank's member countries;
@@ -53,7 +53,7 @@ where id = '672aa938-8581-4900-adf8-121c00b55ddb'
   and eligible_citizenships = array['all'];
 
 -- ─── 3) Georg Forster: uyruk sorusu KAPANDI ─────────────────────
--- 106'da "Türkiye listede var mı bilinmiyor" diye işaretlemiştim. Humboldt
+-- 109'da "Türkiye listede var mı bilinmiyor" diye işaretlemiştim. Humboldt
 -- Vakfı'nın resmî uygun-ülkeler PDF'i indirildi ve okundu: TÜRKİYE LİSTEDE.
 -- Yani kayıtlar Türkiye vatandaşlarına açık, {all} doğru. Ancak iki kaydın
 -- resmî linki 404 veriyor — işaret bu kez ONA çevriliyor, silinmiyor.

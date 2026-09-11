@@ -131,19 +131,20 @@ Fırsatlar doğrudan yayına girmez; bir **inceleme hattından** geçer. Bu, hem
 ### Karar mantığı (`validate_submissions.py`)
 
 1. **Katman 1 — Heuristikler (ücretsiz, LLM'siz).** Kopya URL, süresi geçmiş `deadline_text` veya 404/410 dönen bağlantı → otomatik **RED**. Bu kararlar LLM kotası harcamaz.
-2. **Katman 2 — NVIDIA NIM LLM (yalnızca eksiksiz kayıtlar).** Eksik alan, eski tarih veya kaynak/derleme sayfasına giden link LLM kotası harcanmadan reddedilir. Kalan kayıt için model durum/kategori/güvenin yanında tek fırsat, doğrudan fırsat sayfası, son tarih, finansman, ülke ve uygunluk kanıtlarını ayrı ayrı doğrular.
+2. **Katman 2 — NVIDIA NIM LLM (yalnızca eksiksiz kayıtlar).** Eksik alan, eski tarih veya kaynak/derleme sayfasına giden link LLM kotası harcanmadan reddedilir. Kalan kayıt için model durum/kategori/güvenin yanında tek fırsat, doğrudan fırsat sayfası, son tarih, finansman, ülke ve uygunluk kanıtlarını ayrı ayrı doğrular. Her olumlu alan için sayfadan birebir alıntı vermek zorundadır; kod alıntının gerçekten sayfa metninde bulunduğunu kontrol eder.
 3. **Karar:**
    - `kapalı` + güven yüksek/orta → **RED**
    - `kategori_uygun=false` + güven yüksek → **RED**
-   - yalnız `açık` + `kategori_uygun` + güven **yüksek** + bütün zorunlu alanlar ve altı kanıt doğrulanmış → **OTOMATİK ONAY**
+   - yalnız iki ayrı denetimde `açık` + `kategori_uygun` + güven **yüksek** + bütün zorunlu alanlar ve altı birebir kanıt doğrulanmış → **OTOMATİK ONAY**
    - eksik/yanlış alan, eski tarih, kaynak yazı linki veya doğrulanamayan kanıt → **RED**
    - **belirsiz** yalnız tarih güncel, hedef doğrudan ve bütün kayıt alanları doğrulanmışken açık/kapalı kararında gerçek çelişki kalırsa kullanılır
+   - ağ/LLM hatası insan kuyruğuna gitmez; `agent_queue` içinde otomatik yeniden denenir
 
 Yanlış reddetmeyi önlemek için olumsuz kararlar yalnızca açık kanıt varken verilir; tereddütte karar insana bırakılır. Otomatik onay yapılan kayıtlarda `reviewed_by` alanı `NULL` bırakılır — "insan değil otomasyon onayladı" denetim sinyali.
 
 ### `agent_approve_submission` RPC'si
 
-Standart `approve_submission()` RPC'si insan admin içindir. Agent'ın kullandığı RPC'nin son sürümü migration 099'dadır: çağırma yetkisi yalnız `service_role`'dadır ve Python'dan bağımsız olarak zorunlu alanları, gelecekteki kesin tarihi, yüksek güveni ve bütün kanıt bayraklarını veritabanında tekrar kontrol eder. Eksik bilgiyi `free` gibi bir varsayılanla doldurmaz; hata verip kaydı pending bırakır.
+Standart `approve_submission()` RPC'si insan admin içindir. Agent'ın kullandığı RPC'nin temel kapısı migration 099'dadır; migration 105 ikinci olumlu denetimi ve her iki turdaki kanıt alıntılarını ayrıca zorunlu kılar. Çağırma yetkisi yalnız `service_role`'dadır. Eksik bilgiyi varsayımla doldurmaz; hata verip kaydı pending bırakır.
 
 ---
 
@@ -198,6 +199,10 @@ PostgreSQL şeması Supabase üzerinde barınır. Migration'lar `docs/sql/` alt�
 | `098_remove_manual_improvement_queue.sql` | Ayrı script/PR öneri kuyruğunu kaldırır; hafıza doğrudan agent kararında kullanılır |
 | `099_strict_agent_approval_gate.sql` | Eksik/kanıtsız agent kaydının yayına çıkmasını Python ve DB katmanında engeller |
 | `100_submission_source_url.sql` | Kanıtın alındığı `source_url` ile doğrudan başvuru/resmî hedef olan `url` alanını ayırır |
+| `105_agent_two_pass_evidence_gate.sql` | Agent otomatik onayında iki olumlu denetim ve iki tur birebir sayfa kanıtını DB katmanında zorunlu kılar |
+| `106_agent_accuracy_evaluation.sql` | 30–50 kayıtlık kör insan etiketli agent doğruluk testi, metrikler ve admin RPC'leri |
+| `107_secure_submission_route.sql` | Aynı-IP paralel istek yarışını kilitler ve rate limit'i atlayan doğrudan anon INSERT yolunu kapatır |
+| `108_agent_revision_flow.sql` | İnsan gönderisindeki admin revize notunu agenta yollar; agent yalnız boş alanları kanıtla doldurup insan onayına döndürür |
 
 Migration'lar `npm run db:0XX` script'leriyle bağlı Supabase projesine uygulanır (bkz. `package.json`).
 
@@ -206,6 +211,7 @@ Ana tablolar:
 - **`submissions`** — inceleme bekleyen öneriler (`status`: pending / approved / needs_revision / rejected).
 - **`submission_review_events`** — insan, agent ve revize kararlarının değiştirilemez geçmişi.
 - **`agent_memories`** — insan redlerinden kaynak+kategori+neden bazında öğrenilen karar hafızası (1 örnek, 3 uyarı, 5 güçlü); agent bunu sonraki kararında doğrudan kullanır.
+- **`agent_evaluation_batches/cases`** — üretim kayıtlarını değiştirmeyen kör doğruluk testleri ve insan etiketleri.
 - **`categories`** — fırsat kategorileri (burs, staj, gönüllülük, ...).
 - **`admins`** — panel erişimi olan kullanıcılar.
 - **`documents`** — fırsata bağlı başvuru belgeleri.
@@ -289,8 +295,9 @@ SUPABASE_SERVICE_ROLE_KEY=eyJ...        # sunucu tarafı — NEXT_PUBLIC_ ÖNEK�
 > Anahtar **kesinlikle** `NEXT_PUBLIC_` öneki almamalı — aksi hâlde tarayıcı
 > bundle'ına gömülür ve RLS'i bypass eden anahtar herkese açılır.
 >
-> Dağıtımda (Vercel): Project → Settings → Environment Variables → Production
-> + Preview olarak ekle, sonra yeniden dağıt. Anahtar tanımlı değilse route
+> Dağıtımda (Vercel): Project → Settings → Environment Variables → **Production**
+> kapsamına ekle, sonra yeniden dağıt. Preview için canlı service-role anahtarını
+> paylaşma; ayrı bir test Supabase projesi kullan. Anahtar tanımlı değilse route
 > sessizce başarısız olmaz; 503 ve açık bir hata mesajı döner.
 
 ```bash
@@ -309,6 +316,8 @@ Kök dizinde `.env` dosyası oluştur (bu dosya `.gitignore`'dadır — gizli ka
 SUPABASE_URL=https://xxx.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=eyJ...        # RLS'i bypass eder, gizli tut
 NVIDIA_API_KEY=nvapi-...                # validate_submissions.py için (build.nvidia.com, ücretsiz)
+LLM_REASONING_EFFORT=none              # sınıflandırmada uzun thinking'i kapatır
+LLM_TIMEOUT=90                         # geçici NVIDIA yavaşlıkları için saniye
 GROQ_API_KEY=gsk_...                    # site_bulucu.py için
 ```
 
@@ -331,6 +340,10 @@ python validate_submissions.py --recheck --dry-run --limit 10
 # İnsan adminlerin red nedenlerini kaynak/neden bazında raporla (veri değiştirmez)
 python validate_submissions.py --feedback-report
 
+# Eski serbest metin redlerinden yalnızca anlamı kesin olanları hafızaya al
+python validate_submissions.py --backfill-rejection-memory --dry-run
+python validate_submissions.py --backfill-rejection-memory
+
 # Eski gerçek agent onaylarını yeni sıkı kapıya göre raporla (veri değiştirmez)
 python validate_submissions.py --reaudit-agent-approvals --output agent-reaudit.json
 
@@ -342,6 +355,19 @@ npm run db:099
 
 # Kaynak kanıt sayfası ile doğrudan başvuru hedefini ayır
 npm run db:100
+
+# İki turlu agent kanıt kapısı
+npm run db:105
+
+# Kör doğruluk testi şeması ve 40 kayıtlık test kümesi
+npm run db:106
+python validate_submissions.py --create-eval-batch --limit 40
+
+# Yalnız production route'u 201/400 ile doğrulandıktan sonra uygula
+npm run db:107
+
+# Admin → agent → admin revize durum makinesi
+npm run db:108
 ```
 
 > ⚠️ `SUPABASE_SERVICE_ROLE_KEY` ve `NVIDIA_API_KEY`/`GROQ_API_KEY` hassas anahtarlardır. `.env` dosyası asla commit'lenmemelidir.

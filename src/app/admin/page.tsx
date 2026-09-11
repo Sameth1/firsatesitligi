@@ -35,6 +35,8 @@ interface Stats {
 
 const STATUS_LABELS: Record<string, string> = {
   pending: 'Bekliyor',
+  agent_revision: 'Agent revize ediyor',
+  agent_uncertain: 'Agent belirsiz',
   approved: 'Onaylandı',
   needs_revision: 'Revize',
   rejected: 'Reddedildi',
@@ -42,44 +44,28 @@ const STATUS_LABELS: Record<string, string> = {
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   pending: { bg: '#FAEEDA', text: '#633806' },
+  agent_revision: { bg: '#EEEDFE', text: '#3C3489' },
+  agent_uncertain: { bg: '#E6F1FB', text: '#185FA5' },
   approved: { bg: '#E1F5EE', text: '#085041' },
   needs_revision: { bg: '#EEEDFE', text: '#3C3489' },
   rejected: { bg: '#FDE8E8', text: '#A32D2D' },
-}
-
-// admin_note önekleri — 105 akışında notu kimin yazdığını buradan ayırıyoruz.
-const AGENT_REPORT_PREFIX = '[ajan] REVİZE SONUCU'
-const HUMAN_REVISION_PREFIX = '[insan] REVİZE İSTENDİ'
-
-/**
- * Rozet metni status'tan değil, status + review_stage'den çıkar.
- * Revize istendiğinde kayıt 'pending' KALIR (ajan yalnız pending kayıtları
- * çeker); onu ajanın elinde tutan review_stage'dir. Yalnız status'a bakan bir
- * rozet bu kayıtları "Bekliyor" diye gösterip admin'i yanıltırdı.
- */
-function stageBadge(sub: Submission): { label: string; bg: string; text: string } {
-  if (sub.status === 'pending' && sub.review_stage === 'agent_revision') {
-    return { label: 'Ajanda · revize', bg: '#E6F1FB', text: '#0C447C' }
-  }
-  if (sub.status === 'pending' && sub.review_stage === 'agent_uncertain') {
-    return { label: 'Ajan: belirsiz', bg: '#FAEEDA', text: '#633806' }
-  }
-  const color = STATUS_COLORS[sub.status]
-  return {
-    label: STATUS_LABELS[sub.status] ?? sub.status,
-    bg: color?.bg ?? '#f0f0f0',
-    text: color?.text ?? '#666',
-  }
 }
 
 const FILTERS = [
   { key: 'human_pending', label: 'Kullanıcı Kayıtları' },
   { key: 'agent_revision', label: 'Ajanda (Revize)' },
   { key: 'agent_uncertain', label: 'Agent Belirsizleri' },
-  { key: 'needs_revision', label: 'Revize Bekleyen' },
   { key: 'approved', label: 'Onaylandı' },
   { key: 'rejected', label: 'Reddedildi' },
 ] as const
+
+function displayStatus(submission: Submission) {
+  if (submission.status === 'pending'
+      && ['agent_revision', 'agent_uncertain'].includes(submission.review_stage)) {
+    return submission.review_stage
+  }
+  return submission.status
+}
 
 export default function AdminPage() {
   const [submissions, setSubmissions] = useState<Submission[]>([])
@@ -101,9 +87,7 @@ export default function AdminPage() {
         submissionsQuery = submissionsQuery
           .eq('status', 'pending')
           .eq('submission_origin', 'human')
-          // Ajana gönderilmiş kayıt bu listede durmasın: sıra admin'de değil.
-          // Ajan işini bitirince review_stage human_review olur ve geri gelir.
-          .neq('review_stage', 'agent_revision')
+          .eq('review_stage', 'human_review')
       } else if (filter === 'agent_revision') {
         submissionsQuery = submissionsQuery
           .eq('status', 'pending')
@@ -182,7 +166,7 @@ export default function AdminPage() {
     if (error) {
       showToast('Hata: ' + error.message)
     } else {
-      showToast('Ajana gönderildi — inceleyip notunu bırakacak.')
+      showToast('Kayıt revize için agenta gönderildi.')
       refresh()
     }
   }
@@ -260,6 +244,20 @@ export default function AdminPage() {
             >
               Belirsizler
             </Link>
+            <Link
+              href="/admin/agent-eval"
+              style={{
+                fontSize: 12,
+                color: '#534AB7',
+                textDecoration: 'none',
+                padding: '6px 12px',
+                border: '0.5px solid #e0e0e0',
+                borderRadius: 8,
+                background: '#fff',
+              }}
+            >
+              Agent testi
+            </Link>
             <button
               onClick={handleLogout}
               style={{
@@ -330,12 +328,7 @@ export default function AdminPage() {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {submissions.map(sub => {
-              const badge = stageBadge(sub)
-              const note = sub.admin_note ?? ''
-              const isAgentReport = note.startsWith(AGENT_REPORT_PREFIX)
-              const isRevisionRequest = note.startsWith(HUMAN_REVISION_PREFIX)
-              return (
+            {submissions.map(sub => (
               <div
                 key={sub.id}
                 style={{
@@ -353,11 +346,11 @@ export default function AdminPage() {
                   </a>
                   <span style={{
                     fontSize: 10, fontWeight: 500, padding: '3px 8px', borderRadius: 20,
-                    background: badge.bg,
-                    color: badge.text,
+                    background: STATUS_COLORS[displayStatus(sub)]?.bg ?? '#f0f0f0',
+                    color: STATUS_COLORS[displayStatus(sub)]?.text ?? '#666',
                     whiteSpace: 'nowrap', flexShrink: 0,
                   }}>
-                    {badge.label}
+                    {STATUS_LABELS[displayStatus(sub)] ?? displayStatus(sub)}
                   </span>
                 </div>
 
@@ -387,27 +380,18 @@ export default function AdminPage() {
                   {sub.url}
                 </a>
 
-                {/* Not kutusu — ajan raporu mavi, admin isteği/karar notu sarı */}
+                {/* Admin note (if exists) */}
                 {sub.admin_note && (
                   <div style={{
-                    background: isAgentReport ? '#E6F1FB' : '#FAEEDA',
-                    borderRadius: 6, padding: '6px 10px',
-                    fontSize: 11, color: isAgentReport ? '#0C447C' : '#633806',
-                    marginTop: 8, lineHeight: 1.5, wordBreak: 'break-word',
+                    background: '#FAEEDA', borderRadius: 6, padding: '6px 10px',
+                    fontSize: 11, color: '#633806', marginTop: 8,
                   }}>
-                    <strong>
-                      {isAgentReport ? 'Ajan raporu: '
-                        : isRevisionRequest ? 'Revize isteğin: '
-                        : 'Admin notu: '}
-                    </strong>
-                    {isAgentReport ? sub.admin_note.slice(AGENT_REPORT_PREFIX.length).replace(/^[\s—-]+/, '')
-                      : isRevisionRequest ? sub.admin_note.slice(HUMAN_REVISION_PREFIX.length).replace(/^[\s:]+/, '')
-                      : sub.admin_note}
+                    Admin notu: {sub.admin_note}
                   </div>
                 )}
 
                 {/* Actions — only for pending */}
-                {sub.status === 'pending' && (
+                {sub.status === 'pending' && sub.review_stage !== 'agent_revision' && (
                   <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                     <ActionBtn
                       label="Onayla"
@@ -416,17 +400,15 @@ export default function AdminPage() {
                       loading={actionLoading === sub.id}
                       onClick={() => handleApprove(sub.id)}
                     />
-                    {/* Revize notu artık kullanıcıya değil AJANA gider; e-posta
-                        şartı 105 ile kalktı (mail gönderen kod hiç olmadı). */}
-                    {sub.submission_origin === 'human' && (
+                    {sub.submission_origin === 'human' ? (
                       <ActionBtn
-                        label={sub.review_stage === 'agent_revision' ? 'Ajanda' : 'Ajana yolla'}
-                        color="#0C447C"
-                        bg="#E6F1FB"
-                        loading={actionLoading === sub.id || sub.review_stage === 'agent_revision'}
+                        label="Ajana Revize Ettir"
+                        color="#3C3489"
+                        bg="#EEEDFE"
+                        loading={actionLoading === sub.id}
                         onClick={() => { setReviseId(sub.id); setRejectId(null); setReviseNote('') }}
                       />
-                    )}
+                    ) : null}
                     <ActionBtn
                       label="Reddet"
                       color="#A32D2D"
@@ -438,12 +420,13 @@ export default function AdminPage() {
                 )}
 
                 {/* Revise composer */}
-                {reviseId === sub.id && sub.submission_origin === 'human' && (
+                {reviseId === sub.id && sub.submission_origin === 'human'
+                  && sub.review_stage === 'human_review' && (
                   <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
                     <textarea
                       value={reviseNote}
                       onChange={e => setReviseNote(e.target.value)}
-                      placeholder="Ajan neyi araştırsın / neyi düzeltsin? Ör: 'Son başvuru tarihi sayfada doğru mu, ülke ve finansman bilgisini doldur.'"
+                      placeholder="Agenta neyi kontrol edip tamamlayacağını yaz..."
                       rows={2}
                       style={{
                         flex: 1, padding: '8px 10px', borderRadius: 8,
@@ -462,7 +445,7 @@ export default function AdminPage() {
                         opacity: reviseNote.trim() ? 1 : 0.5,
                       }}
                     >
-                      Ajana gönder
+                      Gönder
                     </button>
                   </div>
                 )}
@@ -475,8 +458,7 @@ export default function AdminPage() {
                   />
                 )}
               </div>
-              )
-            })}
+            ))}
           </div>
         )}
 

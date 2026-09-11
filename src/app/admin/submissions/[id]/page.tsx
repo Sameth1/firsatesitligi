@@ -44,10 +44,6 @@ interface Submission {
   review_stage: string
 }
 
-// 105 akışındaki not önekleri — notu kimin yazdığını ayırmak için.
-const AGENT_REPORT_PREFIX = '[ajan] REVİZE SONUCU'
-const HUMAN_REVISION_PREFIX = '[insan] REVİZE İSTENDİ'
-
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '8px 10px', borderRadius: 8,
   border: '0.5px solid #e0e0e0', fontSize: 13,
@@ -127,12 +123,12 @@ export default function SubmissionDetailPage({
         url,
         category_slug: categorySlug,
         host_countries: hostCountries ? hostCountries.split(',').map(s => s.trim().toUpperCase()) : [],
-        // Boş = uyruk şartı yok; onay RPC'si bunu {all} olarak yazar (107).
+        // 107: onay RPC'si bu iki alanı submission'dan okuyor. Boş = kısıt yok
+        // ({all} yazılır). Yanlış daraltmak, o uyruğu/bölümü seçen uygun bir
+        // adayı sonuçlardan siler — emin değilsen boş bırak.
         eligible_citizenships: citizenships
           ? citizenships.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
           : null,
-        // Boş = bölüm kısıtı yok. Eksik/yanlış slug, o bölümü seçen kullanıcıdan
-        // kaydı gizler — emin değilsen boş bırak.
         target_fields: targetFields
           ? targetFields.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
           : null,
@@ -179,13 +175,12 @@ export default function SubmissionDetailPage({
     if (error) {
       showToast('Hata: ' + error.message)
     } else {
-      showToast('Ajana gönderildi — inceleyip notunu bırakacak.')
-      // status 'pending' KALIR; kaydı ajanın elinde tutan review_stage'dir.
+      showToast('Kayıt revize için agenta gönderildi.')
       setSub(prev => prev ? {
         ...prev,
         status: 'pending',
         review_stage: 'agent_revision',
-        admin_note: `${HUMAN_REVISION_PREFIX}: ${reviseNote.trim()}`,
+        admin_note: `[insan] REVİZE İSTENDİ: ${reviseNote.trim()}`,
       } : null)
       setReviseNote('')
     }
@@ -225,10 +220,8 @@ export default function SubmissionDetailPage({
 
   const isPending = sub.status === 'pending'
   const isHuman = sub.submission_origin === 'human'
-  const atAgent = isPending && sub.review_stage === 'agent_revision'
-  const note = sub.admin_note ?? ''
-  const isAgentReport = note.startsWith(AGENT_REPORT_PREFIX)
-  const isRevisionRequest = note.startsWith(HUMAN_REVISION_PREFIX)
+  const isAgentRevision = isPending && sub.review_stage === 'agent_revision'
+  const canReview = isPending && !isAgentRevision
 
   return (
     <main className="light-surface" style={{ minHeight: '100vh', background: '#fafaf9', padding: '32px 16px' }}>
@@ -259,22 +252,13 @@ export default function SubmissionDetailPage({
         }}>
           <span>Gönderen: <strong>{sub.submitter_nickname ? `@${sub.submitter_nickname}` : 'Anonim'}</strong></span>
           <span><strong>{isHuman ? 'Kullanıcı kaydı' : 'Agent kaydı'}</strong></span>
-          {sub.submitter_email && <span>✉ {sub.submitter_email}</span>}
+          {sub.submitter_email ? (
+            <span>✉ {sub.submitter_email}</span>
+          ) : isHuman ? (
+            <span style={{ color: '#ccc' }}>✉ yok — revize maili gönderilemez</span>
+          ) : null}
           <span>{new Date(sub.created_at).toLocaleDateString('tr-TR')}</span>
         </div>
-
-        {atAgent && (
-          <div style={{
-            background: '#E6F1FB', border: '0.5px solid #B9D5F0', borderRadius: 10,
-            padding: '10px 14px', fontSize: 12, color: '#0C447C',
-            marginBottom: 16, lineHeight: 1.5,
-          }}>
-            <strong>Ajanda.</strong> Revize isteğin ajanın kuyruğunda. Ajan kaynağı
-            yeniden çekip isteğini yanıtlayacak ve boş alanları doldurmayı deneyecek;
-            sonra kayıt bu listeye geri döner. Onay yine sende — ajan bu kaydı
-            kendi başına yayına alamaz.
-          </div>
-        )}
 
         {/* Editable form */}
         <div style={{
@@ -317,6 +301,27 @@ export default function SubmissionDetailPage({
             </div>
           </div>
 
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+            <div>
+              <Label text="Uyruk şartı (ISO, virgülle)" />
+              <input
+                value={citizenships}
+                onChange={e => setCitizenships(e.target.value)}
+                placeholder="CN, PS · boş = şart yok"
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <Label text="Bölüm kısıtı (slug, virgülle)" />
+              <input
+                value={targetFields}
+                onChange={e => setTargetFields(e.target.value)}
+                placeholder="medicine, nursing · boş = kısıt yok"
+                style={inputStyle}
+              />
+            </div>
+          </div>
+
           <Label text="Finansman türü" />
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
             {FUNDING_TYPES.map(f => (
@@ -341,25 +346,6 @@ export default function SubmissionDetailPage({
 
           <Label text="Kimler başvurabilir" />
           <input value={eligibility} onChange={e => setEligibility(e.target.value)} style={{ ...inputStyle, marginBottom: 12 }} />
-
-          {/* 106/107: bu alan boş kaldığı için "yalnız Çin/Filistin vatandaşlarına"
-              açık programlar TR arayan kullanıcılara çıkıyordu. Boş bırakmak
-              "uyruk şartı yok" demektir — emin değilsen boş bırak. */}
-          <Label text="Uyruk şartı — ISO kodları, virgülle (boş = şart yok)" />
-          <input
-            value={citizenships}
-            onChange={e => setCitizenships(e.target.value)}
-            placeholder="CN, PS  ·  boş bırakırsan herkese açık sayılır"
-            style={{ ...inputStyle, marginBottom: 12 }}
-          />
-
-          <Label text="Bölüm kısıtı — slug'lar, virgülle (boş = kısıt yok)" />
-          <input
-            value={targetFields}
-            onChange={e => setTargetFields(e.target.value)}
-            placeholder="medicine, nursing  ·  bir aileyi kapsıyorsa hepsini yaz"
-            style={{ ...inputStyle, marginBottom: 12 }}
-          />
 
           <Label text="Dil şartı" />
           <input value={languageReq} onChange={e => setLanguageReq(e.target.value)} style={{ ...inputStyle, marginBottom: 12 }} />
@@ -390,25 +376,17 @@ export default function SubmissionDetailPage({
 
           {sub.admin_note && (
             <div style={{
-              background: isAgentReport ? '#E6F1FB' : sub.status === 'rejected' ? '#FDE8E8' : '#FAEEDA',
+              background: sub.status === 'rejected' ? '#FDE8E8' : '#FAEEDA',
               borderRadius: 8, padding: '9px 11px', marginBottom: 12,
-              fontSize: 12,
-              color: isAgentReport ? '#0C447C' : sub.status === 'rejected' ? '#7A1F1F' : '#633806',
+              fontSize: 12, color: sub.status === 'rejected' ? '#7A1F1F' : '#633806',
               lineHeight: 1.5, wordBreak: 'break-word',
             }}>
-              <strong>
-                {isAgentReport ? 'Ajan revize raporu:'
-                  : isRevisionRequest ? 'Ajana ilettiğin revize isteği:'
-                  : 'Karar / inceleme notu:'}
-              </strong>{' '}
-              {isAgentReport ? note.slice(AGENT_REPORT_PREFIX.length).replace(/^[\s—-]+/, '')
-                : isRevisionRequest ? note.slice(HUMAN_REVISION_PREFIX.length).replace(/^[\s:]+/, '')
-                : note}
+              <strong>Karar / inceleme notu:</strong> {sub.admin_note}
             </div>
           )}
 
           {/* Save button */}
-          {isPending && (
+          {canReview && (
             <button
               onClick={() => { void saveEdits() }}
               style={{
@@ -422,7 +400,7 @@ export default function SubmissionDetailPage({
           )}
 
           {/* Action buttons */}
-          {isPending && (
+          {canReview && (
             <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
               <button
                 onClick={handleApprove}
@@ -449,7 +427,7 @@ export default function SubmissionDetailPage({
             </div>
           )}
 
-          {isPending && showReject && (
+          {canReview && showReject && (
             <RejectComposer
               busy={actionLoading}
               onCancel={() => setShowReject(false)}
@@ -457,16 +435,15 @@ export default function SubmissionDetailPage({
             />
           )}
 
-          {/* Revize — not kullanıcıya değil AJANA gider (105). E-posta şartı
-              kalktı: mail gönderen bir yol hiç olmadı, kaydı ajan düzeltiyor. */}
-          {isPending && isHuman && !atAgent && (
+          {/* Revise */}
+          {canReview && isHuman && (
             <div>
-              <Label text="Revize notu (ajana gider)" />
+              <Label text="Revize görevi (agenta gider)" />
               <div style={{ display: 'flex', gap: 8 }}>
                 <textarea
                   value={reviseNote}
                   onChange={e => setReviseNote(e.target.value)}
-                  placeholder="Ajan neyi araştırsın / neyi düzeltsin?"
+                  placeholder="Agenta neyi kontrol edip tamamlayacağını yaz..."
                   rows={2}
                   style={{
                     flex: 1, padding: '8px 10px', borderRadius: 8,
@@ -485,14 +462,14 @@ export default function SubmissionDetailPage({
                     opacity: reviseNote.trim() ? 1 : 0.5,
                   }}
                 >
-                  Ajana gönder
+                  Ajana Yolla
                 </button>
               </div>
             </div>
           )}
 
           {/* Status banner */}
-          {!isPending && (
+          {(!isPending || isAgentRevision) && (
             <div style={{
               background: sub.status === 'approved' ? '#E1F5EE' : sub.status === 'rejected' ? '#FDE8E8' : '#EEEDFE',
               borderRadius: 10, padding: '12px 14px',
@@ -502,6 +479,7 @@ export default function SubmissionDetailPage({
               {sub.status === 'approved' && 'Bu öneri onaylanmış.'}
               {sub.status === 'rejected' && 'Bu öneri reddedilmiş.'}
               {sub.status === 'needs_revision' && 'Bu öneri revize bekliyor.'}
+              {isAgentRevision && 'Bu öneriyi agent revize ediyor; bitince yeniden insan onayına dönecek.'}
             </div>
           )}
         </div>
