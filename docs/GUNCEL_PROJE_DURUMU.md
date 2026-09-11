@@ -30,9 +30,9 @@ Yeni scraper kayıtları `submissions` tablosuna `submission_origin=agent`, `rev
 
 1. Doğrudan admin panelindeki **Kullanıcı Kayıtları** sekmesine düşer.
 2. Admin: Onayla / Revize / Reddet seçeneklerini kullanır.
-3. Revize yalnız e-posta bırakılmış kullanıcı kaydında vardır.
-4. Kullanıcı tek kullanımlık, 7 günlük güvenli bağlantıdan düzenleme yapar.
-5. Revize tamamlanınca kayıt yeniden `pending + human_review` olur.
+3. Revize seçilince admin notu kayda yazılır ve kayıt `pending + agent_revision` olur; e-posta şartı yoktur.
+4. Agent notu görev olarak okur, sayfayı yeniden indirir ve yalnız boş alanları birebir sayfa kanıtıyla doldurur. Dolu alanı değiştirmez, onay/red kararı vermez.
+5. Agent bitirince raporunu ekler ve kayıt yeniden `pending + human_review` olur; son kararı admin verir.
 
 ### Agent/scraper gönderisi
 
@@ -100,15 +100,15 @@ Migration 097 sonrası doğrulanan canlı durum:
 
 - PR [#40](https://github.com/Sameth1/firsatesitligi/pull/40), [#41](https://github.com/Sameth1/firsatesitligi/pull/41), [#42](https://github.com/Sameth1/firsatesitligi/pull/42) ve [#43](https://github.com/Sameth1/firsatesitligi/pull/43) `master` dalına merge edildi.
 - Kör doğruluk testi PR #42 ile merge edildi; migration 106 henüz canlıya uygulanmadı.
-- `supabase/functions/notify-submission/index.ts` içindeki yeni güvenli revize e-postası kodu ayrıca Supabase Edge Function olarak deploy edilmelidir; henüz canlıya alınmadı.
+- Revize e-posta/token yolu migration 108 sonrasında kullanılmaz; bildirim Edge Function'ı canlıya alınmadı.
 
 ## Öneri formu ve revize altyapısı
 
 - Form yalnız `/api/submit-opportunity` route'una gider; doğrudan Supabase fallback'i güvenlik nedeniyle yoktur.
 - `SUPABASE_SERVICE_ROLE_KEY` 11 Eylül 2026'da yalnız Vercel Production kapsamına eklendi. PR #43 deployundan sonra canlı route'un yeni doğrulama cevabı (400) doğrulandı.
 - Migration 107 canlıya uygulandı. Aynı IP'deki eşzamanlı istekler advisory lock ile sıraya alınır; doğrudan anon INSERT politikası kalmamıştır.
-- `/revise/[token]` ölü kod değildir: PR #40'taki tasarım, `notify-submission` Edge Function'ının tek kullanımlık token üretip e-posta göndermesine dayanır. Edge Function deployu, webhook başlığı ve Resend ayarları doğrulanmadan akış tamamlanmış sayılmaz.
-- Edge Function, `SUBMISSION_WEBHOOK_SECRET` başlığını zorunlu tutar; webhook içeriği yerine gerçek submission'ı DB'den tekrar okur ve e-posta HTML'inde kullanıcı girdilerini escape eder.
+- Migration 108 uygulandığında `/revise/[token]` ve `needs_revision` eski uyumluluk kodu olarak kalır; yeni admin akışı bunları kullanmaz.
+- Yeni `agent_revision` kuyruğunda teknik HTTP/LLM hatası olursa kayıt agentta yeniden denenir; kanıt bulunamazsa raporla insan incelemesine döner.
 
 ## Son doğrulamalar
 
@@ -117,18 +117,19 @@ Migration 097 sonrası doğrulanan canlı durum:
 - Değiştirilen frontend ve Edge Function dosyalarında ESLint: geçti.
 - `next build --webpack`: geçti.
 - Vercel preview kontrolleri: geçti.
-- Agent yayın/onay/red kapıları, eski red hafızası ve kör test ayrımı için 35 birim testi: geçti.
+- Agent yayın/onay/red kapıları, revize güvenliği, eski red hafızası ve kör test ayrımı için 41 birim testi: geçti.
 - Canlı DB'de `source_url` kolonu: doğrulandı.
 - Canlı DB'de `agent_validation` kolonu ve yeni RPC imzası: doğrulandı.
 - Canlı DB'de 4 anlamlı eski insan reddi 2 hafıza grubuna aktarıldı ve
   agent bağlamından okunabildiği doğrulandı.
 - Canlı DB'de `trg_agent_two_pass_evidence` etkin (`tgenabled=O`) olarak doğrulandı.
 - Güncel Youthop örneği NVIDIA NIM'de iki tur ve birebir kanıt kontrolünden geçti; dry-run sonucu otomatik onay oldu.
+- İzole NVIDIA NIM revize denemesinde yalnız boş son tarih ve dil alanları kanıtla dolduruldu; dolu alanlar korunup DB'ye yazılmadı.
 - Canlı öneri route'u Production secret ile çalışıyor; migration 107 sonrası INSERT politika sayısı `0`, RPC erişimi anon/authenticated için `false`, service role için `true` olarak doğrulandı.
 
 ## Sonraki güvenli adım
 
-1. `notify-submission` için `RESEND_API_KEY`, `APP_URL`, `ADMIN_NOTIFY_FROM` ve `SUBMISSION_WEBHOOK_SECRET` ayarla; aynı secret'ı Database Webhook başlığına ekleyip Edge Function'ı deploy et.
+1. Migration 108'i uygula ve bir kullanıcı kaydını panelden agenta göndererek gerçek revize turunu doğrula.
 2. Migration 106'yı uygula ve 40 kayıtlık kör agent testini başlat.
 3. Yanlış onay hedefi `0`; sonuçlara göre agent eşiklerini kanıta dayalı ayarla.
 

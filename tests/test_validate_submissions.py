@@ -275,6 +275,146 @@ class DecisionFlowTests(unittest.TestCase):
         self.assertEqual(apply_decision.call_args.args[1], "tekrar")
 
 
+class AgentRevisionTests(unittest.TestCase):
+    @patch("validate_submissions.requests.get")
+    def test_fetch_pending_routes_only_valid_agent_and_revision_rows(self, get):
+        get.return_value.json.return_value = [
+            {"id": "agent", "submission_origin": "agent", "review_stage": "agent_queue", "admin_note": None},
+            {"id": "revision", "submission_origin": "human", "review_stage": "agent_revision", "admin_note": "[insan] REVİZE İSTENDİ: tarih"},
+            {"id": "human", "submission_origin": "human", "review_stage": "human_review", "admin_note": None},
+            {"id": "wrong", "submission_origin": "agent", "review_stage": "agent_revision", "admin_note": None},
+        ]
+
+        rows = validator.fetch_pending()
+
+        self.assertEqual([row["id"] for row in rows], ["agent", "revision"])
+        self.assertEqual(
+            get.call_args.kwargs["params"]["review_stage"],
+            "in.(agent_queue,agent_revision)",
+        )
+
+    def test_revision_fills_only_blank_fields_with_exact_evidence(self):
+        submission = complete_submission()
+        submission.update({
+            "title": "Mevcut başlık değişmemeli",
+            "language_requirement": None,
+            "funding_notes": None,
+        })
+        page = "Applications require English B2. A monthly allowance is provided."
+        result = {
+            "fields": {
+                "title": "Agent başlığı",
+                "language_requirement": "İngilizce B2",
+                "funding_notes": "Aylık harçlık sağlanır.",
+            },
+            "evidence": {
+                "title": "A monthly allowance is provided",
+                "language_requirement": "Applications require English B2",
+                "funding_notes": "A monthly allowance is provided",
+            },
+        }
+
+        result_patch = validator.build_agent_revision_patch(submission, result, page)
+
+        self.assertNotIn("title", result_patch)
+        self.assertEqual(result_patch["language_requirement"], "İngilizce B2")
+        self.assertEqual(result_patch["funding_notes"], "Aylık harçlık sağlanır.")
+
+    def test_revision_rejects_invalid_or_expired_suggestions(self):
+        submission = complete_submission()
+        submission.update({
+            "category_slug": None,
+            "deadline_text": None,
+            "funding_type": None,
+            "age_min": None,
+            "age_max": None,
+        })
+        page = "Old deadline 2000-01-01. Category unknown. Ages 70 to 20."
+        result = {
+            "fields": {
+                "category_slug": "anything",
+                "deadline_text": "2000-01-01",
+                "funding_type": "paid",
+                "age_min": 70,
+                "age_max": 20,
+            },
+            "evidence": {
+                "category_slug": "Category unknown",
+                "deadline_text": "Old deadline 2000-01-01",
+                "funding_type": "Category unknown",
+                "age_min": "Ages 70 to 20",
+                "age_max": "Ages 70 to 20",
+            },
+        }
+
+        result_patch = validator.build_agent_revision_patch(submission, result, page)
+
+        self.assertEqual(result_patch, {})
+
+    def test_revision_treats_whitespace_as_blank_and_rejects_decimal_age(self):
+        submission = complete_submission()
+        submission.update({"language_requirement": "   ", "age_min": None})
+        page = "English B2 is required. Applicants must be at least 20 years old."
+        result = {
+            "fields": {"language_requirement": "English B2", "age_min": 20.5},
+            "evidence": {
+                "language_requirement": "English B2 is required",
+                "age_min": "Applicants must be at least 20 years old",
+            },
+        }
+
+        result_patch = validator.build_agent_revision_patch(submission, result, page)
+
+        self.assertEqual(result_patch, {"language_requirement": "English B2"})
+
+    @patch("validate_submissions.requests.patch")
+    def test_finished_revision_returns_to_human_without_status_decision(self, patch):
+        submission = {
+            "id": "test",
+            "admin_note": "[insan] REVİZE İSTENDİ: Son tarihi tamamla",
+        }
+        patch.return_value.raise_for_status.return_value = None
+
+        payload = validator.finish_agent_revision(
+            submission, {"deadline_text": "2099-12-31"}, "Tarih doğrulandı.", False,
+        )
+
+        self.assertNotIn("status", payload)
+        self.assertEqual(payload["review_stage"], "human_review")
+        self.assertIn("Son tarihi tamamla", payload["admin_note"])
+        self.assertIn("deadline_text", payload["admin_note"])
+        self.assertEqual(
+            patch.call_args.kwargs["params"]["review_stage"], "eq.agent_revision"
+        )
+
+    @patch("validate_submissions.finish_agent_revision")
+    @patch("validate_submissions.suggest_revision_with_llm", return_value=None)
+    @patch("validate_submissions.fetch_page")
+    def test_revision_llm_outage_stays_in_revision_queue(
+        self, fetch_page, _suggest, finish
+    ):
+        fetch_page.return_value = (
+            200,
+            "https://example.org/program",
+            "<html><body>" + ("Current scholarship details. " * 10) + "</body></html>",
+            None,
+        )
+        submission = complete_submission()
+        submission.update({
+            "id": "test",
+            "review_stage": "agent_revision",
+            "source_url": submission["url"],
+            "admin_note": "[insan] REVİZE İSTENDİ: Eksikleri tamamla",
+        })
+
+        outcome = validator.process_agent_revision(
+            submission, True, {"llm_calls": 0}
+        )
+
+        self.assertEqual(outcome, "revision_retry")
+        finish.assert_not_called()
+
+
 class AgentEvaluationTests(unittest.TestCase):
     def test_snapshot_is_blind_to_old_decisions(self):
         submission = complete_submission()
