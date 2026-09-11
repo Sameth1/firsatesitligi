@@ -301,7 +301,7 @@ export default function Home() {
       p_category_slug: category || null,
       p_citizenship:   citizenship || 'TR',
       p_age:           age ? parseInt(age) : null,
-      p_study_level:   studyLevel || null,
+      p_study_level:   (studyLevel && studyLevel !== 'any') ? studyLevel : null,
       p_highest_edu:   null,
       p_field:         field || null,
       p_language:      null,
