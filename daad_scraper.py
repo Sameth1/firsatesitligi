@@ -35,6 +35,7 @@ import requests
 from dotenv import load_dotenv
 
 import agent_reach_url_scraper as reach
+from discovery_gate import candidate_blockers
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -195,6 +196,11 @@ def process_scholarship(sch, deadline_map, dry_run, stats):
         return
     base = reach.extract_fields(page, detail_url, category) or {}
     record = build_record(sch, base, detail_url, category, deadline_text)
+    blockers = candidate_blockers(record)
+    if blockers:
+        stats["errors"] += 1
+        print(f"  🚫 kalite kapısı: {record['title'][:55]} — {'; '.join(blockers)}")
+        return
 
     if dry_run:
         stats["previewed"] += 1

@@ -40,6 +40,7 @@ from dotenv import load_dotenv
 # slug→funding_type fallback'i için. İkisi de import sırasında load_dotenv +
 # stdout reconfigure çalıştırır; yan etkisi yok.
 import agent_reach_url_scraper as reach
+from discovery_gate import candidate_blockers
 import nasilgitmis_scraper as ng
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -243,6 +244,11 @@ def process_detail(detail_url, dry_run, stats):
         return
 
     record = build_record(base, detail_url, category_slug)
+    blockers = candidate_blockers(record)
+    if blockers:
+        stats["errors"] += 1
+        print(f"  🚫 kalite kapısı: {record['title'][:60]} — {'; '.join(blockers)}")
+        return
 
     if dry_run:
         stats["previewed"] += 1

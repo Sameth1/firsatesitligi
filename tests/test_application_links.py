@@ -140,6 +140,14 @@ class ApplicationRouteTests(unittest.TestCase):
         self.assertEqual(form_route.application_method, "online_form")
         self.assertTrue(form_route.verified)
 
+    def test_turkish_click_label_to_known_form_is_actionable(self):
+        source = '<a href="https://docs.google.com/forms/d/e/abc/viewform">TIKLAYINIZ</a>'
+        route = resolve_application_route(
+            "https://nasilgitmis.com/program", source, fetcher=map_fetcher({})
+        )
+        self.assertTrue(route.verified)
+        self.assertEqual(route.application_method, "online_form")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -44,7 +44,8 @@ _STRONG_ACTION_RE = re.compile(
     r"\b(?:apply(?:\s+(?:now|here|online))?|start\s+(?:your\s+)?application|"
     r"submit\s+(?:your\s+)?application|online\s+application|application\s+form|"
     r"hemen\s+başvur|başvuru(?:\s+(?:formu|yap|yapın|sayfası))?|başvur|"
-    r"online\s+başvuru|kayıt\s+formu|bewerben|bewerbung|candidature)\b",
+    r"online\s+başvuru|kayıt\s+formu|tıkla(?:yınız|yın|mak)?|"
+    r"tikla(?:yiniz|yin|mak)?|buradan|bewerben|bewerbung|candidature)\b",
     re.IGNORECASE,
 )
 _INSTRUCTIONS_RE = re.compile(
