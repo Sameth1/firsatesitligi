@@ -120,6 +120,20 @@ class ApplicationRouteTests(unittest.TestCase):
         self.assertTrue(route.verified)
         self.assertEqual(route.application_method, "online_form")
 
+    def test_same_page_form_anchor_is_preserved(self):
+        source = '<a href="#form">Burs Başvurusu</a><a id="form"></a>'
+
+        route = resolve_application_route(
+            "https://official.test/scholarship", source, fetcher=map_fetcher({})
+        )
+
+        self.assertTrue(route.verified)
+        self.assertEqual(
+            route.application_url,
+            "https://official.test/scholarship#form",
+        )
+        self.assertEqual(route.application_method, "online_form")
+
     def test_document_and_known_form_provider_are_actionable(self):
         pdf = '<a href="https://official.test/application.pdf">Application form</a>'
         form = '<a href="https://forms.gle/abc123">Apply here</a>'

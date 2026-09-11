@@ -43,7 +43,7 @@ TRACKING_KEYS = {
 _STRONG_ACTION_RE = re.compile(
     r"\b(?:apply(?:\s+(?:now|here|online))?|start\s+(?:your\s+)?application|"
     r"submit\s+(?:your\s+)?application|online\s+application|application\s+form|"
-    r"hemen\s+başvur|başvuru(?:\s+(?:formu|yap|yapın|sayfası))?|başvur|"
+    r"hemen\s+başvur|başvurusu|başvuru(?:\s+(?:formu|yap|yapın|sayfası))?|başvur|"
     r"online\s+başvuru|kayıt\s+formu|tıkla(?:yınız|yın|mak)?|"
     r"tikla(?:yiniz|yin|mak)?|buradan|bewerben|bewerbung|candidature)\b",
     re.IGNORECASE,
@@ -67,6 +67,10 @@ _ACTION_PATH_RE = re.compile(
 _GENERIC_AUTH_RE = re.compile(r"/(?:login|log-in|sign-in|signin|register|signup|sign-up)/?$", re.I)
 _SEARCH_PATH_RE = re.compile(r"/(?:search|find|programme?-search|scholarship-database)/?$", re.I)
 _SOFT_404_RE = re.compile(r"\b(?:404|page\s+not\s+found|seite\s+nicht\s+gefunden)\b", re.I)
+_ACTION_FRAGMENT_RE = re.compile(
+    r"^(?:apply|application|application-form|apply-now|form|basvuru|başvuru)(?:[-_].*)?$",
+    re.I,
+)
 
 
 @dataclass(frozen=True)
@@ -118,7 +122,7 @@ def _host(url: str) -> str:
     return (urlsplit(url).hostname or "").lower()
 
 
-def _clean_url(url: str) -> str:
+def _clean_url(url: str, *, keep_fragment: bool = False) -> str:
     url = html_lib.unescape(url.strip())
     parts = urlsplit(url)
     if parts.path.rstrip("/").endswith("/link") and "u=" in parts.query:
@@ -126,14 +130,15 @@ def _clean_url(url: str) -> str:
         if wrapped.startswith(("http://", "https://")):
             url = wrapped
             parts = urlsplit(url)
+    fragment = parts.fragment if keep_fragment else ""
     if not parts.query:
-        return url
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, "", fragment))
     query = "&".join(
         item for item in parts.query.split("&")
         if item.split("=", 1)[0].lower() not in TRACKING_KEYS
         and not item.split("=", 1)[0].lower().startswith("utm_")
     )
-    return urlunsplit((parts.scheme, parts.netloc, parts.path, query, ""))
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, query, fragment))
 
 
 def _public_http_url(url: str) -> bool:
@@ -251,7 +256,7 @@ def extract_candidates(page_html: str, page_url: str) -> tuple[list[Candidate], 
         if href.lower().startswith("mailto:"):
             target = href
         else:
-            target = _clean_url(urljoin(page_url, href))
+            target = _clean_url(urljoin(page_url, href), keep_fragment=True)
             if _is_junk(target) or urlsplit(target).scheme not in ("http", "https"):
                 continue
         path = urlsplit(target).path
@@ -344,6 +349,15 @@ def resolve_application_route(
                 continue
 
             evidence = f'“{candidate.label}” bağlantısı'
+            candidate_parts = urlsplit(candidate.url)
+            same_document = _clean_url(candidate.url) == _clean_url(page_url)
+            if (same_document and candidate_parts.fragment
+                    and _ACTION_FRAGMENT_RE.fullmatch(candidate_parts.fragment)):
+                return ApplicationRoute(
+                    candidate.url, details_url, "online_form", True, 200,
+                    candidate.url, evidence,
+                    "sayfa içi başvuru bölümüne doğrudan bağlantı doğrulandı",
+                )
             if candidate.method == "email":
                 return ApplicationRoute(candidate.url, details_url, "email", True, None,
                                         candidate.url, evidence, "e-posta başvurusu doğrulandı")
