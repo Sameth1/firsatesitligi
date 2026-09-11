@@ -160,8 +160,13 @@ export default function SubmissionDetailPage({
     if (error) {
       showToast('Hata: ' + error.message)
     } else {
-      showToast('Revize istendi.')
-      setSub(prev => prev ? { ...prev, status: 'needs_revision' } : null)
+      showToast('Kayıt revize için agenta gönderildi.')
+      setSub(prev => prev ? {
+        ...prev,
+        status: 'pending',
+        review_stage: 'agent_revision',
+        admin_note: `[insan] REVİZE İSTENDİ: ${reviseNote.trim()}`,
+      } : null)
       setReviseNote('')
     }
   }
@@ -200,6 +205,8 @@ export default function SubmissionDetailPage({
 
   const isPending = sub.status === 'pending'
   const isHuman = sub.submission_origin === 'human'
+  const isAgentRevision = isPending && sub.review_stage === 'agent_revision'
+  const canReview = isPending && !isAgentRevision
 
   return (
     <main className="light-surface" style={{ minHeight: '100vh', background: '#fafaf9', padding: '32px 16px' }}>
@@ -343,7 +350,7 @@ export default function SubmissionDetailPage({
           )}
 
           {/* Save button */}
-          {isPending && (
+          {canReview && (
             <button
               onClick={() => { void saveEdits() }}
               style={{
@@ -357,7 +364,7 @@ export default function SubmissionDetailPage({
           )}
 
           {/* Action buttons */}
-          {isPending && (
+          {canReview && (
             <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
               <button
                 onClick={handleApprove}
@@ -384,7 +391,7 @@ export default function SubmissionDetailPage({
             </div>
           )}
 
-          {isPending && showReject && (
+          {canReview && showReject && (
             <RejectComposer
               busy={actionLoading}
               onCancel={() => setShowReject(false)}
@@ -393,14 +400,14 @@ export default function SubmissionDetailPage({
           )}
 
           {/* Revise */}
-          {isPending && isHuman && sub.submitter_email && (
+          {canReview && isHuman && (
             <div>
-              <Label text="Revize notu (kullanıcıya gider)" />
+              <Label text="Revize görevi (agenta gider)" />
               <div style={{ display: 'flex', gap: 8 }}>
                 <textarea
                   value={reviseNote}
                   onChange={e => setReviseNote(e.target.value)}
-                  placeholder="Kullanıcıya not yaz..."
+                  placeholder="Agenta neyi kontrol edip tamamlayacağını yaz..."
                   rows={2}
                   style={{
                     flex: 1, padding: '8px 10px', borderRadius: 8,
@@ -419,14 +426,14 @@ export default function SubmissionDetailPage({
                     opacity: reviseNote.trim() ? 1 : 0.5,
                   }}
                 >
-                  Revize İste
+                  Ajana Yolla
                 </button>
               </div>
             </div>
           )}
 
           {/* Status banner */}
-          {!isPending && (
+          {(!isPending || isAgentRevision) && (
             <div style={{
               background: sub.status === 'approved' ? '#E1F5EE' : sub.status === 'rejected' ? '#FDE8E8' : '#EEEDFE',
               borderRadius: 10, padding: '12px 14px',
@@ -436,6 +443,7 @@ export default function SubmissionDetailPage({
               {sub.status === 'approved' && 'Bu öneri onaylanmış.'}
               {sub.status === 'rejected' && 'Bu öneri reddedilmiş.'}
               {sub.status === 'needs_revision' && 'Bu öneri revize bekliyor.'}
+              {isAgentRevision && 'Bu öneriyi agent revize ediyor; bitince yeniden insan onayına dönecek.'}
             </div>
           )}
         </div>

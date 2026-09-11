@@ -202,6 +202,7 @@ PostgreSQL şeması Supabase üzerinde barınır. Migration'lar `docs/sql/` alt�
 | `105_agent_two_pass_evidence_gate.sql` | Agent otomatik onayında iki olumlu denetim ve iki tur birebir sayfa kanıtını DB katmanında zorunlu kılar |
 | `106_agent_accuracy_evaluation.sql` | 30–50 kayıtlık kör insan etiketli agent doğruluk testi, metrikler ve admin RPC'leri |
 | `107_secure_submission_route.sql` | Aynı-IP paralel istek yarışını kilitler ve rate limit'i atlayan doğrudan anon INSERT yolunu kapatır |
+| `108_agent_revision_flow.sql` | İnsan gönderisindeki admin revize notunu agenta yollar; agent yalnız boş alanları kanıtla doldurup insan onayına döndürür |
 
 Migration'lar `npm run db:0XX` script'leriyle bağlı Supabase projesine uygulanır (bkz. `package.json`).
 
@@ -364,6 +365,9 @@ python validate_submissions.py --create-eval-batch --limit 40
 
 # Yalnız production route'u 201/400 ile doğrulandıktan sonra uygula
 npm run db:107
+
+# Admin → agent → admin revize durum makinesi
+npm run db:108
 ```
 
 > ⚠️ `SUPABASE_SERVICE_ROLE_KEY` ve `NVIDIA_API_KEY`/`GROQ_API_KEY` hassas anahtarlardır. `.env` dosyası asla commit'lenmemelidir.

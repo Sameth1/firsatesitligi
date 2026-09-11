@@ -35,6 +35,8 @@ interface Stats {
 
 const STATUS_LABELS: Record<string, string> = {
   pending: 'Bekliyor',
+  agent_revision: 'Agent revize ediyor',
+  agent_uncertain: 'Agent belirsiz',
   approved: 'Onaylandı',
   needs_revision: 'Revize',
   rejected: 'Reddedildi',
@@ -42,6 +44,8 @@ const STATUS_LABELS: Record<string, string> = {
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   pending: { bg: '#FAEEDA', text: '#633806' },
+  agent_revision: { bg: '#EEEDFE', text: '#3C3489' },
+  agent_uncertain: { bg: '#E6F1FB', text: '#185FA5' },
   approved: { bg: '#E1F5EE', text: '#085041' },
   needs_revision: { bg: '#EEEDFE', text: '#3C3489' },
   rejected: { bg: '#FDE8E8', text: '#A32D2D' },
@@ -49,11 +53,19 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 
 const FILTERS = [
   { key: 'human_pending', label: 'Kullanıcı Kayıtları' },
+  { key: 'agent_revision', label: 'Ajanda (Revize)' },
   { key: 'agent_uncertain', label: 'Agent Belirsizleri' },
-  { key: 'needs_revision', label: 'Revize Bekleyen' },
   { key: 'approved', label: 'Onaylandı' },
   { key: 'rejected', label: 'Reddedildi' },
 ] as const
+
+function displayStatus(submission: Submission) {
+  if (submission.status === 'pending'
+      && ['agent_revision', 'agent_uncertain'].includes(submission.review_stage)) {
+    return submission.review_stage
+  }
+  return submission.status
+}
 
 export default function AdminPage() {
   const [submissions, setSubmissions] = useState<Submission[]>([])
@@ -75,6 +87,12 @@ export default function AdminPage() {
         submissionsQuery = submissionsQuery
           .eq('status', 'pending')
           .eq('submission_origin', 'human')
+          .eq('review_stage', 'human_review')
+      } else if (filter === 'agent_revision') {
+        submissionsQuery = submissionsQuery
+          .eq('status', 'pending')
+          .eq('submission_origin', 'human')
+          .eq('review_stage', 'agent_revision')
       } else if (filter === 'agent_uncertain') {
         submissionsQuery = submissionsQuery
           .eq('status', 'pending')
@@ -148,7 +166,7 @@ export default function AdminPage() {
     if (error) {
       showToast('Hata: ' + error.message)
     } else {
-      showToast('Revize istendi.')
+      showToast('Kayıt revize için agenta gönderildi.')
       refresh()
     }
   }
@@ -328,11 +346,11 @@ export default function AdminPage() {
                   </a>
                   <span style={{
                     fontSize: 10, fontWeight: 500, padding: '3px 8px', borderRadius: 20,
-                    background: STATUS_COLORS[sub.status]?.bg ?? '#f0f0f0',
-                    color: STATUS_COLORS[sub.status]?.text ?? '#666',
+                    background: STATUS_COLORS[displayStatus(sub)]?.bg ?? '#f0f0f0',
+                    color: STATUS_COLORS[displayStatus(sub)]?.text ?? '#666',
                     whiteSpace: 'nowrap', flexShrink: 0,
                   }}>
-                    {STATUS_LABELS[sub.status] ?? sub.status}
+                    {STATUS_LABELS[displayStatus(sub)] ?? displayStatus(sub)}
                   </span>
                 </div>
 
@@ -373,7 +391,7 @@ export default function AdminPage() {
                 )}
 
                 {/* Actions — only for pending */}
-                {sub.status === 'pending' && (
+                {sub.status === 'pending' && sub.review_stage !== 'agent_revision' && (
                   <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                     <ActionBtn
                       label="Onayla"
@@ -382,21 +400,14 @@ export default function AdminPage() {
                       loading={actionLoading === sub.id}
                       onClick={() => handleApprove(sub.id)}
                     />
-                    {sub.submission_origin === 'human' && sub.submitter_email ? (
+                    {sub.submission_origin === 'human' ? (
                       <ActionBtn
-                        label="Revize"
+                        label="Ajana Revize Ettir"
                         color="#3C3489"
                         bg="#EEEDFE"
                         loading={actionLoading === sub.id}
                         onClick={() => { setReviseId(sub.id); setRejectId(null); setReviseNote('') }}
                       />
-                    ) : sub.submission_origin === 'human' ? (
-                      <span
-                        style={{ fontSize: 10, color: '#ccc', padding: '6px 10px' }}
-                        title="E-posta yok — revize gönderilemez. Elden düzelt veya reddet."
-                      >
-                        Revize (✉ yok)
-                      </span>
                     ) : null}
                     <ActionBtn
                       label="Reddet"
@@ -409,12 +420,13 @@ export default function AdminPage() {
                 )}
 
                 {/* Revise composer */}
-                {reviseId === sub.id && sub.submission_origin === 'human' && (
+                {reviseId === sub.id && sub.submission_origin === 'human'
+                  && sub.review_stage === 'human_review' && (
                   <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
                     <textarea
                       value={reviseNote}
                       onChange={e => setReviseNote(e.target.value)}
-                      placeholder="Kullanıcıya not yaz..."
+                      placeholder="Agenta neyi kontrol edip tamamlayacağını yaz..."
                       rows={2}
                       style={{
                         flex: 1, padding: '8px 10px', borderRadius: 8,
