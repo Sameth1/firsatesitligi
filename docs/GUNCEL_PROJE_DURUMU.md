@@ -98,7 +98,7 @@ Migration 097 sonrası doğrulanan canlı durum:
 
 ## Kod ve PR durumu
 
-- PR [#40](https://github.com/Sameth1/firsatesitligi/pull/40), [#41](https://github.com/Sameth1/firsatesitligi/pull/41), [#42](https://github.com/Sameth1/firsatesitligi/pull/42) ve [#43](https://github.com/Sameth1/firsatesitligi/pull/43) `master` dalına merge edildi.
+- PR [#40](https://github.com/Sameth1/firsatesitligi/pull/40)–[#45](https://github.com/Sameth1/firsatesitligi/pull/45) `master` dalına merge edildi.
 - Kör doğruluk testi PR #42 ile merge edildi; migration 106 henüz canlıya uygulanmadı.
 - Revize e-posta/token yolu migration 108 sonrasında kullanılmaz; bildirim Edge Function'ı canlıya alınmadı.
 
@@ -107,7 +107,7 @@ Migration 097 sonrası doğrulanan canlı durum:
 - Form yalnız `/api/submit-opportunity` route'una gider; doğrudan Supabase fallback'i güvenlik nedeniyle yoktur.
 - `SUPABASE_SERVICE_ROLE_KEY` 11 Eylül 2026'da yalnız Vercel Production kapsamına eklendi. PR #43 deployundan sonra canlı route'un yeni doğrulama cevabı (400) doğrulandı.
 - Migration 107 canlıya uygulandı. Aynı IP'deki eşzamanlı istekler advisory lock ile sıraya alınır; doğrudan anon INSERT politikası kalmamıştır.
-- Migration 108 uygulandığında `/revise/[token]` ve `needs_revision` eski uyumluluk kodu olarak kalır; yeni admin akışı bunları kullanmaz.
+- Migration 108, 11 Eylül 2026'da canlıya uygulandı. `/revise/[token]` ve `needs_revision` eski uyumluluk kodu olarak kalır; yeni admin akışı bunları kullanmaz.
 - Yeni `agent_revision` kuyruğunda teknik HTTP/LLM hatası olursa kayıt agentta yeniden denenir; kanıt bulunamazsa raporla insan incelemesine döner.
 
 ## Son doğrulamalar
@@ -129,7 +129,7 @@ Migration 097 sonrası doğrulanan canlı durum:
 
 ## Sonraki güvenli adım
 
-1. Migration 108'i uygula ve bir kullanıcı kaydını panelden agenta göndererek gerçek revize turunu doğrula.
+1. Bir kullanıcı kaydını panelden agenta göndererek gerçek revize turunu doğrula.
 2. Migration 106'yı uygula ve 40 kayıtlık kör agent testini başlat.
 3. Yanlış onay hedefi `0`; sonuçlara göre agent eşiklerini kanıta dayalı ayarla.
 
