@@ -84,6 +84,12 @@ export default function AdminPage() {
   useEffect(() => {
     let active = true
     async function load() {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        window.location.href = '/admin/login'
+        return
+      }
+
       let submissionsQuery = supabase.from('submissions').select('*')
       if (filter === 'human_pending') {
         submissionsQuery = submissionsQuery

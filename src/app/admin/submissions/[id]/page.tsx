@@ -88,6 +88,12 @@ export default function SubmissionDetailPage({
 
   useEffect(() => {
     async function load() {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        window.location.href = '/admin/login'
+        return
+      }
+
       const { data } = await supabase
         .from('submissions')
         .select('*')
