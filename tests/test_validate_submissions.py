@@ -275,5 +275,38 @@ class DecisionFlowTests(unittest.TestCase):
         self.assertEqual(apply_decision.call_args.args[1], "tekrar")
 
 
+class AgentEvaluationTests(unittest.TestCase):
+    def test_snapshot_is_blind_to_old_decisions(self):
+        submission = complete_submission()
+        submission.update({
+            "status": "rejected",
+            "admin_note": "eski karar",
+            "_agent_eval_decision": {"eylem": "reddet", "gerekce": "x"},
+        })
+
+        snapshot = validator._evaluation_snapshot(submission)
+
+        self.assertNotIn("status", snapshot)
+        self.assertNotIn("admin_note", snapshot)
+        self.assertNotIn("_agent_eval_decision", snapshot)
+
+    def test_agent_actions_map_to_eval_labels(self):
+        self.assertEqual(validator._evaluation_decision("onayla"), "approve")
+        self.assertEqual(validator._evaluation_decision("reddet"), "reject")
+        self.assertEqual(validator._evaluation_decision("belirsiz"), "uncertain")
+        self.assertEqual(validator._evaluation_decision("tekrar"), "retry")
+
+    def test_dry_run_decision_is_captured_without_database_write(self):
+        submission = {"id": "test"}
+
+        note = validator.apply_decision(submission, "reddet", "Eksik tarih", True)
+
+        self.assertIn("RED", note)
+        self.assertEqual(
+            submission["_agent_eval_decision"],
+            {"eylem": "reddet", "gerekce": "Eksik tarih"},
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
