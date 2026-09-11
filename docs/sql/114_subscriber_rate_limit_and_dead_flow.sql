@@ -11,9 +11,10 @@
 --     tarayıcı → /api/subscribe (IP'yi sunucu okur) → subscribe_email RPC
 --   RPC yalnız service_role'a açık; anon bu yoldan IP uydurup limiti aşamaz.
 --
---   ÖNEMLİ SIRALAMA: anon INSERT politikası BU DOSYADA KALDIRILMIYOR.
---   Kaldırılırsa, yeni /api/subscribe route'u canlıya çıkana kadar abone
---   formu çalışmaz. Kod deploy edildikten sonra 114b çalıştırılmalı:
+--   ANON INSERT POLİTİKASI: canlıda 114b ile kaldırıldı. Normalde kod deploy
+--   edilene kadar beklenmesi gerekirdi (yoksa form çalışmaz), ama tabloda
+--   0 satır vardı — form bugüne dek hiç kullanılmamıştı — bu yüzden beklemenin
+--   anlamı yoktu. Sıfırdan kurulumda önce kodu deploy et, sonra şunu çalıştır:
 --       drop policy if exists "public insert subscribers" on public.subscribers;
 --
 -- B) ÖLÜ REVİZE AKIŞI
