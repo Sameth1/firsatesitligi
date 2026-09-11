@@ -21,7 +21,13 @@ import {
 // WebGL yalnız istemcide — SSR'da canvas oluşturulmaz.
 const HeroCanvas = dynamic(() => import('./HeroCanvas'), { ssr: false })
 
-const HEADLINE = ['Yurt', 'dışı', 'ayrıcalık', 'değil,', 'senin', 'hakkın.']
+// Başlık marka kilidinin kendisi. Header'daki logo iki tonlu (mor + siyah)
+// ama o beyaz zeminde duruyor; burada zemin zaten mor, o yüzden vurgu rengi
+// denendi ve okunmuyordu — başlığın tamamı beyaz kalıyor.
+// İki parça ayrı ayrı animasyona giriyor (uçak başlık bandını kat ederken);
+// aralarında boşluk YOK, dar ekranda taşmak yerine alt satıra kayabilsinler
+// diye ayrı inline-block'lar.
+const HEADLINE = ['fırsat', 'eşitliği']
 
 export default function Hero({ onStart }: { onStart: () => void }) {
   const rootRef = useRef<HTMLElement>(null)
@@ -78,10 +84,11 @@ export default function Hero({ onStart }: { onStart: () => void }) {
           }, 0)
           .fromTo('[data-fx="eyebrow"]',
             { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.55 }, 0)
-          // uçağın izinde: 6 kelime × 0.16s = uçağın bandı kat ettiği süre
+          // uçağın izinde: başlık 2 parça, stagger buna göre büyütüldü ki
+          // ikinci parça da uçak bandı terk etmeden yerine otursun
           .fromTo('[data-fx="word"]',
             { opacity: 0, yPercent: 115 },
-            { opacity: 1, yPercent: 0, duration: 0.6, stagger: 0.16 }, 0.76)
+            { opacity: 1, yPercent: 0, duration: 0.6, stagger: 0.34 }, 0.76)
           .fromTo('[data-fx="sub"]',
             { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.65 }, 1.55)
           .fromTo('[data-fx="cta"]',
@@ -195,12 +202,11 @@ export default function Hero({ onStart }: { onStart: () => void }) {
           textWrap: 'balance',
           textShadow: '0 2px 30px rgba(24, 16, 74, 0.35)',
         }}>
-          {HEADLINE.map((word, i) => (
+          {HEADLINE.map((part, i) => (
             <span key={i} style={{ display: 'inline-block', overflow: 'hidden', verticalAlign: 'bottom' }}>
               <span data-fx="word" style={{ display: 'inline-block' }}>
-                {word}
+                {part}
               </span>
-              {i < HEADLINE.length - 1 && <span>&nbsp;</span>}
             </span>
           ))}
         </h1>
