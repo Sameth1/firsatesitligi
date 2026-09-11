@@ -1,7 +1,12 @@
 import unittest
 from unittest.mock import Mock, patch
 
-from application_links import FetchResult, fetch_url, resolve_application_route
+from application_links import (
+    FetchResult,
+    fetch_url,
+    is_safe_guided_url,
+    resolve_application_route,
+)
 
 
 def map_fetcher(pages):
@@ -16,6 +21,19 @@ def map_fetcher(pages):
 
 
 class ApplicationRouteTests(unittest.TestCase):
+    def test_guided_url_allows_official_detail_but_not_confusing_pages(self):
+        self.assertTrue(is_safe_guided_url(
+            "https://official.test/programmes/scholarship-2027"
+        ))
+        self.assertTrue(is_safe_guided_url(
+            "https://www2.daad.de/scholarship-database/?detail=10000169"
+        ))
+        self.assertFalse(is_safe_guided_url("https://nasilgitmis.com/program"))
+        self.assertFalse(is_safe_guided_url("https://official.test/careers"))
+        self.assertFalse(is_safe_guided_url(
+            "https://docs.google.com/forms/d/e/private/viewform"
+        ))
+
     @patch("application_links.requests.get")
     @patch("application_links._public_http_url", side_effect=[True, False])
     def test_redirect_to_private_network_is_blocked(self, _public, get):

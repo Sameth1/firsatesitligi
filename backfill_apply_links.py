@@ -20,7 +20,7 @@ from urllib.parse import urlsplit
 import requests
 from dotenv import load_dotenv
 
-from application_links import resolve_application_route
+from application_links import is_safe_guided_url, resolve_application_route
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -112,9 +112,14 @@ def main():
         route = resolve_application_route(start, max_hops=2)
         item = result_row(row, route)
         report.append(item)
-        bucket = "verified" if route.verified else "unresolved"
+        guided = (
+            not route.verified
+            and route.status_code == 200
+            and is_safe_guided_url(route.details_url)
+        )
+        bucket = "verified" if route.verified else "guided" if guided else "unresolved"
         counts[bucket] += 1
-        mark = "✓" if route.verified else "·"
+        mark = "✓" if route.verified else "→" if guided else "·"
         print(f"{index:>3}/{len(rows)} {mark} {row['title'][:58]} — {route.reason}")
 
         if not args.apply:
@@ -134,6 +139,22 @@ def main():
                 "review_note": None,
                 "review_flagged_at": None,
             })
+        elif guided:
+            patch(row["id"], {
+                "details_url": route.details_url,
+                "application_route_status": "guided",
+                "application_method": None,
+                "application_url_verified_at": None,
+                "application_url_check_status": route.status_code,
+                "application_url_final": None,
+                "application_url_evidence": None,
+                "review_flag": "guided_application_route",
+                "review_note": (
+                    "Doğrudan form bulunamadı; çalışan resmî fırsat sayfası "
+                    "üzerinden birkaç adımda başvuru yapılabilir."
+                ),
+                "review_flagged_at": verified_at,
+            })
         else:
             patch(row["id"], {
                 "details_url": route.details_url,
@@ -145,7 +166,10 @@ def main():
 
     if args.json:
         Path(args.json).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"\nDoğrulandı: {counts['verified']} · Çözülemedi: {counts['unresolved']} · URL yok: {counts['missing']}")
+    print(
+        f"\nDoğrudan: {counts['verified']} · Rehberli: {counts['guided']} · "
+        f"Çözülemedi: {counts['unresolved']} · URL yok: {counts['missing']}"
+    )
     if not args.apply:
         print("DB değişmedi. Yazmak için migration 113 sonrası --apply gerekir.")
 

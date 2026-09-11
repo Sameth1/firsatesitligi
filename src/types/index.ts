@@ -40,7 +40,7 @@ export type Opportunity = {
   eligibility_notes_tr?: string | null
   /** 113 SQL: bilgi sayfası ve doğrulanmış gerçek başvuru adımı ayrımı */
   details_url?: string | null
-  application_route_status?: 'verified' | 'unverified' | 'missing' | null
+  application_route_status?: 'verified' | 'guided' | 'unverified' | 'missing' | null
   application_method?: 'online_form' | 'portal' | 'email' | 'document' | null
   application_url_verified_at?: string | null
 }

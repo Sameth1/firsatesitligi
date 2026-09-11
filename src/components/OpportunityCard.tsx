@@ -262,7 +262,7 @@ export default function OpportunityCard({ opp }: { opp: Opportunity }) {
               display: 'inline-flex', alignItems: 'center', gap: 7, whiteSpace: 'nowrap',
             }}
           >
-            {hasDirectApplication ? applicationLabel : 'Koşulları Gör'}
+            {hasDirectApplication ? applicationLabel : 'Koşullar ve Başvuru'}
             <span className="apply-arrow">↗</span>
           </a>
         </div>

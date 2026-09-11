@@ -226,6 +226,28 @@ def _is_junk(url: str) -> bool:
     return not host or any(part in host for part in JUNK_HOST_PARTS)
 
 
+def is_safe_guided_url(url: str) -> bool:
+    """Doğrudan form yokken gösterilebilecek sade, resmî bilgi sayfası mı?"""
+    parts = urlsplit(url or "")
+    host = (parts.hostname or "").lower()
+    path = (parts.path or "/").rstrip("/") or "/"
+    if (parts.scheme not in ("http", "https") or not host or _is_junk(url)
+            or host in AGGREGATOR_HOSTS or _is_form_provider(url)):
+        return False
+    is_database_detail = (
+        "scholarship-database" in path.casefold()
+        and "detail" in parse_qs(parts.query)
+    )
+    if (path == "/" or _GENERIC_AUTH_RE.search(path)
+            or (_SEARCH_PATH_RE.search(path) and not is_database_detail)):
+        return False
+    if path.casefold() in ("/careers", "/jobs", "/vacancies"):
+        return False
+    if "scholarship-database" in path.casefold() and not is_database_detail:
+        return False
+    return True
+
+
 def _has_real_form(soup: BeautifulSoup) -> bool:
     for form in soup.find_all("form"):
         marker = " ".join([
