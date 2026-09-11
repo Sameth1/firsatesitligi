@@ -1,0 +1,58 @@
+name: Audit Opportunities
+
+on:
+  schedule:
+    # Her gece UTC 03:00'te (Türkiye Saatiyle 06:00) otomatik çalıştır
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry Run (Veritabanına yazmadan sadece test et)'
+        type: boolean
+        default: false
+        required: false
+      limit:
+        description: 'Kontrol edilecek maksimum URL sayısı (Tümü için "all" veya "0")'
+        type: string
+        default: '100'
+        required: false
+
+jobs:
+  audit:
+    name: Run Opportunity Health & Link Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4 python-dotenv
+
+      - name: Run Audit Script
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          ARGS=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          
+          LIMIT="${{ github.event.inputs.limit || '100' }}"
+          if [ "$LIMIT" = "0" ] || [ "$LIMIT" = "all" ]; then
+            ARGS="$ARGS --check-all"
+          else
+            ARGS="$ARGS --limit $LIMIT"
+          fi
+          
+          echo "Running: python scripts/audit_opportunities.py $ARGS"
+          python scripts/audit_opportunities.py $ARGS

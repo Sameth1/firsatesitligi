@@ -2,6 +2,24 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
+/**
+ * Güvenlik başlıkları — ikinci kat. next.config.ts'teki `headers()` kuralı
+ * proxy'nin ürettiği yanıtlara da uygulanıyor (ölçüldü: /admin'in 307'si
+ * başlıkları taşıyor), yani bu sarmalayıcı bugün gereksiz. Yine de duruyor:
+ * admin yüzeyi clickjacking'e karşı korunması gereken yer ve buradaki 403
+ * gibi yanıtlar proxy'nin kendi ürettiği yanıtlar. next.config.ts'teki
+ * kural değişirse/daralırsa admin yine korumasız kalmasın.
+ * Liste next.config.ts ile aynı tutulmalı.
+ */
+function withSecurityHeaders<T extends NextResponse>(res: T): T {
+  res.headers.set('X-Frame-Options', 'DENY')
+  res.headers.set('Content-Security-Policy', "frame-ancestors 'none'")
+  res.headers.set('X-Content-Type-Options', 'nosniff')
+  res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
+  res.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()')
+  return res
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl
 
@@ -17,9 +35,9 @@ export async function proxy(request: NextRequest) {
         'auth',
         errorCode === 'otp_expired' ? 'otp_expired' : error ?? 'unknown'
       )
-      return NextResponse.redirect(url)
+      return withSecurityHeaders(NextResponse.redirect(url))
     }
-    return NextResponse.next({ request: { headers: request.headers } })
+    return withSecurityHeaders(NextResponse.next({ request: { headers: request.headers } }))
   }
 
   // Only guard /admin routes (except login)
@@ -52,13 +70,13 @@ export async function proxy(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
 
   if (isAuthCallback) {
-    return response
+    return withSecurityHeaders(response)
   }
 
   if (isAdminRoute) {
     if (!user) {
       const loginUrl = new URL('/admin/login', request.url)
-      return NextResponse.redirect(loginUrl)
+      return withSecurityHeaders(NextResponse.redirect(loginUrl))
     }
 
     // Check admin status
@@ -69,11 +87,11 @@ export async function proxy(request: NextRequest) {
       .single()
 
     if (!admin) {
-      return new NextResponse('Yetkisiz: Admin değilsiniz', { status: 403 })
+      return withSecurityHeaders(new NextResponse('Yetkisiz: Admin değilsiniz', { status: 403 }))
     }
   }
 
-  return response
+  return withSecurityHeaders(response)
 }
 
 export const config = {

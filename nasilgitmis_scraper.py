@@ -25,7 +25,7 @@ import re
 import sys
 import time
 import requests
-from datetime import date
+from datetime import date, datetime, timezone
 from dotenv import load_dotenv
 from scrapling.fetchers import Fetcher, StealthyFetcher
 
@@ -435,9 +435,9 @@ def parse_post(url, category_slug):
     # html.unescape eder. Bulunamazsa kaynak yazıya fallback + admin uyarısı
     # (eskiden submission atlanıyordu; artık eklenir ama official_url=kaynak
     # olduğu için işaretlenir).
-    apply_url = reach.extract_apply_link(page, url)
-    if apply_url:
-        submission_url = apply_url
+    route = reach.resolve_application_link(page, url)
+    if route.verified:
+        submission_url = route.application_url
         funding_notes = f"nasilgitmis.com'dan çekildi — kaynak yazı: {url}"
         admin_note = None
     else:
@@ -452,7 +452,16 @@ def parse_post(url, category_slug):
     rec = {
         "title":                title,
         "url":                  submission_url,
+        "details_url":          route.details_url,
         "source_url":           url,
+        "application_route_status": "verified" if route.verified else "unverified",
+        "application_method":   route.application_method,
+        "application_url_verified_at": (
+            datetime.now(timezone.utc).isoformat() if route.verified else None
+        ),
+        "application_url_check_status": route.status_code,
+        "application_url_final": route.final_url,
+        "application_url_evidence": route.evidence,
         "category_slug":        category_slug,
         "deadline_text":        deadline,      # 'YYYY-MM-DD' ya da None (text)
         "host_countries":       host_countries,

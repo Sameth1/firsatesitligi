@@ -34,6 +34,10 @@ Yeni scraper kayıtları `submissions` tablosuna `submission_origin=agent`, `rev
 4. Agent notu görev olarak okur, sayfayı yeniden indirir ve yalnız boş alanları birebir sayfa kanıtıyla doldurur. Dolu alanı değiştirmez, onay/red kararı vermez.
 5. Agent bitirince raporunu ekler ve kayıt yeniden `pending + human_review` olur; son kararı admin verir.
 
+Not: e-posta ile revize hiç çalışmadı — projede mail gönderen kod yok ve
+`submission_revision_tokens` tablosunda 0 satır var. `/revise/[token]` sayfası
+bu yüzden ölü koddur.
+
 ### Agent/scraper gönderisi
 
 1. Agent her `agent_queue` kaydını inceler.
@@ -44,6 +48,51 @@ Yeni scraper kayıtları `submissions` tablosuna `submission_origin=agent`, `rev
 6. Migration 099 temel kapıları, migration 105 ise iki tur + kanıt zorunluluğunu DB içinde tekrar denetler.
 7. Eski tarih, yanlış/eksik bilgi, liste-kaynak sayfası veya doğrudan olmayan link reddedilir. `agent_uncertain` yalnız tarihi güncel, doğrudan hedefi ve bütün alanları doğrulanmış kayıtta açık/kapalı kararı gerçekten çelişkiliyse kullanılır.
 8. Geçici HTTP/LLM hatası admin kuyruğuna gitmez; `agent_queue` içinde yeniden denenir. Agent kaydında Revize yoktur.
+
+## Filtre alanları ve uyruk (109 / 110)
+
+Arama filtresi `match_opportunities` içinde doğru kurulu:
+
+```
+'all' = any(oc.eligible_citizenships) or p_citizenship = any(oc.eligible_citizenships)
+```
+
+Sorun bu kolonların hiç dolmamasıydı. Onay RPC'leri `opportunities`'e INSERT
+ederken `eligible_citizenships`, `target_fields` ve (elle onayda) `study_level`
+alanlarını submission'dan okumak yerine **sabit** `{all}` / `{any}` yazıyordu.
+Sonuç: yalnız Çin/Filistin/Yemen/Afrika vatandaşlarına açık programlar Türkiye
+uyruğuyla arayan kullanıcıya da çıkıyordu (ölçüm: aktif 141 kaydın 127'sinde
+uyruk `{all}`, 134'ünde bölüm `{all}`).
+
+- **109** kanıtı olan kayıtları düzeltti, emin olunamayanları
+  `review_flag='uyruk_belirsiz'` ile admin panelindeki **Belirsizler**'e attı.
+- **110** kaynağı kapattı: `submissions`'a `eligible_citizenships` ve
+  `target_fields` kolonları eklendi, iki onay RPC'si de artık bu alanları
+  submission'dan okuyor (boş/NULL → eskisi gibi `{all}`).
+- Ajan, sayfada **açıkça yazan** uyruk şartını çıkarıp onaydan önce
+  submission'a yazıyor; emin değilse boş bırakıyor. Uyruğu yanlış daraltmak,
+  hiç daraltmamaktan daha zararlıdır — uygun bir adayı sistemden siler.
+- Admin panelinde öneri detayında "Uyruk şartı" alanı elle düzenlenebilir.
+
+### 111 / 112 — kaynaktan doğrulanmış backfill
+
+141 aktif kaydın resmî sayfası tek tek indirildi (111'i alınabildi) ve uyruk,
+bölüm, kademe, yaş kanıtları okundu. Uygulanan kural: **yanlış daraltmak, hiç
+daraltmamaktan zararlıdır.** Daraltma yalnız kaynakta açık şart varken yapılır;
+bir bölüm ailesi yazılırken ailenin BÜTÜN slug'ları birlikte yazılır.
+
+- **111**: 17 kayıtta bölüm/kademe/uyruk kaynağından dolduruldu. 109'da
+  Afreximbank stajını yanlış daralttığım ortaya çıktı (kaynak "non-African
+  students" da kabul ediyor) — geri alındı. Georg Forster kayıtlarının uyruk
+  şüphesi Humboldt'un resmî PDF listesiyle kapandı: **Türkiye listede var**.
+- **112**: yaş sınırı kaydı SESSİZCE gizleyen tek filtre. 33 kaydın 20'sinde
+  sınırın kaynakta hiçbir dayanağı yoktu (`age_max=30/35` kümeleri); bunlar
+  kaldırıldı, yaş sınırlı kayıt 33 → 16'ya indi. Kaynağı da kapatıldı:
+  `scraper_api.py` yaş bulamayınca `age_max = age_max or 30` yazıyordu.
+
+Ajan artık hem uyruk hem bölüm kısıtını sayfadan çıkarıp onaydan önce
+submission'a yazıyor; emin değilse boş bırakıyor. Admin panelinde ikisi de elle
+düzenlenebiliyor.
 
 ## İnsan redlerinden öğrenme
 
@@ -77,7 +126,7 @@ Yeni scraper kayıtları `submissions` tablosuna `submission_origin=agent`, `rev
 
 Uygulanan agent migration'ları: 094, 095, 096, 097, **099, 100 ve iki-tur kapısı**. İki-tur kapısının SQL'i canlı projeye uygulanmıştır; repoda migration 105 olarak tutulur. Migration 106 kör doğruluk testi için hazırlanmıştır ve canlıya uygulanmayı bekler. Migration 098 yalnız eski kullanılmayan görünüm temizliğidir ve henüz uygulanmadı.
 
-Doğrudan link geçmişi: Eski `official_url=kaynak yazı` hatası için `audit_apply_links.py` ve `backfill_apply_links.py` yazılmıştı. Youthop ve Nasıl Gitmiş scraper'ları dış Apply linkini çıkarmaya başlamıştı; ancak kaynak ile hedef ayrı DB alanlarında tutulmuyordu. Migration 100 ve güncel scraper'lar bu ayrımı kalıcı hale getirir. Agent hedef linki kontrol ederken tarih/kategori kanıtını ayrı kaynak sayfasından okuyabilir.
+Doğrudan link geçmişi: Eski `official_url=kaynak yazı` hatası için `audit_apply_links.py` ve `backfill_apply_links.py` yazılmıştı. Migration 114 ile üç adres ayrılır: `source_url` keşif kaynağı, `details_url` resmî koşul sayfası, `official_url` gerçek başvuru aksiyonu. En fazla iki adım izleyen çözücü yalnız doğrulanmış form/portal/e-posta/belgeyi “Başvur” olarak işaretler. Eski kayıtlar silinmez; doğrulanana kadar kartta “Koşulları Gör” görünür. Yeni submission doğrulanmış rota olmadan onaylanamaz. Migration 114 henüz canlıya uygulanmadı; `backfill_apply_links.py` varsayılan olarak salt-okunur rapordur.
 
 Migration 097 sonrası doğrulanan canlı durum:
 
@@ -98,7 +147,7 @@ Migration 097 sonrası doğrulanan canlı durum:
 
 ## Kod ve PR durumu
 
-- PR [#40](https://github.com/Sameth1/firsatesitligi/pull/40)–[#45](https://github.com/Sameth1/firsatesitligi/pull/45) `master` dalına merge edildi.
+- PR [#40](https://github.com/Sameth1/firsatesitligi/pull/40)–[#45](https://github.com/Sameth1/firsatesitligi/pull/45) `master` dalına merge edildi. PR #47 açık ve CI temizdir; bu çalışma onun üstünden başlayan `codex/direct-application-links` dalındadır.
 - Kör doğruluk testi PR #42 ile merge edildi; migration 106 henüz canlıya uygulanmadı.
 - Revize e-posta/token yolu migration 108 sonrasında kullanılmaz; bildirim Edge Function'ı canlıya alınmadı.
 

@@ -1,5 +1,6 @@
 import json
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 import validate_submissions as validator
@@ -15,6 +16,11 @@ def complete_submission():
         "funding_type": "full",
         "eligibility_notes": "Lisans öğrencileri programa başvurabilir.",
         "study_level": ["undergraduate"],
+        "details_url": "https://example.org/program",
+        "application_route_status": "verified",
+        "application_method": "portal",
+        "application_url_verified_at": datetime.now(timezone.utc).isoformat(),
+        "application_url_final": "https://example.org/program/apply",
     }
 
 
@@ -42,6 +48,8 @@ def verdict_with_quotes(page_text):
         "finansman": "Fully funded",
         "ulke": "Hosted in Germany",
         "uygunluk": "Bachelor students may apply",
+        "uyruk": "",
+        "bolum": "",
     }
     return verdict
 
@@ -446,6 +454,186 @@ class AgentEvaluationTests(unittest.TestCase):
             submission["_agent_eval_decision"],
             {"eylem": "reddet", "gerekce": "Eksik tarih"},
         )
+
+
+class CitizenshipTests(unittest.TestCase):
+    """106/107: uyruk şartı — yanlış daraltmak hiç daraltmamaktan zararlı."""
+
+    def test_valid_codes_are_kept_uppercased_and_deduped(self):
+        self.assertEqual(validator.clean_citizenships(['cn', 'CN', 'ps']), ['CN', 'PS'])
+
+    def test_no_restriction_markers_mean_none(self):
+        for value in (None, ['all'], ['worldwide'], ['ANY'], []):
+            with self.subTest(value=value):
+                self.assertIsNone(validator.clean_citizenships(value))
+
+    def test_country_names_are_not_accepted_as_codes(self):
+        self.assertIsNone(validator.clean_citizenships(['China', 'Türkiye']))
+
+    def test_unknown_two_letter_code_is_not_accepted(self):
+        self.assertIsNone(validator.clean_citizenships(['ZZ']))
+
+    def test_restriction_requires_a_verbatim_quote(self):
+        page = "Only citizens of China may apply. Scholarship programme."
+        verdict = verdict_with_quotes(page)
+        verdict['uyruk_kisiti'] = ['CN']
+
+        self.assertIn(
+            "uyruk kısıtı alıntısı eksik",
+            validator.evidence_quote_blockers(page, verdict),
+        )
+        verdict['kanitlar']['uyruk'] = "Only citizens of China may apply"
+        self.assertNotIn(
+            "uyruk kısıtı alıntısı eksik",
+            validator.evidence_quote_blockers(page, verdict),
+        )
+
+    def test_verdict_carries_citizenship_restriction(self):
+        verdict = high_confidence_verdict()
+        verdict['uyruk_kisiti'] = ['CN']
+        self.assertEqual(validator._parse_verdict(json.dumps(verdict))['uyruk_kisiti'], ['CN'])
+
+    def test_verdict_without_the_field_is_unrestricted(self):
+        self.assertIsNone(
+            validator._parse_verdict(json.dumps(high_confidence_verdict()))['uyruk_kisiti'])
+
+    @patch('validate_submissions.requests.post')
+    @patch('validate_submissions.requests.patch')
+    def test_restriction_is_written_before_the_approval_rpc(self, http_patch, http_post):
+        http_post.return_value.status_code = 200
+        http_post.return_value.json.return_value = {'opportunity_id': 'opp-1'}
+        verdict = high_confidence_verdict()
+        verdict['uyruk_kisiti'] = ['CN']
+
+        ok, _ = validator.approve_submission({'id': 'sub-1'}, verdict, dry_run=False)
+
+        self.assertTrue(ok)
+        self.assertEqual(http_patch.call_args.kwargs['json'],
+                         {'eligible_citizenships': ['CN']})
+        http_post.assert_called_once()
+
+    @patch('validate_submissions.requests.post')
+    @patch('validate_submissions.requests.patch')
+    def test_approval_is_abandoned_if_the_restriction_cannot_be_written(self, http_patch, http_post):
+        # Uyruk yazılamadıysa kayıt {all} ile yayına girmemeli.
+        http_patch.side_effect = validator.requests.exceptions.RequestException('boom')
+        verdict = high_confidence_verdict()
+        verdict['uyruk_kisiti'] = ['PS']
+
+        ok, detay = validator.approve_submission({'id': 'sub-1'}, verdict, dry_run=False)
+
+        self.assertFalse(ok)
+        self.assertIn('yazılamadı', detay)
+        http_post.assert_not_called()
+
+    @patch('validate_submissions.requests.post')
+    @patch('validate_submissions.requests.patch')
+    def test_unrestricted_record_is_approved_without_extra_write(self, http_patch, http_post):
+        http_post.return_value.status_code = 200
+        http_post.return_value.json.return_value = {'opportunity_id': 'opp-1'}
+
+        ok, _ = validator.approve_submission({'id': 'sub-1'}, high_confidence_verdict(),
+                                             dry_run=False)
+
+        self.assertTrue(ok)
+        http_patch.assert_not_called()
+
+    def test_field_restriction_is_written_too(self):
+        with patch('validate_submissions.requests.post') as http_post, \
+             patch('validate_submissions.requests.patch') as http_patch:
+            http_post.return_value.status_code = 200
+            http_post.return_value.json.return_value = {'opportunity_id': 'opp-1'}
+            verdict = high_confidence_verdict()
+            verdict['uyruk_kisiti'] = ['CN']
+            verdict['bolum_kisiti'] = ['medicine', 'nursing']
+
+            validator.approve_submission({'id': 'sub-1'}, verdict, dry_run=False)
+
+            self.assertEqual(http_patch.call_args.kwargs['json'], {
+                'eligible_citizenships': ['CN'],
+                'target_fields': ['medicine', 'nursing'],
+            })
+
+    def test_unknown_field_slugs_are_dropped(self):
+        # UI'da olmayan bir slug yazmak kaydı o bölümü seçenden gizlerdi.
+        self.assertEqual(validator.clean_fields(['medicine', 'uydurma_bolum']), ['medicine'])
+        self.assertIsNone(validator.clean_fields(['all']))
+        self.assertIsNone(validator.clean_fields(['hepsi', 'xyz']))
+
+    def test_revision_fills_filters_only_when_empty(self):
+        """Revize akışı boş uyruk/bölümü doldurabilir, doluyu ASLA ezmez."""
+        sayfa = "Only citizens of China may apply. Open to medicine students."
+        sonuc = {
+            "fields": {"eligible_citizenships": ["cn"], "target_fields": ["medicine"]},
+            "evidence": {
+                "eligible_citizenships": "Only citizens of China may apply.",
+                "target_fields": "Open to medicine students.",
+            },
+        }
+
+        bos = {"eligible_citizenships": [], "target_fields": []}
+        patch = validator.build_agent_revision_patch(bos, sonuc, sayfa)
+        self.assertEqual(patch["eligible_citizenships"], ["CN"])
+        self.assertEqual(patch["target_fields"], ["medicine"])
+
+        dolu = {"eligible_citizenships": ["TR"], "target_fields": ["law"]}
+        patch = validator.build_agent_revision_patch(dolu, sonuc, sayfa)
+        self.assertNotIn("eligible_citizenships", patch)
+        self.assertNotIn("target_fields", patch)
+
+    def test_revision_drops_filter_values_without_page_evidence(self):
+        # Kanıt alıntısı sayfada geçmiyorsa öneri düşer — uydurulmuş bir uyruk
+        # kısıtı, uygun bir adayı sonuçlardan silerdi.
+        patch = validator.build_agent_revision_patch(
+            {"eligible_citizenships": []},
+            {"fields": {"eligible_citizenships": ["CN"]},
+             "evidence": {"eligible_citizenships": "sayfada olmayan cumle"}},
+            "Bu sayfada uyruk sarti yok.",
+        )
+        self.assertEqual(patch, {})
+
+
+class SsrfGuardTests(unittest.TestCase):
+    """Ajan servis anahtarıyla çalışıyor ve indireceği URL'i yabancı belirliyor."""
+
+    def test_internal_addresses_are_blocked(self):
+        for url in (
+            "http://169.254.169.254/latest/meta-data/",   # bulut metadata
+            "http://127.0.0.1/",
+            "http://localhost:8080/x",
+            "http://[::1]/",
+            "http://10.0.0.5/",
+            "http://192.168.1.1/",
+            "http://metadata.google.internal/",
+            "http://kayit.internal/",
+            "file:///etc/passwd",
+        ):
+            with self.subTest(url=url):
+                ok, _ = validator.is_public_http_url(url)
+                self.assertFalse(ok)
+
+    def test_real_public_urls_pass(self):
+        for url in ("https://www.daad.de/en/", "https://erasmus-plus.ec.europa.eu/"):
+            with self.subTest(url=url):
+                ok, sebep = validator.is_public_http_url(url)
+                self.assertTrue(ok, sebep)
+
+    def test_redirect_into_internal_network_is_not_followed(self):
+        """attacker.com → 302 → 169.254.169.254 açığı: yönlendirme de süzülmeli."""
+        class Cevap:
+            def __init__(self, code, loc=None, text="ok"):
+                self.status_code = code
+                self.headers = {"location": loc} if loc else {}
+                self.text = text
+
+        cevaplar = [Cevap(302, "http://169.254.169.254/latest/meta-data/"),
+                    Cevap(200, None, "SIZAN-GIZLI-VERI")]
+        with patch.object(validator.requests, "get", side_effect=cevaplar):
+            status, _final, html, err = validator.fetch_page("https://www.daad.de/tuzak")
+
+        self.assertIsNone(status)
+        self.assertIsNone(html)
+        self.assertIn("engellendi", err)
 
 
 if __name__ == "__main__":

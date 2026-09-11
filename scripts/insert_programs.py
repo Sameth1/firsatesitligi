@@ -38,7 +38,7 @@ PROGRAMS = [
         "deadline_notes": "Türkiye Japonya Büyükelçiliği üzerinden Mayıs–Haziran aylarında başvurulur",
         "host_countries": ["JP"], "target_countries": ["TR"], "eligible_citizenships": ["TR"],
         "target_fields": ["all"], "study_level": ["bachelor", "master", "phd"],
-        "age_min": 18, "age_max": 35,
+        "age_min": None, "age_max": None,  # MEXT: yaş sınırı programa göre değişiyor
         "language_requirement": "Japonca veya İngilizce",
         "eligibility_notes": "Japonya Büyükelçiliği kanalıyla başvurulur. Lisans, yüksek lisans ve doktora programları için ayrı kategoriler mevcuttur.",
         "funding_type": "full",
@@ -53,7 +53,7 @@ PROGRAMS = [
         "deadline_notes": "Büyükelçilik veya üniversite kanalıyla Şubat–Mart ayında başvurulur",
         "host_countries": ["KR"], "target_countries": ["all"], "eligible_citizenships": ["all"],
         "target_fields": ["all"], "study_level": ["bachelor", "master", "phd"],
-        "age_min": 18, "age_max": 34,
+        "age_min": None, "age_max": None,  # GKS: yaş sınırı programa göre değişiyor
         "language_requirement": "Korece (TOPIK) veya İngilizce",
         "eligibility_notes": "147 ülkeden başvuru alınır. Büyükelçilik ya da doğrudan üniversite kanalıyla başvurulabilir. 1 yıllık hazırlık Korece kursu dahildir.",
         "funding_type": "full",
@@ -130,7 +130,7 @@ PROGRAMS = [
         "host_countries": ["CH"], "target_countries": ["all"], "eligible_citizenships": ["all"],
         "target_fields": ["physics","computer_science","electrical_engineering","mathematics","mechanical_engineering"],
         "study_level": ["bachelor", "master"],
-        "age_min": 18, "age_max": 31,
+        "age_min": None, "age_max": None,  # CERN yaz öğrencisinde yaş sınırı yok
         "language_requirement": "İngilizce",
         "eligibility_notes": "Fizik, bilgisayar veya mühendislikte en az 3 yıl lisans eğitimi tamamlanmış olmalıdır. 8–13 haftalık program; CERN üye ülke şartı aranmaz.",
         "funding_type": "stipend",

@@ -139,7 +139,11 @@ def build_post_record(response, category_slug: str) -> dict | None:
         "deadline_text":        deadline,
         "host_countries":       [ng.extract_country(combined)],
         "age_min":              age_min,
-        "age_max":              age_max or 30,
+        # Yaş bulunamazsa NULL. Eskiden burada `age_max or 30` vardı ve bu,
+        # ilanda yaş şartı olmayan kayıtlara 30 uyduruyordu: 31 yaşındaki uygun
+        # bir aday sonuçlarda o fırsatı HİÇ göremiyordu (canlıda 17 kayıt böyleydi,
+        # bkz. 109). Aynı düzeltme nasilgitmis_scraper.py'de zaten yapılmıştı.
+        "age_max":              age_max,
         "language_requirement": "Türkçe / İngilizce",
         "eligibility_notes":    ng.truncate_at_word(content, 600) if content else None,
         "funding_type":         ng.slug_to_funding_type(category_slug),

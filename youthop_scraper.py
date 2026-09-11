@@ -178,7 +178,7 @@ def has_next_page(list_page, next_n):
 
 # ─── Detay parse ──────────────────────────────────────────────────────────────
 
-def build_record(base, detail_url, category_slug, apply_link):
+def build_record(base, detail_url, category_slug, apply_link=None):
     """reach.extract_fields çıktısını (base) nasilgitmis submission şekline uyarlar.
     extract_fields title/deadline/country/funding/eligibility/description'ı zaten
     çıkardı; burada youthop'a özgü alanları (kaynak notu, dil, status) ekliyoruz."""
@@ -187,8 +187,15 @@ def build_record(base, detail_url, category_slug, apply_link):
     # url = gerçek dış başvuru linki; bulunamazsa kaynak sayfa + admin uyarısı.
     rec = {
         "title":                base["title"],
-        "url":                  apply_link or detail_url,
+        "url":                  base.get("url") or detail_url,
+        "details_url":          base.get("details_url") or detail_url,
         "source_url":           detail_url,
+        "application_route_status": base.get("application_route_status", "unverified"),
+        "application_method":   base.get("application_method"),
+        "application_url_verified_at": base.get("application_url_verified_at"),
+        "application_url_check_status": base.get("application_url_check_status"),
+        "application_url_final": base.get("application_url_final"),
+        "application_url_evidence": base.get("application_url_evidence"),
         "category_slug":        category_slug,        # None olabilir (güvenli)
         "deadline_text":        base.get("deadline_text"),
         "host_countries":       base.get("host_countries") or [],
@@ -208,9 +215,8 @@ def build_record(base, detail_url, category_slug, apply_link):
         "submission_origin":    "agent",
         "review_stage":         "agent_queue",
     }
-    if not apply_link:
-        rec["admin_note"] = ("[uyarı] dış başvuru linki bulunamadı, "
-                             "kaynak sayfaya yönlendiriyor")
+    if not base.get("application_url_verified_at"):
+        rec["admin_note"] = "[uyarı] doğrulanmış doğrudan başvuru adımı bulunamadı"
     return rec
 
 
@@ -236,9 +242,7 @@ def process_detail(detail_url, dry_run, stats):
         print(f"  🚫 soft-404: {base['title']}")
         return
 
-    # Gerçek dış başvuru linki (youthop /link?u= decode); yoksa kaynağa fallback.
-    apply_link = reach.extract_apply_link(page, detail_url)
-    record = build_record(base, detail_url, category_slug, apply_link)
+    record = build_record(base, detail_url, category_slug)
 
     if dry_run:
         stats["previewed"] += 1

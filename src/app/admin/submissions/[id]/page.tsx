@@ -23,8 +23,14 @@ interface Submission {
   id: string
   title: string
   url: string
+  source_url: string | null
+  details_url: string | null
+  application_route_status: 'verified' | 'unverified' | 'missing'
+  application_method: 'online_form' | 'portal' | 'email' | 'document' | null
   category_slug: string | null
   host_countries: string[]
+  eligible_citizenships: string[] | null
+  target_fields: string[] | null
   deadline_text: string | null
   funding_type: string | null
   funding_notes: string | null
@@ -64,8 +70,13 @@ export default function SubmissionDetailPage({
   // Editable fields
   const [title, setTitle] = useState('')
   const [url, setUrl] = useState('')
+  const [detailsUrl, setDetailsUrl] = useState('')
+  const [applicationMethod, setApplicationMethod] = useState<Submission['application_method']>('portal')
+  const [routeVerified, setRouteVerified] = useState(false)
   const [categorySlug, setCategorySlug] = useState<string | null>(null)
   const [hostCountries, setHostCountries] = useState('')
+  const [citizenships, setCitizenships] = useState('')
+  const [targetFields, setTargetFields] = useState('')
   const [deadlineText, setDeadlineText] = useState('')
   const [fundingType, setFundingType] = useState<string | null>(null)
   const [fundingNotes, setFundingNotes] = useState('')
@@ -87,8 +98,13 @@ export default function SubmissionDetailPage({
         setSub(s)
         setTitle(s.title)
         setUrl(s.url)
+        setDetailsUrl(s.details_url ?? s.source_url ?? s.url)
+        setApplicationMethod(s.application_method ?? 'portal')
+        setRouteVerified(s.application_route_status === 'verified')
         setCategorySlug(s.category_slug)
         setHostCountries(s.host_countries?.join(', ') ?? '')
+        setCitizenships(s.eligible_citizenships?.join(', ') ?? '')
+        setTargetFields(s.target_fields?.join(', ') ?? '')
         setDeadlineText(s.deadline_text ?? '')
         setFundingType(s.funding_type)
         setFundingNotes(s.funding_notes ?? '')
@@ -115,8 +131,23 @@ export default function SubmissionDetailPage({
       .update({
         title,
         url,
+        details_url: detailsUrl || url,
+        application_route_status: routeVerified ? 'verified' : 'unverified',
+        application_method: routeVerified ? applicationMethod : null,
+        application_url_verified_at: routeVerified ? new Date().toISOString() : null,
+        application_url_final: routeVerified ? url : null,
+        application_url_evidence: routeVerified ? 'İnsan admin bağlantıyı açarak doğruladı' : null,
         category_slug: categorySlug,
         host_countries: hostCountries ? hostCountries.split(',').map(s => s.trim().toUpperCase()) : [],
+        // 107: onay RPC'si bu iki alanı submission'dan okuyor. Boş = kısıt yok
+        // ({all} yazılır). Yanlış daraltmak, o uyruğu/bölümü seçen uygun bir
+        // adayı sonuçlardan siler — emin değilsen boş bırak.
+        eligible_citizenships: citizenships
+          ? citizenships.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
+          : null,
+        target_fields: targetFields
+          ? targetFields.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+          : null,
         deadline_text: deadlineText || null,
         funding_type: fundingType,
         funding_notes: fundingNotes || null,
@@ -253,8 +284,32 @@ export default function SubmissionDetailPage({
           <Label text="Başlık" />
           <input value={title} onChange={e => setTitle(e.target.value)} style={{ ...inputStyle, marginBottom: 12 }} />
 
-          <Label text="URL" />
+          <Label text="Doğrudan başvuru URL'si" />
           <input value={url} onChange={e => setUrl(e.target.value)} style={{ ...inputStyle, marginBottom: 12 }} />
+
+          <Label text="Resmî bilgi / koşullar URL'si" />
+          <input value={detailsUrl} onChange={e => setDetailsUrl(e.target.value)} style={{ ...inputStyle, marginBottom: 12 }} />
+
+          <Label text="Başvuru yöntemi" />
+          <select
+            value={applicationMethod ?? 'portal'}
+            onChange={e => setApplicationMethod(e.target.value as Submission['application_method'])}
+            style={{ ...inputStyle, marginBottom: 10 }}
+          >
+            <option value="portal">Başvuru portalı</option>
+            <option value="online_form">Online form</option>
+            <option value="email">E-posta</option>
+            <option value="document">İndirilebilir form</option>
+          </select>
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 14, fontSize: 12, color: '#555' }}>
+            <input
+              type="checkbox"
+              checked={routeVerified}
+              onChange={e => setRouteVerified(e.target.checked)}
+              style={{ marginTop: 2 }}
+            />
+            Bu bağlantıyı açtım; kullanıcı doğrudan başvuruyu başlatabiliyor.
+          </label>
 
           <Label text="Kategori" />
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -283,6 +338,27 @@ export default function SubmissionDetailPage({
             <div>
               <Label text="Son başvuru" />
               <input value={deadlineText} onChange={e => setDeadlineText(e.target.value)} placeholder="15 Eylül 2026" style={inputStyle} />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+            <div>
+              <Label text="Uyruk şartı (ISO, virgülle)" />
+              <input
+                value={citizenships}
+                onChange={e => setCitizenships(e.target.value)}
+                placeholder="CN, PS · boş = şart yok"
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <Label text="Bölüm kısıtı (slug, virgülle)" />
+              <input
+                value={targetFields}
+                onChange={e => setTargetFields(e.target.value)}
+                placeholder="medicine, nursing · boş = kısıt yok"
+                style={inputStyle}
+              />
             </div>
           </div>
 
