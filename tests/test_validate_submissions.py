@@ -593,5 +593,48 @@ class CitizenshipTests(unittest.TestCase):
         self.assertEqual(patch, {})
 
 
+class SsrfGuardTests(unittest.TestCase):
+    """Ajan servis anahtarıyla çalışıyor ve indireceği URL'i yabancı belirliyor."""
+
+    def test_internal_addresses_are_blocked(self):
+        for url in (
+            "http://169.254.169.254/latest/meta-data/",   # bulut metadata
+            "http://127.0.0.1/",
+            "http://localhost:8080/x",
+            "http://[::1]/",
+            "http://10.0.0.5/",
+            "http://192.168.1.1/",
+            "http://metadata.google.internal/",
+            "http://kayit.internal/",
+            "file:///etc/passwd",
+        ):
+            with self.subTest(url=url):
+                ok, _ = validator.is_public_http_url(url)
+                self.assertFalse(ok)
+
+    def test_real_public_urls_pass(self):
+        for url in ("https://www.daad.de/en/", "https://erasmus-plus.ec.europa.eu/"):
+            with self.subTest(url=url):
+                ok, sebep = validator.is_public_http_url(url)
+                self.assertTrue(ok, sebep)
+
+    def test_redirect_into_internal_network_is_not_followed(self):
+        """attacker.com → 302 → 169.254.169.254 açığı: yönlendirme de süzülmeli."""
+        class Cevap:
+            def __init__(self, code, loc=None, text="ok"):
+                self.status_code = code
+                self.headers = {"location": loc} if loc else {}
+                self.text = text
+
+        cevaplar = [Cevap(302, "http://169.254.169.254/latest/meta-data/"),
+                    Cevap(200, None, "SIZAN-GIZLI-VERI")]
+        with patch.object(validator.requests, "get", side_effect=cevaplar):
+            status, _final, html, err = validator.fetch_page("https://www.daad.de/tuzak")
+
+        self.assertIsNone(status)
+        self.assertIsNone(html)
+        self.assertIn("engellendi", err)
+
+
 if __name__ == "__main__":
     unittest.main()

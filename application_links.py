@@ -154,31 +154,44 @@ def _public_http_url(url: str) -> bool:
 
 
 def fetch_url(url: str) -> FetchResult:
-    """Sınırlı, SSRF-korumalı GET. Büyük dosyaları belleğe taşımaz."""
-    if not _public_http_url(url):
-        return FetchResult(None, url, "", error="public HTTP(S) adresi değil")
+    """Sınırlı, SSRF-korumalı GET; her yönlendirme hedefi yeniden süzülür."""
+    current = url
     try:
-        response = requests.get(
-            url,
-            headers={"User-Agent": "Mozilla/5.0 (compatible; FirsatEsitligiLinkVerifier/1.0)"},
-            timeout=20,
-            allow_redirects=True,
-            stream=True,
-        )
-        content_type = response.headers.get("content-type", "").lower()
-        if "text/" in content_type or "html" in content_type or not content_type:
-            chunks, size = [], 0
-            for chunk in response.iter_content(65536):
-                size += len(chunk)
-                if size > 2_000_000:
-                    break
-                chunks.append(chunk)
-            body = b"".join(chunks).decode(response.encoding or "utf-8", errors="replace")
-        else:
-            body = ""
-        return FetchResult(response.status_code, response.url, body, content_type)
+        for _ in range(6):
+            if not _public_http_url(current):
+                return FetchResult(None, current, "", error="public HTTP(S) adresi değil")
+            response = requests.get(
+                current,
+                headers={"User-Agent": "Mozilla/5.0 (compatible; FirsatEsitligiLinkVerifier/1.0)"},
+                timeout=20,
+                allow_redirects=False,
+                stream=True,
+            )
+            if response.status_code in (301, 302, 303, 307, 308):
+                location = response.headers.get("location")
+                response.close()
+                if not location:
+                    return FetchResult(response.status_code, current, "", error="yönlendirme hedefi yok")
+                current = urljoin(current, location)
+                continue
+
+            content_type = response.headers.get("content-type", "").lower()
+            if "text/" in content_type or "html" in content_type or not content_type:
+                chunks, size = [], 0
+                for chunk in response.iter_content(65536):
+                    size += len(chunk)
+                    if size > 2_000_000:
+                        break
+                    chunks.append(chunk)
+                body = b"".join(chunks).decode(response.encoding or "utf-8", errors="replace")
+            else:
+                body = ""
+            final_url = current
+            response.close()
+            return FetchResult(response.status_code, final_url, body, content_type)
+        return FetchResult(None, current, "", error="çok fazla yönlendirme")
     except requests.RequestException as exc:
-        return FetchResult(None, url, "", error=str(exc)[:200])
+        return FetchResult(None, current, "", error=str(exc)[:200])
 
 
 def _method_for(url: str) -> str:

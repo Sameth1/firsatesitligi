@@ -53,6 +53,8 @@ AUDIT MODU — --audit-opportunities:
 """
 
 import argparse
+import ipaddress
+import socket
 import html
 import json
 import os
@@ -62,7 +64,7 @@ import time
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from urllib.parse import parse_qsl, urlencode, urlsplit
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlsplit
 
 import requests
 from bs4 import BeautifulSoup
@@ -983,24 +985,91 @@ def parse_deadline(text):
         return None
 
 
+# ─── SSRF koruması ────────────────────────────────────────────────────────────
+# Bu script SERVİS ANAHTARIYLA çalışıyor ve indirdiği URL'i bir YABANCI
+# belirliyor (öneri formu). Koruma olmadan saldırgan, ajana bulut metadata
+# servisini (169.254.169.254) veya iç ağdaki bir adresi getirtebilir; gelen
+# metin de kayda, onaylanırsa herkese açık fırsat satırına düşer.
+# Frontend'deki assertPublicHttpUrl ilk adresi süzüyor ama YÖNLENDİRME
+# süzmüyordu: attacker.com → 302 → 169.254.169.254 açığı burada kapanıyor.
+
+PRIVATE_NETS = [
+    ipaddress.ip_network(n) for n in (
+        "0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8",
+        "169.254.0.0/16", "172.16.0.0/12", "192.168.0.0/16", "224.0.0.0/4",
+        "::1/128", "::/128", "fc00::/7", "fe80::/10", "ff00::/8",
+    )
+]
+BLOCKED_HOST_SUFFIXES = (".local", ".internal", ".localhost")
+BLOCKED_HOSTS = {"localhost", "metadata", "metadata.google.internal", "instance-data"}
+
+
+def is_public_http_url(url):
+    """URL herkese açık bir http(s) adresi mi? (ok: bool, sebep: str|None)
+
+    Ad çözümlemesi yapılır: alan adı özel bir IP'ye çözülüyorsa (DNS rebinding)
+    da engellenir. Çözülemeyen ad güvenli tarafta kalmak için reddedilir."""
+    try:
+        parts = urlparse(url)
+    except ValueError:
+        return False, "URL çözümlenemedi"
+    if parts.scheme not in ("http", "https"):
+        return False, f"yalnız http/https ({parts.scheme or 'şemasız'})"
+    host = (parts.hostname or "").strip().lower()
+    if not host:
+        return False, "host yok"
+    if host in BLOCKED_HOSTS or host.endswith(BLOCKED_HOST_SUFFIXES):
+        return False, f"iç ağ adı engellendi ({host})"
+    try:
+        infos = socket.getaddrinfo(host, parts.port or (443 if parts.scheme == "https" else 80),
+                                   proto=socket.IPPROTO_TCP)
+    except (socket.gaierror, UnicodeError, ValueError) as e:
+        return False, f"ad çözümlenemedi ({e})"
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return False, "IP çözümlenemedi"
+        if any(ip in net for net in PRIVATE_NETS):
+            return False, f"özel/iç ağ adresi engellendi ({ip})"
+    return True, None
+
+
+MAX_REDIRECTS = 5
+
+
 def fetch_page(url):
-    """(status_code|None, final_url, html|None, error|None)."""
+    """(status_code|None, final_url, html|None, error|None).
+
+    Yönlendirmeler ELLE izlenir; her adım is_public_http_url'den geçer."""
     last_error = None
     for attempt in range(3):
+        current = url
         try:
-            res = requests.get(
-                url, headers=HTTP_HEADERS, timeout=20, allow_redirects=True
-            )
+            for _ in range(MAX_REDIRECTS + 1):
+                ok, sebep = is_public_http_url(current)
+                if not ok:
+                    return None, current, None, f"engellendi: {sebep}"
+                res = requests.get(current, headers=HTTP_HEADERS, timeout=20,
+                                   allow_redirects=False)
+                if res.status_code in (301, 302, 303, 307, 308):
+                    nxt = res.headers.get("location")
+                    if not nxt:
+                        return res.status_code, current, res.text, None
+                    current = urljoin(current, nxt)
+                    continue
+                if res.status_code in (429, 500, 502, 503, 504) and attempt < 2:
+                    break                        # dış döngü yeniden denesin
+                return res.status_code, current, res.text, None
+            else:
+                return None, current, None, "çok fazla yönlendirme"
         except requests.exceptions.RequestException as e:
             last_error = str(e)
             if attempt < 2:
                 time.sleep(attempt + 1)
                 continue
-            return None, url, None, last_error
-        if res.status_code in (429, 500, 502, 503, 504) and attempt < 2:
-            time.sleep(2 * (attempt + 1))
-            continue
-        return res.status_code, res.url, res.text, None
+            return None, current, None, last_error
+        time.sleep(2 * (attempt + 1))
     return None, url, None, last_error or "sayfa alınamadı"
 
 

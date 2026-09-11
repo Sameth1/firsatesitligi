@@ -1,6 +1,7 @@
 import unittest
+from unittest.mock import Mock, patch
 
-from application_links import FetchResult, resolve_application_route
+from application_links import FetchResult, fetch_url, resolve_application_route
 
 
 def map_fetcher(pages):
@@ -15,6 +16,18 @@ def map_fetcher(pages):
 
 
 class ApplicationRouteTests(unittest.TestCase):
+    @patch("application_links.requests.get")
+    @patch("application_links._public_http_url", side_effect=[True, False])
+    def test_redirect_to_private_network_is_blocked(self, _public, get):
+        response = Mock(status_code=302, headers={"location": "http://127.0.0.1/secret"})
+        get.return_value = response
+
+        result = fetch_url("https://public.example/start")
+
+        self.assertIsNone(result.status)
+        self.assertIn("public HTTP", result.error)
+        get.assert_called_once()
+
     def test_follows_official_details_then_direct_apply(self):
         source = '<a href="https://official.test/program">Official website</a>'
         pages = {
