@@ -98,9 +98,17 @@ Migration 097 sonrası doğrulanan canlı durum:
 
 ## Kod ve PR durumu
 
-- PR [#40](https://github.com/Sameth1/firsatesitligi/pull/40) ve [#41](https://github.com/Sameth1/firsatesitligi/pull/41) `master` dalına merge edildi.
-- Kör doğruluk testi çalışması: `codex/agent-accuracy-eval`.
+- PR [#40](https://github.com/Sameth1/firsatesitligi/pull/40), [#41](https://github.com/Sameth1/firsatesitligi/pull/41) ve [#42](https://github.com/Sameth1/firsatesitligi/pull/42) `master` dalına merge edildi.
+- Kör doğruluk testi PR #42 ile merge edildi; migration 106 henüz canlıya uygulanmadı.
 - `supabase/functions/notify-submission/index.ts` içindeki yeni güvenli revize e-postası kodu ayrıca Supabase Edge Function olarak deploy edilmelidir. Bunu frontend merge ile aynı anda yapmak gerekir.
+
+## Öneri formu ve revize altyapısı
+
+- Form yalnız `/api/submit-opportunity` route'una gider; doğrudan Supabase fallback'i güvenlik nedeniyle yoktur.
+- Canlı Vercel route'u 11 Eylül 2026'da gerçek istekle kontrol edildi ve `SUPABASE_SERVICE_ROLE_KEY` eksik olduğu için 503 döndü. Secret Production kapsamına eklenmeden bu değişiklik canlıya alınmamalıdır.
+- Migration 107, aynı IP'deki eşzamanlı istekleri advisory lock ile sıraya alır ve anon doğrudan INSERT politikalarını kapatır. Route çalıştığı doğrulandıktan sonra uygulanmalıdır.
+- `/revise/[token]` ölü kod değildir: PR #40'taki tasarım, `notify-submission` Edge Function'ının tek kullanımlık token üretip e-posta göndermesine dayanır. Edge Function deployu, webhook başlığı ve Resend ayarları doğrulanmadan akış tamamlanmış sayılmaz.
+- Edge Function, `SUBMISSION_WEBHOOK_SECRET` başlığını zorunlu tutar; webhook içeriği yerine gerçek submission'ı DB'den tekrar okur ve e-posta HTML'inde kullanıcı girdilerini escape eder.
 
 ## Son doğrulamalar
 
@@ -119,10 +127,10 @@ Migration 097 sonrası doğrulanan canlı durum:
 
 ## Sonraki güvenli adım
 
-1. Migration 106'yı canlı Supabase'e uygula.
-2. 40 kayıtlık kör test kümesini üret ve adminin `/admin/agent-eval` ekranında etiketlemesini bekle.
-3. Yanlış onay hedefi `0`; sonuçlara göre agent eşiklerini kanıta dayalı ayarla.
-4. Rapordaki eski 30 süresi geçmiş fırsatı pasifleştir; 64 kaydı ayrıca incele.
+1. Vercel Production'a `SUPABASE_SERVICE_ROLE_KEY` ekle ve yeniden deploy et.
+2. Route'un 503 yerine beklenen 400/201 cevabını verdiğini doğrula; ardından migration 107'yi uygula.
+3. `notify-submission` için `RESEND_API_KEY`, `APP_URL`, `ADMIN_NOTIFY_FROM` ve `SUBMISSION_WEBHOOK_SECRET` ayarla; aynı secret'ı Database Webhook başlığına ekleyip Edge Function'ı deploy et.
+4. Migration 106'yı uygula ve 40 kayıtlık kör agent testini başlat.
 
 ## Çalışma ilkesi
 

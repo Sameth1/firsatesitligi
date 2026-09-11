@@ -18,9 +18,21 @@ import { assertPublicHttpUrl } from '@/lib/url-safety'
 // Bu route istek başlıklarını okuyor; statik olarak önceden üretilemez.
 export const dynamic = 'force-dynamic'
 
+const VALID_CATEGORIES = new Set([
+  'scholarship', 'volunteering', 'youth_project',
+  'internship', 'summer_school', 'exchange',
+])
+const VALID_FUNDING_TYPES = new Set(['full', 'partial', 'free', 'stipend'])
+
+function optionalText(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  return value.trim() || null
+}
+
 /** Vercel x-forwarded-for'u kendisi yazar; ilk değer gerçek istemcidir. */
 function clientIp(req: Request): string | null {
-  const xff = req.headers.get('x-forwarded-for')
+  const xff = req.headers.get('x-vercel-forwarded-for')
+    || req.headers.get('x-forwarded-for')
   if (xff) {
     const first = xff.split(',')[0]?.trim()
     if (first) return first
@@ -29,13 +41,12 @@ function clientIp(req: Request): string | null {
 }
 
 export async function POST(req: Request) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !serviceKey) {
-    // Anahtar yoksa sessizce başarısız olmaktansa açıkça söyle: aksi hâlde
-    // form çalışıyor görünüp öneriler sessizce kaybolur.
+    console.error('submit-opportunity: Supabase sunucu değişkenleri eksik')
     return NextResponse.json(
-      { error: 'Sunucu yapılandırması eksik (SUPABASE_SERVICE_ROLE_KEY).' },
+      { error: 'Öneri sistemi geçici olarak kullanılamıyor.' },
       { status: 503 },
     )
   }
@@ -45,17 +56,39 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'İstek kaynağı belirlenemedi.' }, { status: 400 })
   }
 
+  let rawBody: string
+  try {
+    rawBody = await req.text()
+  } catch {
+    return NextResponse.json({ error: 'Geçersiz istek gövdesi.' }, { status: 400 })
+  }
+  if (rawBody.length > 32_000) {
+    return NextResponse.json({ error: 'İstek gövdesi çok büyük.' }, { status: 413 })
+  }
+
   let body: Record<string, unknown>
   try {
-    body = await req.json()
+    const parsed: unknown = JSON.parse(rawBody)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error()
+    body = parsed as Record<string, unknown>
   } catch {
     return NextResponse.json({ error: 'Geçersiz istek gövdesi.' }, { status: 400 })
   }
 
   const title = String(body.title ?? '').trim()
   const rawUrl = String(body.url ?? '').trim()
-  if (!title || !rawUrl) {
-    return NextResponse.json({ error: 'Başlık ve bağlantı zorunlu.' }, { status: 400 })
+  const categorySlug = String(body.category_slug ?? '').trim()
+  if (!title || !rawUrl || !categorySlug) {
+    return NextResponse.json(
+      { error: 'Başlık, bağlantı ve kategori zorunlu.' },
+      { status: 400 },
+    )
+  }
+  if (title.length > 240 || rawUrl.length > 2_048) {
+    return NextResponse.json({ error: 'Başlık veya bağlantı çok uzun.' }, { status: 400 })
+  }
+  if (!VALID_CATEGORIES.has(categorySlug)) {
+    return NextResponse.json({ error: 'Geçersiz kategori.' }, { status: 400 })
   }
   // Mevcut SSRF önlemini yeniden kullan: yerel/özel ağ adresleri engellenir.
   try {
@@ -69,39 +102,75 @@ export async function POST(req: Request) {
 
   // Yalnız beklenen alanlar geçsin; istemci submission_origin/review_stage
   // gönderse bile RPC bunları zaten sabitliyor (bkz. 103/104).
+  const fundingType = body.funding_type == null
+    ? null
+    : String(body.funding_type).trim() || null
+  if (fundingType && !VALID_FUNDING_TYPES.has(fundingType)) {
+    return NextResponse.json({ error: 'Geçersiz finansman türü.' }, { status: 400 })
+  }
+
+  const hostCountries = Array.isArray(body.host_countries)
+    ? body.host_countries.map(value => String(value).trim().toUpperCase())
+    : []
+  if (hostCountries.length > 10 || hostCountries.some(code => !/^[A-Z]{2}$|^\*$/.test(code))) {
+    return NextResponse.json({ error: 'Geçersiz ülke kodu.' }, { status: 400 })
+  }
+
+  const nickname = optionalText(body.submitter_nickname)
+  const email = optionalText(body.submitter_email)
+  const deadlineText = optionalText(body.deadline_text)
+  const eligibilityNotes = optionalText(body.eligibility_notes)
+  const languageRequirement = optionalText(body.language_requirement)
+  const description = optionalText(body.description)
+  if ((nickname?.length ?? 0) > 100
+      || (email?.length ?? 0) > 320
+      || (deadlineText?.length ?? 0) > 240
+      || (eligibilityNotes?.length ?? 0) > 5_000
+      || (languageRequirement?.length ?? 0) > 1_000
+      || (description?.length ?? 0) > 10_000) {
+    return NextResponse.json({ error: 'Gönderilen alanlardan biri çok uzun.' }, { status: 400 })
+  }
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return NextResponse.json({ error: 'Geçersiz e-posta adresi.' }, { status: 400 })
+  }
+
   const payload = {
     title,
     url: rawUrl,
-    category_slug: body.category_slug ?? null,
-    submitter_nickname: body.submitter_nickname ?? null,
-    submitter_email: body.submitter_email ?? null,
-    host_countries: Array.isArray(body.host_countries) ? body.host_countries : [],
-    deadline_text: body.deadline_text ?? null,
-    funding_type: body.funding_type ?? null,
-    eligibility_notes: body.eligibility_notes ?? null,
-    language_requirement: body.language_requirement ?? null,
-    description: body.description ?? null,
+    category_slug: categorySlug,
+    submitter_nickname: nickname,
+    submitter_email: email,
+    host_countries: hostCountries,
+    deadline_text: deadlineText,
+    funding_type: fundingType,
+    eligibility_notes: eligibilityNotes,
+    language_requirement: languageRequirement,
+    description,
   }
 
   const supabase = createClient(url, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
 
-  const { data, error } = await supabase.rpc('submit_human_opportunity', {
-    p_ip: ip,
-    p_payload: payload,
-  })
+  try {
+    const { data, error } = await supabase.rpc('submit_human_opportunity', {
+      p_ip: ip,
+      p_payload: payload,
+    })
 
-  if (error) {
-    // 53400 = configuration_limit_exceeded → RPC'nin rate limit sinyali.
-    if (error.code === '53400') {
-      return NextResponse.json({ error: error.message }, { status: 429 })
+    if (error) {
+      // 53400 = configuration_limit_exceeded → RPC'nin rate limit sinyali.
+      if (error.code === '53400') {
+        return NextResponse.json({ error: error.message }, { status: 429 })
+      }
+      if (error.code === '23514') {
+        return NextResponse.json({ error: error.message }, { status: 400 })
+      }
+      return NextResponse.json({ error: 'Öneri kaydedilemedi.' }, { status: 500 })
     }
-    if (error.code === '23514') {
-      return NextResponse.json({ error: error.message }, { status: 400 })
-    }
+
+    return NextResponse.json(data ?? { success: true }, { status: 201 })
+  } catch {
     return NextResponse.json({ error: 'Öneri kaydedilemedi.' }, { status: 500 })
   }
-
-  return NextResponse.json(data ?? { success: true }, { status: 201 })
 }

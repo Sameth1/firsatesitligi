@@ -201,6 +201,7 @@ PostgreSQL şeması Supabase üzerinde barınır. Migration'lar `docs/sql/` alt�
 | `100_submission_source_url.sql` | Kanıtın alındığı `source_url` ile doğrudan başvuru/resmî hedef olan `url` alanını ayırır |
 | `105_agent_two_pass_evidence_gate.sql` | Agent otomatik onayında iki olumlu denetim ve iki tur birebir sayfa kanıtını DB katmanında zorunlu kılar |
 | `106_agent_accuracy_evaluation.sql` | 30–50 kayıtlık kör insan etiketli agent doğruluk testi, metrikler ve admin RPC'leri |
+| `107_secure_submission_route.sql` | Aynı-IP paralel istek yarışını kilitler ve rate limit'i atlayan doğrudan anon INSERT yolunu kapatır |
 
 Migration'lar `npm run db:0XX` script'leriyle bağlı Supabase projesine uygulanır (bkz. `package.json`).
 
@@ -293,8 +294,9 @@ SUPABASE_SERVICE_ROLE_KEY=eyJ...        # sunucu tarafı — NEXT_PUBLIC_ ÖNEK�
 > Anahtar **kesinlikle** `NEXT_PUBLIC_` öneki almamalı — aksi hâlde tarayıcı
 > bundle'ına gömülür ve RLS'i bypass eden anahtar herkese açılır.
 >
-> Dağıtımda (Vercel): Project → Settings → Environment Variables → Production
-> + Preview olarak ekle, sonra yeniden dağıt. Anahtar tanımlı değilse route
+> Dağıtımda (Vercel): Project → Settings → Environment Variables → **Production**
+> kapsamına ekle, sonra yeniden dağıt. Preview için canlı service-role anahtarını
+> paylaşma; ayrı bir test Supabase projesi kullan. Anahtar tanımlı değilse route
 > sessizce başarısız olmaz; 503 ve açık bir hata mesajı döner.
 
 ```bash
@@ -359,6 +361,9 @@ npm run db:105
 # Kör doğruluk testi şeması ve 40 kayıtlık test kümesi
 npm run db:106
 python validate_submissions.py --create-eval-batch --limit 40
+
+# Yalnız production route'u 201/400 ile doğrulandıktan sonra uygula
+npm run db:107
 ```
 
 > ⚠️ `SUPABASE_SERVICE_ROLE_KEY` ve `NVIDIA_API_KEY`/`GROQ_API_KEY` hassas anahtarlardır. `.env` dosyası asla commit'lenmemelidir.

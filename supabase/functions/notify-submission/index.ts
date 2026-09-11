@@ -1,8 +1,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
+const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
+const SUBMISSION_WEBHOOK_SECRET = Deno.env.get('SUBMISSION_WEBHOOK_SECRET')
 const ADMIN_NOTIFY_FROM = Deno.env.get('ADMIN_NOTIFY_FROM') || 'noreply@firsatesitligi.com'
-const APP_URL = Deno.env.get('APP_URL') || 'https://firsatesitligi.com'
+const APP_URL = Deno.env.get('APP_URL') || 'https://firsatesitligi.vercel.app'
 
 interface WebhookPayload {
   type: 'INSERT' | 'UPDATE'
@@ -12,6 +13,7 @@ interface WebhookPayload {
 }
 
 async function sendEmail(to: string, subject: string, html: string) {
+  if (!RESEND_API_KEY) throw new Error('RESEND_API_KEY eksik')
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -22,9 +24,10 @@ async function sendEmail(to: string, subject: string, html: string) {
   })
 
   if (!res.ok) {
-    console.error('Resend error:', await res.text())
+    const detail = await res.text()
+    console.error('Resend error:', detail)
+    throw new Error(`E-posta gönderilemedi (${res.status})`)
   }
-  return res.ok
 }
 
 function escapeHtml(value: unknown) {
@@ -34,6 +37,28 @@ function escapeHtml(value: unknown) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;')
+}
+
+function safeHttpUrl(value: unknown) {
+  try {
+    const url = new URL(String(value ?? ''))
+    return url.protocol === 'http:' || url.protocol === 'https:'
+      ? escapeHtml(url.toString())
+      : '#'
+  } catch {
+    return '#'
+  }
+}
+
+function secretsEqual(left: string, right: string) {
+  const a = new TextEncoder().encode(left)
+  const b = new TextEncoder().encode(right)
+  if (a.length !== b.length) return false
+  let difference = 0
+  for (let index = 0; index < a.length; index += 1) {
+    difference |= a[index] ^ b[index]
+  }
+  return difference === 0
 }
 
 function makeToken() {
@@ -50,13 +75,41 @@ async function sha256(value: string) {
 
 Deno.serve(async (req) => {
   try {
+    if (!SUBMISSION_WEBHOOK_SECRET) {
+      return new Response(JSON.stringify({ error: 'Webhook yapılandırması eksik' }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+    const providedSecret = req.headers.get('x-webhook-secret') || ''
+    if (!secretsEqual(providedSecret, SUBMISSION_WEBHOOK_SECRET)) {
+      return new Response(JSON.stringify({ error: 'Yetkisiz' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
     const payload: WebhookPayload = await req.json()
-    const { type, record, old_record: oldRecord } = payload
+    const { type, old_record: oldRecord } = payload
+    if (payload.table !== 'submissions' || !['INSERT', 'UPDATE'].includes(type)) {
+      return new Response(JSON.stringify({ error: 'Geçersiz webhook olayı' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     )
+    const recordId = String(payload.record?.id ?? '')
+    const { data: storedRecord, error: recordError } = await supabase
+      .from('submissions')
+      .select('*')
+      .eq('id', recordId)
+      .single()
+    if (recordError || !storedRecord) throw recordError || new Error('Submission bulunamadı')
+    const record = storedRecord as Record<string, unknown>
 
     if (type === 'INSERT') {
       // New submission — notify all admins
@@ -65,17 +118,21 @@ Deno.serve(async (req) => {
         .select('email')
 
       if (admins && admins.length > 0) {
-        const title = record.title as string
+        const title = String(record.title ?? '')
         const id = record.id as string
-        const nickname = (record.submitter_nickname as string) || 'Anonim'
+        const nickname = String(record.submitter_nickname || 'Anonim')
+        const safeTitle = escapeHtml(title)
+        const safeRecordUrl = safeHttpUrl(record.url)
+        const safeNickname = escapeHtml(nickname)
+        const safeEmail = escapeHtml(record.submitter_email)
 
         const subject = `Yeni fırsat önerisi: ${title}`
         const html = `
           <h2>Yeni Fırsat Önerisi</h2>
-          <p><strong>Başlık:</strong> ${title}</p>
-          <p><strong>URL:</strong> <a href="${record.url}">${record.url}</a></p>
-          <p><strong>Kategori:</strong> ${record.category_slug || '—'}</p>
-          <p><strong>Gönderen:</strong> ${nickname}${record.submitter_email ? ` (${record.submitter_email})` : ''}</p>
+          <p><strong>Başlık:</strong> ${safeTitle}</p>
+          <p><strong>URL:</strong> <a href="${safeRecordUrl}">${safeRecordUrl}</a></p>
+          <p><strong>Kategori:</strong> ${escapeHtml(record.category_slug || '—')}</p>
+          <p><strong>Gönderen:</strong> ${safeNickname}${record.submitter_email ? ` (${safeEmail})` : ''}</p>
           <br/>
           <a href="${APP_URL}/admin/submissions/${id}" style="background:#534AB7;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:500;">
             İncele ve Onayla
@@ -114,7 +171,7 @@ Deno.serve(async (req) => {
           `Önerin onaylandı: ${title}`,
           `
             <h2>Tebrikler!</h2>
-            <p>"<strong>${title}</strong>" öneriniz incelendi ve sisteme eklendi.</p>
+            <p>"<strong>${escapeHtml(title)}</strong>" öneriniz incelendi ve sisteme eklendi.</p>
             <p>Katkın için teşekkür ederiz!</p>
             <br/>
             <a href="${APP_URL}" style="background:#534AB7;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:500;">
@@ -161,8 +218,8 @@ Deno.serve(async (req) => {
           `Önerin hakkında bilgilendirme: ${title}`,
           `
             <h2>Değerlendirildi</h2>
-            <p>"<strong>${title}</strong>" öneriniz incelendi fakat şu an sisteme eklenemedi.</p>
-            ${adminNote ? `<p><strong>Sebep:</strong> ${adminNote}</p>` : ''}
+            <p>"<strong>${escapeHtml(title)}</strong>" öneriniz incelendi fakat şu an sisteme eklenemedi.</p>
+            ${adminNote ? `<p><strong>Sebep:</strong> ${escapeHtml(adminNote)}</p>` : ''}
             <p>Yeni öneriler için her zaman bekleriz. Katkın için teşekkürler!</p>
           `
         )
@@ -174,7 +231,7 @@ Deno.serve(async (req) => {
     })
   } catch (err) {
     console.error('notify-submission error:', err)
-    return new Response(JSON.stringify({ error: String(err) }), {
+    return new Response(JSON.stringify({ error: 'Bildirim işlenemedi' }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     })
