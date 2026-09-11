@@ -49,6 +49,8 @@ export type MatchParams = {
   p_highest_edu?: string | null
   p_field?: string | null
   p_language?: string | null
+  /** İngilizce seviyesi: null (beyan yok) | 'none' (hiç bilmiyorum) | 'A1'..'C2' */
+  p_english?: string | null
 }
 
 export type FilterOptions = {

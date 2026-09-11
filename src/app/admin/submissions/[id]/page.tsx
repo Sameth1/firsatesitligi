@@ -2,6 +2,16 @@
 import { useState, useEffect, use } from 'react'
 import { supabase } from '@/lib/supabase'
 import RejectComposer from '../../reject-composer'
+import { FIELDS } from '@/lib/fields'
+
+const FIELD_SLUGS = new Set(FIELDS.map(f => f.value))
+
+/** Sözlükte olmayan slug'lar — kaydedilirse kayıt o bölümü seçenden GİZLENİR. */
+function unknownFieldSlugs(raw: string): string[] {
+  return raw
+    .split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+    .filter(s => s !== 'all' && !FIELD_SLUGS.has(s))
+}
 
 const CATEGORIES = [
   { slug: 'scholarship',   label: 'Burs' },
@@ -115,6 +125,15 @@ export default function SubmissionDetailPage({
 
   async function saveEdits(options?: { quietSuccess?: boolean }): Promise<boolean> {
     const { quietSuccess = false } = options ?? {}
+
+    // Yazım hatası olan bir bölüm slug'ı sessizce çalışır ama kaydı o bölümü
+    // seçen HERKESTEN gizler; hata hiçbir yerde görünmez. Bu yüzden kaydetmeyi
+    // durduruyoruz (src/lib/fields.ts sözlüğüne karşı denetim).
+    const bilinmeyen = unknownFieldSlugs(targetFields)
+    if (bilinmeyen.length) {
+      showToast(`Bilinmeyen bölüm slug'ı: ${bilinmeyen.join(', ')} — kaydedilmedi`)
+      return false
+    }
 
     const { error } = await supabase
       .from('submissions')

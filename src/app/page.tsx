@@ -12,6 +12,7 @@ import { pulseScene, hexToRgb01 } from '@/components/scene/sceneBus'
 import { CATEGORY_ICON_SRC, CATEGORY_ACCENT } from '@/lib/category-assets'
 import Flag from '@/components/Flag'
 import { ALL_COUNTRIES, POPULAR_CITIZENSHIP_CODES, countryNameTr } from '@/lib/countries'
+import { FIELDS, FIELD_LABELS } from '@/lib/fields'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import RangeSlider from '@/components/form/RangeSlider'
@@ -98,16 +99,16 @@ const STUDY_LEVEL_OPTIONS = [
 
 // Eğitim seviyesi doğal bir merdiven — bu yüzden kart yerine çekmeli bar.
 const HIGHEST_EDU_STOPS = [
-  { value: 'lise',          short: 'Lise',   label: 'Lise',          icon: '🏫' },
-  { value: 'on_lisans',     short: 'Ön Lis.', label: 'Ön Lisans',    icon: '📒' },
-  { value: 'lisans',        short: 'Lisans', label: 'Lisans',        icon: '📘' },
-  { value: 'yuksek_lisans', short: 'Y.Lis.', label: 'Yüksek Lisans', icon: '📗' },
-  { value: 'doktora',       short: 'Dr.',    label: 'Doktora',       icon: '🎓' },
+  { value: 'lise',          short: 'Lise',   label: 'Lise (okuyorum / bitirdim)',   icon: '🏫' },
+  { value: 'on_lisans',     short: 'Ön Lis.', label: 'Ön lisans',                    icon: '📒' },
+  { value: 'lisans',        short: 'Lisans', label: 'Lisans (okuyorum / bitirdim)',  icon: '📘' },
+  { value: 'yuksek_lisans', short: 'Y.Lis.', label: 'Yüksek lisans',                 icon: '📗' },
+  { value: 'doktora',       short: 'Dr.',    label: 'Doktora',                       icon: '🎓' },
 ]
 
 // Dil barının durakları — "Bilmiyorum" en solda, filtre uygulanmaz.
 const CEFR_STOPS = [
-  { value: 'none', short: '—',  label: 'Bilmiyorum / önemli değil' },
+  { value: 'none', short: '—',  label: 'Hiç bilmiyorum' },
   { value: 'A1',   short: 'A1', label: 'A1 — Başlangıç' },
   { value: 'A2',   short: 'A2', label: 'A2 — Temel' },
   { value: 'B1',   short: 'B1', label: 'B1 — Orta' },
@@ -116,91 +117,10 @@ const CEFR_STOPS = [
   { value: 'C2',   short: 'C2', label: 'C2 — Anadil seviyesi' },
 ]
 
-// Popüler bölümler — kullanıcı dostu etiket + DB'de eşlenebilecek slug
-// Not: DB'de bire bir slug olmasa da sorun değil — sonuç 0 gelirse
-// handleSearch otomatik olarak bu filtreyi gevşetip tekrar sorguluyor.
-type FieldOption = { value: string; label: string; group: string }
+// Bölüm sözlüğü src/lib/fields.ts'te — ajan (validate_submissions.py) da
+// aynı dosyayı okuyor, böylece form ile ajan asla ayrı düşmüyor.
+const FIELD_LOOKUP = FIELD_LABELS
 
-const FIELDS: FieldOption[] = [
-  // — Mühendislik —
-  { value: 'computer_science',        label: 'Bilgisayar Mühendisliği',         group: 'Mühendislik' },
-  { value: 'software_engineering',    label: 'Yazılım Mühendisliği',            group: 'Mühendislik' },
-  { value: 'electrical_engineering',  label: 'Elektrik-Elektronik Mühendisliği', group: 'Mühendislik' },
-  { value: 'mechanical_engineering',  label: 'Makine Mühendisliği',             group: 'Mühendislik' },
-  { value: 'industrial_engineering',  label: 'Endüstri Mühendisliği',           group: 'Mühendislik' },
-  { value: 'civil_engineering',       label: 'İnşaat Mühendisliği',             group: 'Mühendislik' },
-  { value: 'chemical_engineering',    label: 'Kimya Mühendisliği',              group: 'Mühendislik' },
-  { value: 'environmental_engineering', label: 'Çevre Mühendisliği',            group: 'Mühendislik' },
-  { value: 'aerospace_engineering',   label: 'Uzay / Havacılık Mühendisliği',   group: 'Mühendislik' },
-  { value: 'biomedical_engineering',  label: 'Biyomedikal Mühendislik',         group: 'Mühendislik' },
-
-  // — Sağlık —
-  { value: 'medicine',                label: 'Tıp',                             group: 'Sağlık' },
-  { value: 'dentistry',               label: 'Diş Hekimliği',                   group: 'Sağlık' },
-  { value: 'pharmacy',                label: 'Eczacılık',                       group: 'Sağlık' },
-  { value: 'nursing',                 label: 'Hemşirelik',                      group: 'Sağlık' },
-  { value: 'veterinary',              label: 'Veterinerlik',                    group: 'Sağlık' },
-  { value: 'psychology',              label: 'Psikoloji',                       group: 'Sağlık' },
-  { value: 'public_health',           label: 'Halk Sağlığı',                    group: 'Sağlık' },
-
-  // — Temel Bilimler —
-  { value: 'mathematics',             label: 'Matematik',                       group: 'Temel Bilimler' },
-  { value: 'physics',                 label: 'Fizik',                           group: 'Temel Bilimler' },
-  { value: 'chemistry',               label: 'Kimya',                           group: 'Temel Bilimler' },
-  { value: 'biology',                 label: 'Biyoloji',                        group: 'Temel Bilimler' },
-  { value: 'molecular_biology',       label: 'Moleküler Biyoloji & Genetik',    group: 'Temel Bilimler' },
-  { value: 'statistics',              label: 'İstatistik',                      group: 'Temel Bilimler' },
-  { value: 'data_science',            label: 'Veri Bilimi',                     group: 'Temel Bilimler' },
-
-  // — Sosyal Bilimler & Hukuk —
-  { value: 'law',                     label: 'Hukuk',                           group: 'Sosyal Bilimler' },
-  { value: 'international_relations', label: 'Uluslararası İlişkiler',          group: 'Sosyal Bilimler' },
-  { value: 'political_science',       label: 'Siyaset Bilimi',                  group: 'Sosyal Bilimler' },
-  { value: 'public_policy',           label: 'Kamu Politikası',                 group: 'Sosyal Bilimler' },
-  { value: 'sociology',               label: 'Sosyoloji',                       group: 'Sosyal Bilimler' },
-  { value: 'anthropology',            label: 'Antropoloji',                     group: 'Sosyal Bilimler' },
-  { value: 'history',                 label: 'Tarih',                           group: 'Sosyal Bilimler' },
-  { value: 'philosophy',              label: 'Felsefe',                         group: 'Sosyal Bilimler' },
-  { value: 'social_sciences',         label: 'Sosyal Bilimler (genel)',         group: 'Sosyal Bilimler' },
-  { value: 'human_rights',            label: 'İnsan Hakları',                   group: 'Sosyal Bilimler' },
-
-  // — İşletme & Ekonomi —
-  { value: 'business',                label: 'İşletme',                         group: 'İşletme & Ekonomi' },
-  { value: 'economics',               label: 'Ekonomi / İktisat',               group: 'İşletme & Ekonomi' },
-  { value: 'finance',                 label: 'Finans',                          group: 'İşletme & Ekonomi' },
-  { value: 'marketing',               label: 'Pazarlama',                       group: 'İşletme & Ekonomi' },
-  { value: 'management',              label: 'Yönetim',                         group: 'İşletme & Ekonomi' },
-  { value: 'logistics',               label: 'Lojistik',                        group: 'İşletme & Ekonomi' },
-
-  // — Eğitim & Dil —
-  { value: 'education',               label: 'Eğitim Bilimleri',                group: 'Eğitim & Dil' },
-  { value: 'english_teaching',        label: 'İngilizce Öğretmenliği',          group: 'Eğitim & Dil' },
-  { value: 'linguistics',             label: 'Dilbilim / Mütercim-Tercümanlık', group: 'Eğitim & Dil' },
-  { value: 'literature',              label: 'Edebiyat',                        group: 'Eğitim & Dil' },
-
-  // — Tasarım, Sanat, Medya —
-  { value: 'architecture',            label: 'Mimarlık',                        group: 'Tasarım & Sanat' },
-  { value: 'urban_planning',          label: 'Şehir Planlama',                  group: 'Tasarım & Sanat' },
-  { value: 'industrial_design',       label: 'Endüstriyel Tasarım',             group: 'Tasarım & Sanat' },
-  { value: 'graphic_design',          label: 'Grafik Tasarım',                  group: 'Tasarım & Sanat' },
-  { value: 'fine_arts',               label: 'Güzel Sanatlar',                  group: 'Tasarım & Sanat' },
-  { value: 'music',                   label: 'Müzik',                           group: 'Tasarım & Sanat' },
-  { value: 'cinema',                  label: 'Sinema & TV',                     group: 'Tasarım & Sanat' },
-  { value: 'communication',           label: 'İletişim',                        group: 'Tasarım & Sanat' },
-  { value: 'journalism',              label: 'Gazetecilik',                     group: 'Tasarım & Sanat' },
-
-  // — Diğer —
-  { value: 'agriculture',             label: 'Ziraat / Tarım',                  group: 'Diğer' },
-  { value: 'tourism',                 label: 'Turizm & Otelcilik',              group: 'Diğer' },
-  { value: 'gastronomy',              label: 'Gastronomi',                      group: 'Diğer' },
-  { value: 'ngo',                     label: 'STK / Sivil Toplum',              group: 'Diğer' },
-  { value: 'youth_work',              label: 'Gençlik Çalışması',               group: 'Diğer' },
-  { value: 'environmental_science',   label: 'Çevre Bilimleri',                 group: 'Diğer' },
-]
-
-const FIELD_LOOKUP: Record<string, string> = Object.fromEntries(
-  FIELDS.map(f => [f.value, f.label])
-)
 
 function fieldLabel(slug: string) {
   return FIELD_LOOKUP[slug] ?? slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
@@ -234,6 +154,9 @@ export default function Home() {
   const [highestEdu, setHighestEdu] = useState<string | null>(null)
   const [field, setField] = useState<string | null>(null)
   const [languageLevel, setLanguageLevel] = useState<string | null>(null)
+  // İngilizce ayrı soruluyor: aktif kayıtların TAMAMI İngilizce istiyor, yani
+  // eşleşmeyi asıl belirleyen dil bu — ev sahibi ülkenin dili değil.
+  const [englishLevel, setEnglishLevel] = useState<string | null>(null)
 
   const formRef = useRef<HTMLElement>(null)
   const prevStepRef = useRef<Step | null>(null)
@@ -321,7 +244,7 @@ export default function Home() {
   // İlerleme göstergesi: kaç anlamlı alan dolduruldu?
   const filledFlags = [
     category, country, age === '' ? null : age, highestEdu, studyLevel, field,
-    languageLevel === 'none' ? null : languageLevel,
+    languageLevel === 'none' ? null : languageLevel, englishLevel,
   ]
   const activeFilterCount = filledFlags.filter(Boolean).length
   const progress = Math.round((activeFilterCount / filledFlags.length) * 100)
@@ -344,7 +267,10 @@ export default function Home() {
       p_study_level:   studyLevel || null,
       p_highest_edu:   highestEdu || null,
       p_field:         field || null,
+      // Ev sahibi ülke dilini yalnız "biliyorum" dediyse gönderiyoruz: bu
+      // parametre kayıt ELEMEZ, yalnızca o dili kabul eden kayıtları KURTARIR.
       p_language:      languageLevel && languageLevel !== 'none' ? targetLanguage : null,
+      p_english:       englishLevel,
     }
 
     // Akıllı fallback: tam eşleşme yoksa filtreleri önem sırasına göre
@@ -352,9 +278,10 @@ export default function Home() {
     // gevşemez — kullanıcının gitmek istediği yer ve kimliği korunur.
     const fallbackOrder: { key: keyof MatchParams; label: string }[] = [
       { key: 'p_field',         label: 'Bölüm' },
+      { key: 'p_english',       label: 'İngilizce seviyesi' },
       { key: 'p_language',      label: 'Dil seviyesi' },
       { key: 'p_age',           label: 'Yaş' },
-      { key: 'p_highest_edu',   label: 'En yüksek eğitim' },
+      { key: 'p_highest_edu',   label: 'Eldeki eğitim seviyesi' },
       { key: 'p_study_level',   label: 'Eğitim kademesi' },
       { key: 'p_category_slug', label: 'Kategori' },
     ]
@@ -400,7 +327,7 @@ export default function Home() {
     setResults(data ?? [])
     setRelaxedFilters(relaxed)
     setActiveCategory(null)
-    setSearchSnapshot({ country, category, citizenship, studyLevel, highestEdu, field, targetLanguage, languageLevel })
+    setSearchSnapshot({ country, category, citizenship, studyLevel, highestEdu, field, targetLanguage, languageLevel, englishLevel })
     setStep('results')
     setLoading(false)
   }
@@ -583,15 +510,27 @@ export default function Home() {
                 accent="#9B6BFF"
               />
 
+              {/* İngilizce her zaman sorulur: aktif kayıtların tamamı İngilizce
+                  istiyor, yani eşleşmeyi asıl belirleyen dil bu. Dokunulmazsa
+                  hiçbir kayıt elenmez. */}
+              <StepSlider
+                label="İngilizce seviyen"
+                hint="opsiyonel — dokunmazsan dile göre eleme yapmayız"
+                stops={CEFR_STOPS}
+                value={englishLevel}
+                onChange={setEnglishLevel}
+                accent="#FFB547"
+              />
+
               {targetLanguage && (
                 <div className="fx-fade-in-up">
                   <StepSlider
                     label={`${targetLanguage} seviyen`}
-                    hint="opsiyonel — bilmiyorsan boş bırak"
+                    hint="opsiyonel — bu soru kayıt elemez, yalnızca o dili kabul edenleri ekler"
                     stops={CEFR_STOPS}
                     value={languageLevel}
                     onChange={setLanguageLevel}
-                    accent="#FFB547"
+                    accent="#8FE1FF"
                   />
                 </div>
               )}
@@ -715,6 +654,9 @@ export default function Home() {
           )}
           {targetLanguage && languageLevel && languageLevel !== 'none' && (
             <span>· {targetLanguage} {languageLevel}</span>
+          )}
+          {englishLevel && (
+            <span>· İngilizce {englishLevel === 'none' ? 'yok' : englishLevel}</span>
           )}
         </div>
 

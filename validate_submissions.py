@@ -60,9 +60,10 @@ import json
 import os
 import re
 import sys
+import textwrap
 import time
 from collections import Counter
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlsplit
 
@@ -118,24 +119,29 @@ VALID_CATEGORY_SLUGS = {
     "internship", "summer_school", "exchange",
 }
 VALID_STUDY_LEVELS = {"bachelor", "master", "phd", "any"}
-# UI'daki bölüm listesiyle (src/app/page.tsx → FIELDS) BİREBİR aynı olmalı;
-# eşleşmeyen bir slug yazmak kaydı o bölümü seçen kullanıcıdan gizler.
-VALID_FIELDS = {
-    "computer_science", "software_engineering", "electrical_engineering",
-    "mechanical_engineering", "industrial_engineering", "civil_engineering",
-    "chemical_engineering", "environmental_engineering", "aerospace_engineering",
-    "biomedical_engineering", "medicine", "dentistry", "pharmacy", "nursing",
-    "veterinary", "psychology", "public_health", "mathematics", "physics",
-    "chemistry", "biology", "molecular_biology", "statistics", "data_science",
-    "law", "international_relations", "political_science", "public_policy",
-    "sociology", "anthropology", "history", "philosophy", "social_sciences",
-    "human_rights", "business", "economics", "finance", "marketing",
-    "management", "logistics", "education", "english_teaching", "linguistics",
-    "literature", "architecture", "urban_planning", "industrial_design",
-    "graphic_design", "fine_arts", "music", "cinema", "communication",
-    "journalism", "agriculture", "tourism", "gastronomy", "ngo", "youth_work",
-    "environmental_science",
-}
+FIELDS_TS = Path(__file__).with_name("src") / "lib" / "fields.ts"
+
+
+def load_field_slugs():
+    """Bölüm slug'larını src/lib/fields.ts'ten okur — TEK doğruluk kaynağı.
+
+    Neden dosyadan: bu liste daha önce üç yerde ayrı ayrı duruyordu (form,
+    bu küme, LLM promptu) ve biri güncellenince diğerleri geride kalıyordu.
+    Geride kalan bir slug, o bölümü seçen kullanıcıdan kaydı GİZLER.
+
+    Dosya okunamazsa boş küme değil, hata döndürülür: sessizce boş kümeyle
+    devam etmek ajanın bütün bölüm kısıtlarını düşürmesi demek olurdu.
+    """
+    text = FIELDS_TS.read_text(encoding="utf-8")
+    slugs = re.findall(r"value:\s*'([a-z_]+)'", text)
+    if len(slugs) < 40:
+        raise RuntimeError(f"{FIELDS_TS} okundu ama yalnız {len(slugs)} slug "
+                           "bulundu — dosya biçimi değişmiş olabilir.")
+    return sorted(set(slugs))
+
+
+FIELD_SLUGS = load_field_slugs()
+VALID_FIELDS = set(FIELD_SLUGS)
 AGGREGATOR_DOMAINS = {"youthop.com", "www.youthop.com", "nasilgitmis.com", "www.nasilgitmis.com"}
 JUNK_TARGET_DOMAINS = {
     "facebook.com", "www.facebook.com", "instagram.com", "www.instagram.com",
@@ -229,12 +235,21 @@ EK ALANLAR — kimin göreceğini belirler, bu yüzden fazladan temkinli ol:
    - "Uluslararası/yabancı öğrenciler", "X ülkesinde okuyor olmak", "X'te çalışma izni" uyruk şartı DEĞİLDİR → null.
 6) bolum_kisiti — Fırsat belli bölümlerle sınırlı mı?
    - Sınırlıysa şu slug'lardan uygun OLANLARIN TAMAMI; bir aileyi kapsıyorsa (ör. mühendislik) ailenin bütün slug'larını yaz:
-     computer_science, software_engineering, electrical_engineering, mechanical_engineering, industrial_engineering, civil_engineering, chemical_engineering, environmental_engineering, aerospace_engineering, biomedical_engineering, medicine, dentistry, pharmacy, nursing, veterinary, psychology, public_health, mathematics, physics, chemistry, biology, molecular_biology, statistics, data_science, law, international_relations, political_science, public_policy, sociology, anthropology, history, philosophy, social_sciences, human_rights, business, economics, finance, marketing, management, logistics, education, english_teaching, linguistics, literature, architecture, urban_planning, industrial_design, graphic_design, fine_arts, music, cinema, communication, journalism, agriculture, tourism, gastronomy, ngo, youth_work, environmental_science
+     {FIELD_SLUG_LINE}
    - "Bütün bölümlere açık" diyorsa, bölümden söz etmiyorsa ya da EMİN DEĞİLSEN: null.
    Bu iki alanı YANLIŞ doldurmak, uygun bir adayı sonuçlardan tamamen siler; boş bırakmak daha güvenlidir.
 
 ÇIKTI: Yanıtını yalnızca şu alanlara sahip TEK bir JSON nesnesi olarak ver. Markdown, ``` işareti veya açıklama EKLEME:
 {"durum": "acik|kapali|belirsiz", "kategori_uygun": true|false, "guven": "yuksek|orta|dusuk", "tek_firsat": true|false, "dogrudan_firsat_sayfasi": true|false, "son_tarih_dogrulandi": true|false, "finansman_dogrulandi": true|false, "ulke_dogrulandi": true|false, "uygunluk_dogrulandi": true|false, "uyruk_kisiti": null, "bolum_kisiti": null, "kanitlar": {"guncellik": "<birebir alıntı>", "son_tarih": "<birebir alıntı>", "kategori": "<birebir alıntı>", "finansman": "<birebir alıntı>", "ulke": "<birebir alıntı>", "uygunluk": "<birebir alıntı>"}, "gerekce": "<kararını dayandıran kanıtı belirten Türkçe tek cümle>"}"""
+
+
+# Prompttaki slug listesi kümeden ÜRETİLİYOR: elle yazılan bir liste
+# src/lib/fields.ts ile ayrı düşebilir ve LLM var olmayan slug üretirdi.
+SYSTEM_PROMPT = SYSTEM_PROMPT.replace(
+    "{FIELD_SLUG_LINE}",
+    textwrap.fill(", ".join(FIELD_SLUGS), width=100,
+                  initial_indent="", subsequent_indent="     "),
+)
 
 REVISION_SYSTEM_PROMPT = """Sen Fırsat Eşitliği platformunun kayıt revize ajanısın.
 Bir insan adminin revize notunu ve fırsat sayfasını okuyup yalnız kayıtta BOŞ
@@ -1929,13 +1944,23 @@ def run_agent_evaluation(args):
 
 # ─── Opportunity audit (--audit-opportunities) ────────────────────────────────
 
-def fetch_unverified_opportunities(limit=None):
-    """last_verified_at IS NULL olan fırsatları çeker — admin panelindeki
-    "Manuel doğrulanmamış" kümesi. Service key RLS'i bypass eder."""
+def fetch_unverified_opportunities(limit=None, stale_days=30):
+    """Denetlenecek AKTİF fırsatları çeker.
+
+    Eskiden yalnız `last_verified_at IS NULL` alınıyordu; yani bir kayıt bir
+    kez denetlendi mi bir daha hiç bakılmıyordu. Sonucu ölçüldü: bir kayıt
+    Mayıs'ta "canlı" işaretlenmiş, Haziran'da son başvuru tarihi geçmiş ve
+    Eylül'de hâlâ is_active=true duruyordu. Artık `stale_days` günden eski
+    doğrulamalar da kuyruğa giriyor — denetim tek seferlik değil, döngü.
+
+    Service key RLS'i bypass eder.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=stale_days)).isoformat()
     params = {
-        "last_verified_at": "is.null",
-        "select": "id,title,official_url,deadline,deadline_notes,is_active",
-        "order": "id.asc",
+        "is_active": "is.true",
+        "or": f"(last_verified_at.is.null,last_verified_at.lt.{cutoff})",
+        "select": "id,title,official_url,deadline,deadline_notes,is_active,last_verified_at",
+        "order": "last_verified_at.asc.nullsfirst",
     }
     res = requests.get(f"{SUPABASE_URL}/rest/v1/opportunities",
                        headers=sb_headers(), params=params, timeout=20)
@@ -2015,15 +2040,17 @@ def audit_opportunity(opp, dry_run):
 
 def run_audit_opportunities(args):
     """--audit-opportunities akışı: last_verified_at boş fırsatları denetler."""
-    print("Doğrulanmamış fırsatlar çekiliyor (last_verified_at IS NULL)...")
+    stale_days = getattr(args, "stale_days", 30)
+    print("Denetlenecek fırsatlar çekiliyor "
+          f"(hiç doğrulanmamış + {stale_days} günden eski doğrulananlar)...")
     try:
-        opps = fetch_unverified_opportunities(args.limit)
+        opps = fetch_unverified_opportunities(args.limit, stale_days)
     except requests.exceptions.RequestException as e:
         print(f"Supabase'den okuma hatası: {e}", file=sys.stderr)
         sys.exit(1)
 
     if not opps:
-        print("Doğrulanmamış fırsat yok — hepsi denetlenmiş.")
+        print("Denetlenecek fırsat yok — hepsi güncel.")
         return
 
     mode = "DRY-RUN — DB'ye yazılmayacak" if args.dry_run else "CANLI — DB'ye yazılacak"
@@ -2055,6 +2082,9 @@ def main():
     parser.add_argument("--recheck", action="store_true",
                         help="Daha önce [ajan] notu almış pending kayıtları da "
                              "yeniden değerlendir")
+    parser.add_argument("--stale-days", type=int, default=30,
+                        help="Denetimi bu kadar günden eski olan fırsatlar "
+                             "tekrar kuyruğa alınır (varsayılan 30)")
     parser.add_argument("--audit-opportunities", action="store_true",
                         help="Submission yerine yayındaki fırsatları denetle: "
                              "last_verified_at boş olanların URL'i ölü ya da son "
