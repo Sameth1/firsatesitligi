@@ -24,24 +24,28 @@ export default function EmailCapture({ searchSnapshot }: {
   }
 
   if (status === 'done') return (
-    <div style={{
-      background: '#E1F5EE', border: '0.5px solid #9FE1CB',
-      borderRadius: 12, padding: '14px 18px',
-      fontSize: 13, color: '#085041', fontWeight: 500,
+    <div className="fx-fade-in-up" style={{
+      background: 'rgba(43, 224, 200, 0.12)',
+      border: '1px solid rgba(43, 224, 200, 0.4)',
+      borderRadius: 18, padding: '18px 22px',
+      fontSize: 13.5, color: '#7BF0DC', fontWeight: 500,
+      display: 'flex', alignItems: 'center', gap: 10,
     }}>
+      <span style={{ fontSize: 18 }} aria-hidden="true">✓</span>
       Kaydedildi — deadline yaklaştığında seni haberdar edeceğiz.
     </div>
   )
 
   return (
-    <div style={{
-      background: '#EEEDFE', border: '0.5px solid #AFA9EC',
-      borderRadius: 12, padding: '14px 18px',
-    }}>
-      <div style={{ fontSize: 13, fontWeight: 500, color: '#3C3489', marginBottom: 8 }}>
+    <div className="glass-panel" style={{ padding: '20px 22px' }}>
+      <div style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--text-hi)', marginBottom: 4 }}>
         Deadline yaklaştığında haber verelim mi?
       </div>
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ fontSize: 12, color: 'var(--text-low)', marginBottom: 14 }}>
+        Hesap açılmaz. Sadece hatırlatma için.
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         <input
           type="email"
           placeholder="e-posta adresin"
@@ -49,32 +53,34 @@ export default function EmailCapture({ searchSnapshot }: {
           onChange={e => setEmail(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleSubmit()}
           style={{
-            flex: 1, padding: '8px 12px', borderRadius: 8,
-            border: '0.5px solid #AFA9EC', fontSize: 13,
-            outline: 'none', background: '#fff',
+            flex: '1 1 200px', minWidth: 0,
+            padding: '12px 15px', borderRadius: 999,
+            border: '1px solid rgba(255,255,255,0.14)', fontSize: 13.5,
+            outline: 'none', background: 'rgba(255,255,255,0.05)',
+            color: 'var(--text-hi)',
           }}
         />
         <button
           onClick={handleSubmit}
           disabled={status === 'loading'}
+          className="btn-primary"
           style={{
-            padding: '8px 16px', borderRadius: 8,
-            background: '#534AB7', color: '#fff',
-            border: 'none', fontSize: 13, fontWeight: 500,
-            cursor: 'pointer', whiteSpace: 'nowrap',
+            padding: '12px 26px', borderRadius: 999,
+            color: '#150F35', border: 'none', fontSize: 13.5, fontWeight: 700,
+            cursor: status === 'loading' ? 'not-allowed' : 'pointer',
+            opacity: status === 'loading' ? 0.65 : 1,
+            whiteSpace: 'nowrap',
           }}
         >
           {status === 'loading' ? '...' : 'Bildir'}
         </button>
       </div>
+
       {status === 'error' && (
-        <div style={{ fontSize: 11, color: '#A32D2D', marginTop: 6 }}>
+        <div style={{ fontSize: 11.5, color: '#FFB4B4', marginTop: 8 }}>
           Bir hata oluştu, tekrar dene.
         </div>
       )}
-      <div style={{ fontSize: 10, color: '#7F77DD', marginTop: 6 }}>
-        Hesap açılmaz. Sadece hatırlatma için.
-      </div>
     </div>
   )
 }

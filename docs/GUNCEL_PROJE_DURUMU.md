@@ -41,7 +41,7 @@ Yeni scraper kayıtları `submissions` tablosuna `submission_origin=agent`, `rev
 3. Eksik başlık, URL, kategori, ülke/global bilgisi, kesin güncel tarih, finansman veya uygunluk koşulu varsa kayıt LLM'e gitmeden reddedilir.
 4. Eksiksiz HTTP-200 kayıtları NVIDIA NIM'e gider. Model güncellik, tarih, kategori, finansman, ülke ve uygunluk için birebir sayfa alıntısı verir; kod bu alıntıları sayfa metniyle eşleştirir.
 5. İlk olumlu karar bağımsız karşı-denetim prompt'uyla ikinci kez incelenir. Yalnızca iki tur da yüksek güvenle aynı olumlu kanıtları bulursa otomatik onay verilir.
-6. Migration 099 temel kapıları, migration 101 ise iki tur + kanıt zorunluluğunu DB içinde tekrar denetler.
+6. Migration 099 temel kapıları, migration 105 ise iki tur + kanıt zorunluluğunu DB içinde tekrar denetler.
 7. Eski tarih, yanlış/eksik bilgi, liste-kaynak sayfası veya doğrudan olmayan link reddedilir. `agent_uncertain` yalnız tarihi güncel, doğrudan hedefi ve bütün alanları doğrulanmış kayıtta açık/kapalı kararı gerçekten çelişkiliyse kullanılır.
 8. Geçici HTTP/LLM hatası admin kuyruğuna gitmez; `agent_queue` içinde yeniden denenir. Agent kaydında Revize yoktur.
 
@@ -67,7 +67,7 @@ Yeni scraper kayıtları `submissions` tablosuna `submission_origin=agent`, `rev
 
 ## Supabase durumu
 
-Uygulanan migration'lar: 094, 095, 096, 097, **099, 100 ve 101**. Migration 101 iki olumlu denetim ve iki tur kanıt olmadan agent otomatik onayını DB tetikleyicisiyle engeller. Migration 098 yalnız eski kullanılmayan görünüm temizliğidir ve henüz uygulanmadı.
+Uygulanan agent migration'ları: 094, 095, 096, 097, **099, 100 ve iki-tur kapısı**. İki-tur kapısının SQL'i canlı projeye uygulanmıştır; `master` ile numara çakışması çözüldükten sonra repoda migration 105 olarak tutulur. Migration 105 iki olumlu denetim ve iki tur kanıt olmadan agent otomatik onayını DB tetikleyicisiyle engeller. Migration 098 yalnız eski kullanılmayan görünüm temizliğidir ve henüz uygulanmadı.
 
 Doğrudan link geçmişi: Eski `official_url=kaynak yazı` hatası için `audit_apply_links.py` ve `backfill_apply_links.py` yazılmıştı. Youthop ve Nasıl Gitmiş scraper'ları dış Apply linkini çıkarmaya başlamıştı; ancak kaynak ile hedef ayrı DB alanlarında tutulmuyordu. Migration 100 ve güncel scraper'lar bu ayrımı kalıcı hale getirir. Agent hedef linki kontrol ederken tarih/kategori kanıtını ayrı kaynak sayfasından okuyabilir.
 

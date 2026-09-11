@@ -184,7 +184,7 @@ export default function SubmissionDetailPage({
 
   if (loading) {
     return (
-      <main style={{ minHeight: '100vh', background: '#fafaf9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <main className="light-surface" style={{ minHeight: '100vh', background: '#fafaf9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <span style={{ color: '#aaa', fontSize: 13 }}>Yükleniyor...</span>
       </main>
     )
@@ -192,7 +192,7 @@ export default function SubmissionDetailPage({
 
   if (!sub) {
     return (
-      <main style={{ minHeight: '100vh', background: '#fafaf9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <main className="light-surface" style={{ minHeight: '100vh', background: '#fafaf9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <span style={{ color: '#aaa', fontSize: 13 }}>Öneri bulunamadı.</span>
       </main>
     )
@@ -202,7 +202,7 @@ export default function SubmissionDetailPage({
   const isHuman = sub.submission_origin === 'human'
 
   return (
-    <main style={{ minHeight: '100vh', background: '#fafaf9', padding: '32px 16px' }}>
+    <main className="light-surface" style={{ minHeight: '100vh', background: '#fafaf9', padding: '32px 16px' }}>
       <div style={{ maxWidth: 640, margin: '0 auto' }}>
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>

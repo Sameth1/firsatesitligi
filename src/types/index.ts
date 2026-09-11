@@ -35,6 +35,9 @@ export type Opportunity = {
   /** 090 SQL sonrası: son sunucu tarafı URL kontrolü (yoksa null) */
   last_url_check_at?: string | null
   last_url_check_status?: number | null
+  /** 101 SQL sonrası: Türkçe kısa özet (migration çalışmadıysa undefined) */
+  summary_tr?: string | null
+  eligibility_notes_tr?: string | null
 }
 
 export type MatchParams = {

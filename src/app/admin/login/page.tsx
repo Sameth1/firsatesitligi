@@ -73,7 +73,7 @@ export default function AdminLogin() {
   }
 
   return (
-    <main style={{ minHeight: '100vh', background: '#fafaf9', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <main className="light-surface" style={{ minHeight: '100vh', background: '#fafaf9', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ maxWidth: 400, width: '100%' }}>
         <div style={{ fontSize: 22, fontWeight: 500, color: '#1a1a1a', marginBottom: 24 }}>
           <span style={{ color: '#534AB7' }}>fırsat</span>eşitliği

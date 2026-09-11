@@ -144,7 +144,7 @@ Yanlış reddetmeyi önlemek için olumsuz kararlar yalnızca açık kanıt vark
 
 ### `agent_approve_submission` RPC'si
 
-Standart `approve_submission()` RPC'si insan admin içindir. Agent'ın kullandığı RPC'nin temel kapısı migration 099'dadır; migration 101 ikinci olumlu denetimi ve her iki turdaki kanıt alıntılarını ayrıca zorunlu kılar. Çağırma yetkisi yalnız `service_role`'dadır. Eksik bilgiyi varsayımla doldurmaz; hata verip kaydı pending bırakır.
+Standart `approve_submission()` RPC'si insan admin içindir. Agent'ın kullandığı RPC'nin temel kapısı migration 099'dadır; migration 105 ikinci olumlu denetimi ve her iki turdaki kanıt alıntılarını ayrıca zorunlu kılar. Çağırma yetkisi yalnız `service_role`'dadır. Eksik bilgiyi varsayımla doldurmaz; hata verip kaydı pending bırakır.
 
 ---
 
@@ -199,7 +199,7 @@ PostgreSQL şeması Supabase üzerinde barınır. Migration'lar `docs/sql/` alt�
 | `098_remove_manual_improvement_queue.sql` | Ayrı script/PR öneri kuyruğunu kaldırır; hafıza doğrudan agent kararında kullanılır |
 | `099_strict_agent_approval_gate.sql` | Eksik/kanıtsız agent kaydının yayına çıkmasını Python ve DB katmanında engeller |
 | `100_submission_source_url.sql` | Kanıtın alındığı `source_url` ile doğrudan başvuru/resmî hedef olan `url` alanını ayırır |
-| `101_agent_two_pass_evidence_gate.sql` | Agent otomatik onayında iki olumlu denetim ve iki tur birebir sayfa kanıtını DB katmanında zorunlu kılar |
+| `105_agent_two_pass_evidence_gate.sql` | Agent otomatik onayında iki olumlu denetim ve iki tur birebir sayfa kanıtını DB katmanında zorunlu kılar |
 
 Migration'lar `npm run db:0XX` script'leriyle bağlı Supabase projesine uygulanır (bkz. `package.json`).
 
@@ -277,7 +277,23 @@ npm install
 ```
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
+SUPABASE_SERVICE_ROLE_KEY=eyJ...        # sunucu tarafı — NEXT_PUBLIC_ ÖNEKİ YOK
 ```
+
+> **`SUPABASE_SERVICE_ROLE_KEY` neden Next tarafında da gerekiyor?**
+> `/api/submit-opportunity` route'u öneri formunu rate-limit'liyor. Rate limit
+> ancak istemcinin IP'si bilinirse çalışır ve IP'yi yalnız sunucu güvenilir
+> biçimde okuyabilir (tarayıcı kendi IP'sini bilmez, bildirse de yalan
+> söyleyebilir). Route IP'yi okuyup `submit_human_opportunity` RPC'sine
+> veriyor; RPC'nin EXECUTE yetkisi yalnız `service_role`'da olduğu için route
+> atlanarak sahte IP ile limit aşılamıyor.
+>
+> Anahtar **kesinlikle** `NEXT_PUBLIC_` öneki almamalı — aksi hâlde tarayıcı
+> bundle'ına gömülür ve RLS'i bypass eden anahtar herkese açılır.
+>
+> Dağıtımda (Vercel): Project → Settings → Environment Variables → Production
+> + Preview olarak ekle, sonra yeniden dağıt. Anahtar tanımlı değilse route
+> sessizce başarısız olmaz; 503 ve açık bir hata mesajı döner.
 
 ```bash
 npm run dev
@@ -336,7 +352,7 @@ npm run db:099
 npm run db:100
 
 # İki turlu agent kanıt kapısı
-npm run db:101
+npm run db:105
 ```
 
 > ⚠️ `SUPABASE_SERVICE_ROLE_KEY` ve `NVIDIA_API_KEY`/`GROQ_API_KEY` hassas anahtarlardır. `.env` dosyası asla commit'lenmemelidir.

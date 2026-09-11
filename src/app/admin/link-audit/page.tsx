@@ -101,7 +101,7 @@ export default function LinkAuditPage() {
   }
 
   return (
-    <main style={{ minHeight: '100vh', background: '#fafaf9', padding: '32px 16px' }}>
+    <main className="light-surface" style={{ minHeight: '100vh', background: '#fafaf9', padding: '32px 16px' }}>
       <div style={{ maxWidth: 960, margin: '0 auto' }}>
         <div
           style={{

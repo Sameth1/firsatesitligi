@@ -175,7 +175,7 @@ export default function AdminPage() {
   }
 
   return (
-    <main style={{ minHeight: '100vh', background: '#fafaf9', padding: '32px 16px' }}>
+    <main className="light-surface" style={{ minHeight: '100vh', background: '#fafaf9', padding: '32px 16px' }}>
       <div style={{ maxWidth: 800, margin: '0 auto' }}>
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
@@ -211,6 +211,20 @@ export default function AdminPage() {
               }}
             >
               Bağlantı denetimi
+            </Link>
+            <Link
+              href="/admin/review"
+              style={{
+                fontSize: 12,
+                color: '#534AB7',
+                textDecoration: 'none',
+                padding: '6px 12px',
+                border: '0.5px solid #e0e0e0',
+                borderRadius: 8,
+                background: '#fff',
+              }}
+            >
+              Belirsizler
             </Link>
             <button
               onClick={handleLogout}

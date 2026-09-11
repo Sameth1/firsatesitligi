@@ -1,5 +1,5 @@
 -- ============================================================
--- 101 · Agent onayında iki tur + birebir kanıt zorunluluğu
+-- 105 · Agent onayında iki tur + birebir kanıt zorunluluğu
 -- Önkoşul: 099
 -- ============================================================
 
