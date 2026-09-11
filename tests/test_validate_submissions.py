@@ -1,5 +1,6 @@
 import json
 import unittest
+from datetime import date, datetime, timezone
 from unittest.mock import patch
 
 import validate_submissions as validator
@@ -14,7 +15,14 @@ def complete_submission():
         "deadline_text": "2099-12-31",
         "funding_type": "full",
         "eligibility_notes": "Lisans öğrencileri programa başvurabilir.",
-        "study_level": ["undergraduate"],
+        "study_level": ["bachelor"],
+        "eligible_citizenships": ["all"],
+        "target_fields": ["all"],
+        "details_url": "https://example.org/program",
+        "application_route_status": "verified",
+        "application_method": "portal",
+        "application_url_verified_at": datetime.now(timezone.utc).isoformat(),
+        "application_url_final": "https://example.org/program/apply",
     }
 
 
@@ -29,6 +37,21 @@ def high_confidence_verdict():
         "finansman_dogrulandi": True,
         "ulke_dogrulandi": True,
         "uygunluk_dogrulandi": True,
+        "uyruk_dogrulandi": True,
+        "yas_dogrulandi": True,
+        "egitim_dogrulandi": True,
+        "dil_dogrulandi": True,
+        "bolum_dogrulandi": True,
+        "dogrulanmis_filtreler": {
+            "host_countries": ["DE"],
+            "eligible_citizenships": ["all"],
+            "age_min": None,
+            "age_max": None,
+            "study_level": ["bachelor"],
+            "language_requirement": None,
+            "required_languages": ["all"],
+            "target_fields": ["all"],
+        },
         "gerekce": "Bütün alanlar sayfada doğrulandı.",
     }
 
@@ -42,6 +65,11 @@ def verdict_with_quotes(page_text):
         "finansman": "Fully funded",
         "ulke": "Hosted in Germany",
         "uygunluk": "Bachelor students may apply",
+        "uyruk": "All nationalities may apply",
+        "yas": "No age limit applies",
+        "egitim": "Bachelor students may apply",
+        "dil": "No language requirement",
+        "bolum": "Open to any field of study",
     }
     return verdict
 
@@ -184,7 +212,9 @@ class ApprovalGateTests(unittest.TestCase):
     def test_evidence_quotes_must_exist_in_page(self):
         page = (
             "Applications are open until 31 December 2099. Scholarship programme. "
-            "Fully funded. Hosted in Germany. Bachelor students may apply."
+            "Fully funded. Hosted in Germany. Bachelor students may apply. "
+            "All nationalities may apply. No age limit applies. "
+            "No language requirement. Open to any field of study."
         )
         verdict = verdict_with_quotes(page)
 
@@ -198,6 +228,43 @@ class ApprovalGateTests(unittest.TestCase):
         )
 
         self.assertEqual(len(blockers), len(validator.EVIDENCE_QUOTE_FIELDS))
+
+
+class StrictFilterGateTests(unittest.TestCase):
+    def test_each_filter_flag_is_required(self):
+        for field in validator.STRICT_FILTER_FLAGS:
+            with self.subTest(field=field):
+                verdict = high_confidence_verdict()
+                verdict[field] = False
+                self.assertTrue(validator.strict_filter_blockers(verdict))
+
+    def test_invalid_filter_values_fail_closed(self):
+        verdict = high_confidence_verdict()
+        verdict["dogrulanmis_filtreler"].update({
+            "host_countries": ["ZZ"],
+            "eligible_citizenships": ["all", "TR"],
+            "study_level": ["any", "master"],
+            "required_languages": ["xx"],
+            "target_fields": ["uydurma_bolum"],
+            "age_min": 40,
+            "age_max": 20,
+        })
+        parsed = validator._parse_verdict(json.dumps(verdict))
+        self.assertTrue(validator.strict_filter_blockers(parsed))
+
+    def test_two_passes_must_agree_on_every_filter(self):
+        first = high_confidence_verdict()
+        second = high_confidence_verdict()
+        self.assertEqual(validator.filter_consensus_blockers(first, second), [])
+        second["dogrulanmis_filtreler"]["age_max"] = 29
+        self.assertTrue(validator.filter_consensus_blockers(first, second))
+
+    def test_language_codes_are_canonical(self):
+        verdict = high_confidence_verdict()
+        verdict["dogrulanmis_filtreler"]["required_languages"] = ["DE", "en", "en"]
+        parsed = validator._parse_verdict(json.dumps(verdict))
+        self.assertEqual(
+            parsed["dogrulanmis_filtreler"]["required_languages"], ["de", "en"])
 
 
 class HistoricApprovalClassificationTests(unittest.TestCase):
@@ -230,6 +297,32 @@ class HistoricApprovalClassificationTests(unittest.TestCase):
 
 
 class DecisionFlowTests(unittest.TestCase):
+    def test_future_deadline_cannot_be_called_closed_without_closed_quote(self):
+        submission = complete_submission()
+        submission["deadline_text"] = "2026-09-12"
+        verdict = verdict_with_quotes("")
+        verdict.update({"durum": "kapali", "guven": "yuksek"})
+        verdict["kanitlar"]["guncellik"] = "Deadline: 12 September 2026"
+
+        blockers = validator.verdict_date_consistency_blockers(
+            submission, verdict, today=date(2026, 9, 11)
+        )
+
+        self.assertTrue(blockers)
+
+    def test_explicit_closed_quote_can_override_future_recorded_deadline(self):
+        submission = complete_submission()
+        submission["deadline_text"] = "2026-09-12"
+        verdict = verdict_with_quotes("")
+        verdict.update({"durum": "kapali", "guven": "yuksek"})
+        verdict["kanitlar"]["guncellik"] = "Applications are closed"
+
+        blockers = validator.verdict_date_consistency_blockers(
+            submission, verdict, today=date(2026, 9, 11)
+        )
+
+        self.assertEqual(blockers, [])
+
     @patch("validate_submissions.apply_decision")
     def test_incomplete_record_is_rejected_not_queued(self, apply_decision):
         submission = complete_submission()
@@ -273,6 +366,31 @@ class DecisionFlowTests(unittest.TestCase):
 
         self.assertEqual(result, "tekrar")
         self.assertEqual(apply_decision.call_args.args[1], "tekrar")
+
+    @patch("validate_submissions.judge_with_llm")
+    @patch("validate_submissions.fetch_page")
+    @patch("validate_submissions.apply_decision")
+    def test_login_required_application_link_is_rejected_before_llm(
+        self, apply_decision, fetch_page, judge_with_llm
+    ):
+        fetch_page.side_effect = [
+            (401, "https://docs.google.com/forms/d/e/example/viewform", "", None),
+            (200, "https://source.example/program", "<p>Programme details</p>", None),
+        ]
+        submission = complete_submission()
+        submission.update({
+            "id": "test",
+            "url": "https://docs.google.com/forms/d/e/example/viewform",
+            "application_url_final": "https://docs.google.com/forms/d/e/example/viewform",
+            "source_url": "https://source.example/program",
+        })
+
+        result = validator.process(submission, True, set(), set(), {"llm_calls": 0})
+
+        self.assertEqual(result, "llm_red")
+        self.assertEqual(apply_decision.call_args.args[1], "reddet")
+        self.assertIn("HTTP 401", apply_decision.call_args.args[2])
+        judge_with_llm.assert_not_called()
 
 
 class AgentRevisionTests(unittest.TestCase):
@@ -462,14 +580,37 @@ class CitizenshipTests(unittest.TestCase):
     def test_country_names_are_not_accepted_as_codes(self):
         self.assertIsNone(validator.clean_citizenships(['China', 'Türkiye']))
 
+    def test_unknown_two_letter_code_is_not_accepted(self):
+        self.assertIsNone(validator.clean_citizenships(['ZZ']))
+
+    def test_restriction_requires_a_verbatim_quote(self):
+        page = "Only citizens of China may apply. Scholarship programme."
+        verdict = verdict_with_quotes(page)
+        verdict['dogrulanmis_filtreler']['eligible_citizenships'] = ['CN']
+        verdict['kanitlar']['uyruk'] = ""
+
+        self.assertIn(
+            "uyruk filtresi alıntısı eksik",
+            validator.evidence_quote_blockers(page, verdict),
+        )
+        verdict['kanitlar']['uyruk'] = "Only citizens of China may apply"
+        self.assertNotIn(
+            "uyruk filtresi alıntısı eksik",
+            validator.evidence_quote_blockers(page, verdict),
+        )
+
     def test_verdict_carries_citizenship_restriction(self):
         verdict = high_confidence_verdict()
-        verdict['uyruk_kisiti'] = ['CN']
-        self.assertEqual(validator._parse_verdict(json.dumps(verdict))['uyruk_kisiti'], ['CN'])
+        verdict['dogrulanmis_filtreler']['eligible_citizenships'] = ['CN']
+        parsed = validator._parse_verdict(json.dumps(verdict))
+        self.assertEqual(
+            parsed['dogrulanmis_filtreler']['eligible_citizenships'], ['CN'])
 
-    def test_verdict_without_the_field_is_unrestricted(self):
-        self.assertIsNone(
-            validator._parse_verdict(json.dumps(high_confidence_verdict()))['uyruk_kisiti'])
+    def test_verdict_without_the_field_blocks_approval(self):
+        verdict = high_confidence_verdict()
+        verdict['dogrulanmis_filtreler'].pop('eligible_citizenships')
+        parsed = validator._parse_verdict(json.dumps(verdict))
+        self.assertTrue(validator.strict_filter_blockers(parsed))
 
     @patch('validate_submissions.requests.post')
     @patch('validate_submissions.requests.patch')
@@ -477,13 +618,13 @@ class CitizenshipTests(unittest.TestCase):
         http_post.return_value.status_code = 200
         http_post.return_value.json.return_value = {'opportunity_id': 'opp-1'}
         verdict = high_confidence_verdict()
-        verdict['uyruk_kisiti'] = ['CN']
+        verdict['dogrulanmis_filtreler']['eligible_citizenships'] = ['CN']
 
         ok, _ = validator.approve_submission({'id': 'sub-1'}, verdict, dry_run=False)
 
         self.assertTrue(ok)
-        self.assertEqual(http_patch.call_args.kwargs['json'],
-                         {'eligible_citizenships': ['CN']})
+        self.assertEqual(
+            http_patch.call_args.kwargs['json'], verdict['dogrulanmis_filtreler'])
         http_post.assert_called_once()
 
     @patch('validate_submissions.requests.post')
@@ -492,7 +633,7 @@ class CitizenshipTests(unittest.TestCase):
         # Uyruk yazılamadıysa kayıt {all} ile yayına girmemeli.
         http_patch.side_effect = validator.requests.exceptions.RequestException('boom')
         verdict = high_confidence_verdict()
-        verdict['uyruk_kisiti'] = ['PS']
+        verdict['dogrulanmis_filtreler']['eligible_citizenships'] = ['PS']
 
         ok, detay = validator.approve_submission({'id': 'sub-1'}, verdict, dry_run=False)
 
@@ -502,7 +643,7 @@ class CitizenshipTests(unittest.TestCase):
 
     @patch('validate_submissions.requests.post')
     @patch('validate_submissions.requests.patch')
-    def test_unrestricted_record_is_approved_without_extra_write(self, http_patch, http_post):
+    def test_unrestricted_values_are_explicitly_written(self, http_patch, http_post):
         http_post.return_value.status_code = 200
         http_post.return_value.json.return_value = {'opportunity_id': 'opp-1'}
 
@@ -510,7 +651,10 @@ class CitizenshipTests(unittest.TestCase):
                                              dry_run=False)
 
         self.assertTrue(ok)
-        http_patch.assert_not_called()
+        self.assertEqual(
+            http_patch.call_args.kwargs['json'],
+            high_confidence_verdict()['dogrulanmis_filtreler'],
+        )
 
     def test_field_restriction_is_written_too(self):
         with patch('validate_submissions.requests.post') as http_post, \
@@ -518,15 +662,13 @@ class CitizenshipTests(unittest.TestCase):
             http_post.return_value.status_code = 200
             http_post.return_value.json.return_value = {'opportunity_id': 'opp-1'}
             verdict = high_confidence_verdict()
-            verdict['uyruk_kisiti'] = ['CN']
-            verdict['bolum_kisiti'] = ['medicine', 'nursing']
+            verdict['dogrulanmis_filtreler']['eligible_citizenships'] = ['CN']
+            verdict['dogrulanmis_filtreler']['target_fields'] = ['medicine', 'nursing']
 
             validator.approve_submission({'id': 'sub-1'}, verdict, dry_run=False)
 
-            self.assertEqual(http_patch.call_args.kwargs['json'], {
-                'eligible_citizenships': ['CN'],
-                'target_fields': ['medicine', 'nursing'],
-            })
+            self.assertEqual(
+                http_patch.call_args.kwargs['json'], verdict['dogrulanmis_filtreler'])
 
     def test_unknown_field_slugs_are_dropped(self):
         # UI'da olmayan bir slug yazmak kaydı o bölümü seçenden gizlerdi.
@@ -612,3 +754,61 @@ class SsrfGuardTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReligionPolicyTests(unittest.TestCase):
+    """Başvuranın dinine göre ayrım yapan fırsatlar yayınlanmaz.
+
+    Bu bir kalite kuralı değil, platform politikası: fırsat her açıdan
+    kusursuz olsa bile reddedilir.
+    """
+
+    def test_din_sarti_rejects_regardless_of_confidence(self):
+        for guven in ("yuksek", "orta", "dusuk"):
+            with self.subTest(guven=guven):
+                verdict = high_confidence_verdict()
+                verdict["guven"] = guven
+                verdict["din_sarti"] = True
+                eylem, gerekce = validator.decide(verdict)
+                self.assertEqual(eylem, "reddet")
+                self.assertIn("din", gerekce.lower())
+
+    def test_clean_verdict_still_approves(self):
+        verdict = high_confidence_verdict()
+        verdict["din_sarti"] = False
+        self.assertEqual(validator.decide(verdict)[0], "onayla")
+
+    def test_religion_word_blocks_auto_approval_even_if_llm_says_no(self):
+        """Model 'şart yok' dese bile metinde din geçiyorsa insana gider."""
+        sub = complete_submission()
+        sub["eligibility_notes"] = "Open to protestant students of all disciplines."
+        verdict = high_confidence_verdict()
+        verdict["din_sarti"] = False
+        blockers = validator.auto_approval_blockers(sub, verdict)
+        self.assertTrue(any("din" in b for b in blockers), blockers)
+
+    def test_religion_as_a_field_of_study_is_not_blocked(self):
+        """İlahiyat bursu engellenmemeli: konuyu ÇALIŞMAK ≠ o dine MENSUP OLMAK."""
+        sub = complete_submission()
+        sub["eligibility_notes"] = "Lisans öğrencileri programa başvurabilir."
+        sub["title"] = "Karşılaştırmalı din sosyolojisi doktora bursu"
+        verdict = high_confidence_verdict()
+        verdict["din_sarti"] = False
+        self.assertEqual(validator.auto_approval_blockers(sub, verdict), [])
+
+
+class FieldDictionaryTests(unittest.TestCase):
+    """Bölüm sözlüğü tek kaynaktan (src/lib/fields.ts) okunuyor."""
+
+    def test_slugs_loaded_from_shared_file(self):
+        self.assertGreater(len(validator.FIELD_SLUGS), 100)
+        self.assertIn("mechatronics", validator.VALID_FIELDS)
+        self.assertIn("computer_science", validator.VALID_FIELDS)
+
+    def test_prompt_lists_every_slug(self):
+        for slug in ("mechatronics", "social_work", "archaeology"):
+            self.assertIn(slug, validator.SYSTEM_PROMPT)
+
+    def test_unknown_slug_is_dropped(self):
+        self.assertEqual(validator.clean_fields(["mechatronics", "uydurma"]),
+                         ["mechatronics"])

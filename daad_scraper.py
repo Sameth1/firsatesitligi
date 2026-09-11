@@ -35,6 +35,7 @@ import requests
 from dotenv import load_dotenv
 
 import agent_reach_url_scraper as reach
+from discovery_gate import candidate_blockers
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -143,8 +144,15 @@ def build_record(sch, base, detail_url, category, deadline_text):
     return {
         "title":                (sch.get("nameEn") or sch.get("programmnameEn") or "").strip()
                                 or base.get("title"),
-        "url":                  detail_url,
+        "url":                  base.get("url") or detail_url,
+        "details_url":          base.get("details_url") or detail_url,
         "source_url":           detail_url,
+        "application_route_status": base.get("application_route_status", "unverified"),
+        "application_method":   base.get("application_method"),
+        "application_url_verified_at": base.get("application_url_verified_at"),
+        "application_url_check_status": base.get("application_url_check_status"),
+        "application_url_final": base.get("application_url_final"),
+        "application_url_evidence": base.get("application_url_evidence"),
         "category_slug":        category,
         "deadline_text":        deadline_text,    # deadlines.js'ten (serbest metin) ya da None
         "host_countries":       ["DE"],           # DAAD → Almanya
@@ -160,6 +168,8 @@ def build_record(sch, base, detail_url, category, deadline_text):
         "status":               "pending",
         "submission_origin":    "agent",
         "review_stage":         "agent_queue",
+        "admin_note":           (None if base.get("application_url_verified_at") else
+                                  "[uyarı] doğrulanmış doğrudan başvuru adımı bulunamadı"),
     }
 
 
@@ -186,6 +196,11 @@ def process_scholarship(sch, deadline_map, dry_run, stats):
         return
     base = reach.extract_fields(page, detail_url, category) or {}
     record = build_record(sch, base, detail_url, category, deadline_text)
+    blockers = candidate_blockers(record)
+    if blockers:
+        stats["errors"] += 1
+        print(f"  🚫 kalite kapısı: {record['title'][:55]} — {'; '.join(blockers)}")
+        return
 
     if dry_run:
         stats["previewed"] += 1

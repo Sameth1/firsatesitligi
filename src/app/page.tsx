@@ -16,20 +16,21 @@ import { FIELDS, FIELD_LABELS } from '@/lib/fields'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import RangeSlider from '@/components/form/RangeSlider'
-import StepSlider from '@/components/form/StepSlider'
 import ChoiceGrid from '@/components/form/ChoiceGrid'
 
 const COUNTRIES: { code: string; label: string; language: string | null }[] = [
-  { code: 'DE', label: '🇩🇪 Almanya',     language: 'Almanca' },
-  { code: 'FR', label: '🇫🇷 Fransa',      language: 'Fransızca' },
-  { code: 'ES', label: '🇪🇸 İspanya',     language: 'İspanyolca' },
-  { code: 'GB', label: '🇬🇧 İngiltere',   language: 'İngilizce' },
-  { code: 'US', label: '🇺🇸 ABD',         language: 'İngilizce' },
-  { code: 'IT', label: '🇮🇹 İtalya',      language: 'İtalyanca' },
-  { code: 'NL', label: '🇳🇱 Hollanda',    language: 'Hollandaca' },
-  { code: 'SE', label: '🇸🇪 İsveç',       language: 'İsveççe' },
-  { code: 'AT', label: '🇦🇹 Avusturya',   language: 'Almanca' },
-  { code: 'BE', label: '🇧🇪 Belçika',     language: 'Fransızca' },
+  { code: 'DE', label: 'Almanya',     language: 'Almanca' },
+  { code: 'TR', label: 'Türkiye',     language: 'Yurt İçi' },
+  { code: 'FR', label: 'Fransa',      language: 'Fransızca' },
+  { code: 'GB', label: 'İngiltere',   language: 'İngilizce' },
+  { code: 'US', label: 'ABD',         language: 'İngilizce' },
+  { code: 'CH', label: 'İsviçre',     language: 'Almanca / Fransızca' },
+  { code: 'IT', label: 'İtalya',      language: 'İtalyanca' },
+  { code: 'ES', label: 'İspanya',     language: 'İspanyolca' },
+  { code: 'NL', label: 'Hollanda',    language: 'Hollandaca' },
+  { code: 'BE', label: 'Belçika',     language: 'Fransızca' },
+  { code: 'AT', label: 'Avusturya',   language: 'Almanca' },
+  { code: 'SE', label: 'İsveç',       language: 'İsveççe' },
 ]
 
 const CATEGORIES = [
@@ -41,15 +42,7 @@ const CATEGORIES = [
   { slug: 'exchange',      label: 'Değişim' },
 ]
 
-const HIGHEST_EDU_LEVELS = [
-  { value: 'lise',          label: 'Lise' },
-  { value: 'on_lisans',     label: 'Ön Lisans' },
-  { value: 'lisans',        label: 'Lisans' },
-  { value: 'yuksek_lisans', label: 'Yüksek Lisans' },
-  { value: 'doktora',       label: 'Doktora' },
-]
-
-// ChoiceGrid / StepSlider için görünüm listeleri. Değerler (value) yukarıdaki
+// Form bileşenleri için görünüm listeleri. Değerler (value) yukarıdaki
 // listelerle birebir aynı — yalnız sunum katmanı zenginleşiyor,
 // match_opportunities'e giden parametreler değişmiyor.
 // Emoji bayrak (🇩🇪) Windows'ta render olmuyor — kullanıcı sadece "DE" görüyor.
@@ -91,36 +84,28 @@ const CATEGORY_BLURB: Record<string, string> = {
 }
 
 const STUDY_LEVEL_OPTIONS = [
+  { value: 'high_school', label: 'Lise',          icon: '🏫' },
   { value: 'bachelor', label: 'Lisans',        icon: '📘' },
   { value: 'master',   label: 'Yüksek Lisans', icon: '📗' },
   { value: 'phd',      label: 'Doktora',       icon: '🔬' },
+  { value: 'graduate', label: 'Mezun',         icon: '🎓' },
   { value: 'any',      label: 'Fark etmez',    icon: '✨' },
 ]
 
-// Eğitim seviyesi doğal bir merdiven — bu yüzden kart yerine çekmeli bar.
-const HIGHEST_EDU_STOPS = [
-  { value: 'lise',          short: 'Lise',   label: 'Lise (okuyorum / bitirdim)',   icon: '🏫' },
-  { value: 'on_lisans',     short: 'Ön Lis.', label: 'Ön lisans',                    icon: '📒' },
-  { value: 'lisans',        short: 'Lisans', label: 'Lisans (okuyorum / bitirdim)',  icon: '📘' },
-  { value: 'yuksek_lisans', short: 'Y.Lis.', label: 'Yüksek lisans',                 icon: '📗' },
-  { value: 'doktora',       short: 'Dr.',    label: 'Doktora',                       icon: '🎓' },
-]
-
-// Dil barının durakları — "Bilmiyorum" en solda, filtre uygulanmaz.
-const CEFR_STOPS = [
-  { value: 'none', short: '—',  label: 'Hiç bilmiyorum' },
-  { value: 'A1',   short: 'A1', label: 'A1 — Başlangıç' },
-  { value: 'A2',   short: 'A2', label: 'A2 — Temel' },
-  { value: 'B1',   short: 'B1', label: 'B1 — Orta' },
-  { value: 'B2',   short: 'B2', label: 'B2 — İyi' },
-  { value: 'C1',   short: 'C1', label: 'C1 — İleri' },
-  { value: 'C2',   short: 'C2', label: 'C2 — Anadil seviyesi' },
+const LANGUAGE_OPTIONS = [
+  { value: 'en', label: 'İngilizce' },
+  { value: 'de', label: 'Almanca' },
+  { value: 'fr', label: 'Fransızca' },
+  { value: 'es', label: 'İspanyolca' },
+  { value: 'it', label: 'İtalyanca' },
+  { value: 'nl', label: 'Hollandaca' },
+  { value: 'tr', label: 'Türkçe' },
 ]
 
 // Bölüm sözlüğü src/lib/fields.ts'te — ajan (validate_submissions.py) da
-// aynı dosyayı okuyor, böylece form ile ajan asla ayrı düşmüyor.
+// aynı dosyayı okuyor, böylece form ile ajanın kabul ettiği slug kümesi
+// asla ayrı düşmüyor. 59 → 135 slug.
 const FIELD_LOOKUP = FIELD_LABELS
-
 
 function fieldLabel(slug: string) {
   return FIELD_LOOKUP[slug] ?? slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
@@ -142,7 +127,6 @@ export default function Home() {
   const [loading, setLoading] = useState(false)
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const [searchSnapshot, setSearchSnapshot] = useState<Record<string, unknown>>({})
-  const [relaxedFilters, setRelaxedFilters] = useState<string[]>([])
   const [searchError, setSearchError] = useState<string | null>(null)
 
   // Form state
@@ -151,12 +135,8 @@ export default function Home() {
   const [citizenship, setCitizenship] = useState('TR')
   const [age, setAge] = useState('')
   const [studyLevel, setStudyLevel] = useState<string | null>(null)
-  const [highestEdu, setHighestEdu] = useState<string | null>(null)
   const [field, setField] = useState<string | null>(null)
-  const [languageLevel, setLanguageLevel] = useState<string | null>(null)
-  // İngilizce ayrı soruluyor: aktif kayıtların TAMAMI İngilizce istiyor, yani
-  // eşleşmeyi asıl belirleyen dil bu — ev sahibi ülkenin dili değil.
-  const [englishLevel, setEnglishLevel] = useState<string | null>(null)
+  const [language, setLanguage] = useState<string | null>(null)
 
   const formRef = useRef<HTMLElement>(null)
   const prevStepRef = useRef<Step | null>(null)
@@ -213,46 +193,25 @@ export default function Home() {
         { opacity: 0, y: 26, scale: 0.94 },
         { opacity: 1, y: 0, scale: 1, duration: 0.6, delay: 0.3, stagger: 0.06, ease: 'back.out(1.6)' })
 
-      // Sonuç sayacı 0'dan gerçek değere saysın
-      const countEl = document.querySelector('[data-count]')
-      if (countEl) {
-        const target = Number(countEl.textContent || '0')
-        const obj = { v: 0 }
-        gsap.to(obj, {
-          v: target, duration: 1.0, ease: 'power2.out',
-          onUpdate: () => { countEl.textContent = String(Math.round(obj.v)) },
-        })
-      }
-
       // Sonuç kartları: görünüm alanına girdikçe teker teker belirir
       ScrollTrigger.batch('.opp-card', {
         start: 'top 92%',
         onEnter: batch => gsap.fromTo(batch,
-          { opacity: 0, y: 30, scale: 0.98 },
-          { opacity: 1, y: 0, scale: 1, duration: 0.6, stagger: 0.07, ease: 'power3.out', overwrite: true }),
+          { opacity: 0, y: 24, scale: 0.98 },
+          { opacity: 1, y: 0, scale: 1, duration: 0.5, stagger: 0.06, ease: 'power3.out', overwrite: true }),
       })
-      gsap.set('.opp-card', { opacity: 0 })
       ScrollTrigger.refresh()
     })
 
     return () => ctx.revert()
-  }, [step, results, activeCategory])
-
-  const selectedCountry = COUNTRIES.find(c => c.code === country) ?? null
-  const targetLanguage = selectedCountry?.language ?? null
+  }, [step, results])
 
   // İlerleme göstergesi: kaç anlamlı alan dolduruldu?
   const filledFlags = [
-    category, country, age === '' ? null : age, highestEdu, studyLevel, field,
-    languageLevel === 'none' ? null : languageLevel, englishLevel,
+    category, country, age === '' ? null : age, studyLevel, field, language,
   ]
   const activeFilterCount = filledFlags.filter(Boolean).length
   const progress = Math.round((activeFilterCount / filledFlags.length) * 100)
-
-  function handleCountryChange(newCountry: string | null) {
-    setCountry(newCountry)
-    setLanguageLevel(null)
-  }
 
   async function handleSearch() {
     setLoading(true)
@@ -264,70 +223,42 @@ export default function Home() {
       p_category_slug: category || null,
       p_citizenship:   citizenship || 'TR',
       p_age:           age ? parseInt(age) : null,
-      p_study_level:   studyLevel || null,
-      p_highest_edu:   highestEdu || null,
+      p_study_level:   (studyLevel && studyLevel !== 'any') ? studyLevel : null,
+      p_highest_edu:   null,
       p_field:         field || null,
-      // Ev sahibi ülke dilini yalnız "biliyorum" dediyse gönderiyoruz: bu
-      // parametre kayıt ELEMEZ, yalnızca o dili kabul eden kayıtları KURTARIR.
-      p_language:      languageLevel && languageLevel !== 'none' ? targetLanguage : null,
-      p_english:       englishLevel,
+      p_language:      language,
     }
-
-    // Akıllı fallback: tam eşleşme yoksa filtreleri önem sırasına göre
-    // kademeli gevşetip tekrar sorgulayalım. Ülke ve vatandaşlık hiç
-    // gevşemez — kullanıcının gitmek istediği yer ve kimliği korunur.
-    const fallbackOrder: { key: keyof MatchParams; label: string }[] = [
-      { key: 'p_field',         label: 'Bölüm' },
-      { key: 'p_english',       label: 'İngilizce seviyesi' },
-      { key: 'p_language',      label: 'Dil seviyesi' },
-      { key: 'p_age',           label: 'Yaş' },
-      { key: 'p_highest_edu',   label: 'Eldeki eğitim seviyesi' },
-      { key: 'p_study_level',   label: 'Eğitim kademesi' },
-      { key: 'p_category_slug', label: 'Kategori' },
-    ]
-
-    const params: MatchParams = { ...baseParams }
-    const relaxed: string[] = []
-    let data: Opportunity[] | null = null
 
     const run = async (p: MatchParams) => {
-      const res = await supabase.rpc('match_opportunities', p)
-      if (res.error) {
-        return { ok: false as const, error: res.error.message, rows: [] as Opportunity[] }
+      try {
+        const res = await supabase.rpc('match_opportunities', p)
+        if (res.error) {
+          return { ok: false as const, error: res.error.message, rows: [] as Opportunity[] }
+        }
+        const rows = ((res.data as Opportunity[]) ?? []).filter(opp => {
+          if (opp.application_route_status === 'verified') {
+            return Boolean(opp.official_url) && Boolean(opp.application_url_verified_at)
+          }
+          return opp.application_route_status === 'guided' && Boolean(opp.details_url)
+        })
+        return { ok: true as const, rows }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Beklenmeyen bağlantı hatası.'
+        return { ok: false as const, error: message, rows: [] as Opportunity[] }
       }
-      return { ok: true as const, rows: ((res.data as Opportunity[]) ?? []) }
     }
 
-    const first = await run(params)
+    const first = await run(baseParams)
     if (!first.ok) {
       setSearchError(first.error)
       setResults([])
-      setRelaxedFilters([])
       setLoading(false)
       return
     }
-    data = first.rows
 
-    for (const f of fallbackOrder) {
-      if (data && data.length > 0) break
-      if (params[f.key] == null) continue
-      ;(params as Record<string, unknown>)[f.key as string] = null
-      relaxed.push(f.label)
-      const next = await run(params)
-      if (!next.ok) {
-        setSearchError(next.error)
-        setResults([])
-        setRelaxedFilters(relaxed)
-        setLoading(false)
-        return
-      }
-      data = next.rows
-    }
-
-    setResults(data ?? [])
-    setRelaxedFilters(relaxed)
+    setResults(first.rows)
     setActiveCategory(null)
-    setSearchSnapshot({ country, category, citizenship, studyLevel, highestEdu, field, targetLanguage, languageLevel, englishLevel })
+    setSearchSnapshot({ country, category, citizenship, studyLevel, field, language })
     setStep('results')
     setLoading(false)
   }
@@ -403,9 +334,7 @@ export default function Home() {
           >
             <strong>Arama yapılamadı.</strong> {searchError}
             <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-mid)' }}>
-              Veritabanında güncel SQL yoksa:{' '}
-              <code style={{ fontSize: 11 }}>docs/sql/090_one_shot_after_006.sql</code> dosyasını Supabase SQL
-              Editor’da bir kez çalıştırın.
+              Lütfen kısa bir süre sonra tekrar deneyin.
             </div>
           </div>
         )}
@@ -454,15 +383,6 @@ export default function Home() {
                 describe={ageBlurb}
               />
 
-              <StepSlider
-                label="Halihazırdaki en yüksek eğitim seviyen"
-                hint="opsiyonel — barı çek"
-                stops={HIGHEST_EDU_STOPS}
-                value={highestEdu}
-                onChange={setHighestEdu}
-                accent="#2BE0C8"
-              />
-
               <div>
                 <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-hi)', marginBottom: 10 }}>
                   Bölümün <span style={{ fontWeight: 400, color: 'var(--text-low)' }}>· opsiyonel</span>
@@ -474,6 +394,20 @@ export default function Home() {
                   options={FIELDS.map(f => ({ value: f.value, label: f.label, group: f.group }))}
                   onChange={setField}
                   emptyHint="Sonuç yok"
+                />
+              </div>
+
+              <div>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-hi)', marginBottom: 10 }}>
+                  Bildiğin dil <span style={{ fontWeight: 400, color: 'var(--text-low)' }}>· opsiyonel</span>
+                </div>
+                <Picker
+                  placeholder="Dil seç"
+                  value={language}
+                  valueLabel={LANGUAGE_OPTIONS.find(item => item.value === language)?.label ?? null}
+                  options={LANGUAGE_OPTIONS}
+                  onChange={setLanguage}
+                  emptyHint="Dil bulunamadı"
                 />
               </div>
 
@@ -500,40 +434,20 @@ export default function Home() {
             <PanelTitle badge="03" title="Hedefin" subtitle="Nereye, ne için" />
 
             <div style={{ display: 'grid', gap: 30 }}>
-              <ChoiceGrid
-                label="Nereye gitmek istiyorsun?"
-                hint="opsiyonel"
-                options={COUNTRY_OPTIONS}
-                value={country}
-                onChange={handleCountryChange}
-                columns={4}
-                accent="#9B6BFF"
-              />
-
-              {/* İngilizce her zaman sorulur: aktif kayıtların tamamı İngilizce
-                  istiyor, yani eşleşmeyi asıl belirleyen dil bu. Dokunulmazsa
-                  hiçbir kayıt elenmez. */}
-              <StepSlider
-                label="İngilizce seviyen"
-                hint="opsiyonel — dokunmazsan dile göre eleme yapmayız"
-                stops={CEFR_STOPS}
-                value={englishLevel}
-                onChange={setEnglishLevel}
-                accent="#FFB547"
-              />
-
-              {targetLanguage && (
-                <div className="fx-fade-in-up">
-                  <StepSlider
-                    label={`${targetLanguage} seviyen`}
-                    hint="opsiyonel — bu soru kayıt elemez, yalnızca o dili kabul edenleri ekler"
-                    stops={CEFR_STOPS}
-                    value={languageLevel}
-                    onChange={setLanguageLevel}
-                    accent="#8FE1FF"
-                  />
+              <div>
+                <ChoiceGrid
+                  label="Nereye gitmek istiyorsun?"
+                  hint="opsiyonel"
+                  options={COUNTRY_OPTIONS}
+                  value={country}
+                  onChange={setCountry}
+                  columns={4}
+                  accent="#9B6BFF"
+                />
+                <div style={{ fontSize: 11.5, color: 'var(--text-low)', marginTop: 8, lineHeight: 1.5 }}>
+                  Şu an açık fırsatı bulunan ülkeler listelenmiştir. Seçim yapmazsan tüm yurt içi ve yurt dışı fırsatlar taranır.
                 </div>
-              )}
+              </div>
 
               <ChoiceGrid
                 label="Başvurmak istediğin eğitim kademesi"
@@ -557,7 +471,7 @@ export default function Home() {
           <div style={{ fontSize: 13, color: 'var(--text-mid)', lineHeight: 1.55 }}>
             {activeFilterCount === 0
               ? 'Hiç filtre seçmedin — tüm açık fırsatları getireceğiz.'
-              : `${activeFilterCount} filtre seçili · tam eşleşme çıkmazsa otomatik gevşetiriz.`}
+              : `${activeFilterCount} filtre seçili · yalnızca tam eşleşen fırsatları getireceğiz.`}
           </div>
           <button
             onClick={handleSearch}
@@ -635,7 +549,9 @@ export default function Home() {
             {filtered.length}
           </span>
           <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-hi)' }}>
-            fırsat bulundu
+            {activeCategory
+              ? `${CATEGORIES.find(c => c.slug === activeCategory)?.label ?? ''} fırsatı bulundu`
+              : 'fırsat bulundu'}
           </span>
         </div>
         <div style={{
@@ -649,15 +565,6 @@ export default function Home() {
             </span>
           )}
           {category && <span>· {CATEGORIES.find(c => c.slug === category)?.label}</span>}
-          {(searchSnapshot.highestEdu as string | null) && (
-            <span>· Mevcut: {HIGHEST_EDU_LEVELS.find(l => l.value === searchSnapshot.highestEdu)?.label}</span>
-          )}
-          {targetLanguage && languageLevel && languageLevel !== 'none' && (
-            <span>· {targetLanguage} {languageLevel}</span>
-          )}
-          {englishLevel && (
-            <span>· İngilizce {englishLevel === 'none' ? 'yok' : englishLevel}</span>
-          )}
         </div>
 
         {/* Filter chips */}
@@ -684,20 +591,6 @@ export default function Home() {
 
         </div>
 
-        {/* Gevşetilen filtreler banner'ı */}
-        {relaxedFilters.length > 0 && results.length > 0 && (
-          <div className="fx-fade-in-up" style={{
-            background: 'rgba(255, 181, 71, 0.10)',
-            border: '1px solid rgba(255, 181, 71, 0.35)',
-            borderRadius: 14, padding: '13px 16px', marginBottom: 22,
-            fontSize: 12.5, color: '#FFD08A', lineHeight: 1.55,
-          }}>
-            <strong>Tam eşleşme bulamadık.</strong> Sana en yakın sonuçları
-            getirmek için şu filtreleri otomatik gevşettik:{' '}
-            <span style={{ fontWeight: 500 }}>{relaxedFilters.join(', ')}</span>.
-          </div>
-        )}
-
         {/* Cards */}
         {filtered.length === 0 ? (
           <div className="glass-panel fx-fade-in" style={{
@@ -706,17 +599,31 @@ export default function Home() {
           }}>
             Bu kriterlere uygun fırsat bulunamadı.
             <br />
-            <button
-              onClick={() => setStep('form')}
-              className="ghost-btn"
-              style={{
-                marginTop: 16, color: '#fff', background: 'rgba(124, 92, 255, 0.22)',
-                border: '1px solid rgba(124, 92, 255, 0.55)', borderRadius: 999,
-                padding: '10px 20px', cursor: 'pointer', fontSize: 13, fontWeight: 600,
-              }}
-            >
-              Filtreleri genişlet →
-            </button>
+            {activeCategory ? (
+              <button
+                onClick={() => setActiveCategory(null)}
+                className="ghost-btn"
+                style={{
+                  marginTop: 16, color: '#fff', background: 'rgba(124, 92, 255, 0.22)',
+                  border: '1px solid rgba(124, 92, 255, 0.55)', borderRadius: 999,
+                  padding: '10px 20px', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                }}
+              >
+                Tüm kategorileri göster ({results.length}) →
+              </button>
+            ) : (
+              <button
+                onClick={() => setStep('form')}
+                className="ghost-btn"
+                style={{
+                  marginTop: 16, color: '#fff', background: 'rgba(124, 92, 255, 0.22)',
+                  border: '1px solid rgba(124, 92, 255, 0.55)', borderRadius: 999,
+                  padding: '10px 20px', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                }}
+              >
+                Filtreleri genişlet →
+              </button>
+            )}
           </div>
         ) : (
           // Tek sütunlu katı liste yerine ızgara — geniş ekranda iki kart yan yana

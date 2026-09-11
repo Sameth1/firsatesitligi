@@ -1,0 +1,72 @@
+name: Audit Opportunities
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-opportunities
+  cancel-in-progress: false
+
+on:
+  schedule:
+    # Her gece UTC 03:00'te (Türkiye Saatiyle 06:00) otomatik çalıştır
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry Run (Veritabanına yazmadan sadece test et)'
+        type: boolean
+        default: false
+        required: false
+      limit:
+        description: 'Kontrol edilecek maksimum URL sayısı (Tümü için "all" veya "0")'
+        type: string
+        default: '100'
+        required: false
+
+jobs:
+  audit:
+    name: Run Opportunity Health & Link Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Audit Script
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_LIMIT: ${{ inputs.limit }}
+        run: |
+          ARGS=()
+          if [ "$INPUT_DRY_RUN" = "true" ]; then
+            ARGS+=(--dry-run)
+          fi
+
+          LIMIT="${INPUT_LIMIT:-100}"
+          if [ "$LIMIT" = "0" ] || [ "$LIMIT" = "all" ]; then
+            ARGS+=(--check-all)
+          elif [[ "$LIMIT" =~ ^[1-9][0-9]*$ ]]; then
+            ARGS+=(--limit "$LIMIT")
+          else
+            echo "Geçersiz limit: $LIMIT" >&2
+            exit 2
+          fi
+
+          python scripts/audit_opportunities.py "${ARGS[@]}"

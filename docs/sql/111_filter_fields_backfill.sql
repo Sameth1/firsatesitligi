@@ -20,9 +20,9 @@
 
 begin;
 
--- ─── 1) 109'DA YAPTIĞIM HATANIN DÜZELTİLMESİ ────────────────────
--- Afreximbank stajını "yalnız Afrika Birliği üyeleri" diye daralttım. Kaynak
--- sayfanın tam cümlesi bunu YALANLIYOR:
+-- ─── 1) Afreximbank'ın doğrulanmış nihai değeri ──────────────────
+-- Eski bir 109 kopyası kaydı yanlışlıkla yalnız Afrika ülkelerine daraltmış
+-- olabilir. Kaynak sayfanın tam cümlesi bunu YALANLIYOR:
 --   "...open to students who are nationals of the Bank's member countries;
 --    students of African descent in the diaspora AND NON-AFRICAN STUDENTS
 --    whose vision for the transformation of Africa resonates with the mission"

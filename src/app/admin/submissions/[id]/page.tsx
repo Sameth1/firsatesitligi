@@ -29,14 +29,27 @@ const FUNDING_TYPES = [
   { value: 'stipend', label: 'Harçlık' },
 ]
 
+const STUDY_LEVELS = [
+  { value: 'high_school', label: 'Lise' },
+  { value: 'bachelor',    label: 'Lisans' },
+  { value: 'master',      label: 'Yüksek Lisans' },
+  { value: 'phd',         label: 'Doktora' },
+  { value: 'graduate',    label: 'Mezun / Genç Profesyonel' },
+]
+
 interface Submission {
   id: string
   title: string
   url: string
+  source_url: string | null
+  details_url: string | null
+  application_route_status: 'verified' | 'unverified' | 'missing'
+  application_method: 'online_form' | 'portal' | 'email' | 'document' | null
   category_slug: string | null
   host_countries: string[]
   eligible_citizenships: string[] | null
   target_fields: string[] | null
+  study_level: string[] | null
   deadline_text: string | null
   funding_type: string | null
   funding_notes: string | null
@@ -72,10 +85,14 @@ export default function SubmissionDetailPage({
   const [toast, setToast] = useState<string | null>(null)
   const [reviseNote, setReviseNote] = useState('')
   const [showReject, setShowReject] = useState(false)
+  const [showRouteVerifyModal, setShowRouteVerifyModal] = useState(false)
 
   // Editable fields
   const [title, setTitle] = useState('')
   const [url, setUrl] = useState('')
+  const [detailsUrl, setDetailsUrl] = useState('')
+  const [applicationMethod, setApplicationMethod] = useState<Submission['application_method']>('portal')
+  const [routeVerified, setRouteVerified] = useState(false)
   const [categorySlug, setCategorySlug] = useState<string | null>(null)
   const [hostCountries, setHostCountries] = useState('')
   const [citizenships, setCitizenships] = useState('')
@@ -83,6 +100,7 @@ export default function SubmissionDetailPage({
   const [deadlineText, setDeadlineText] = useState('')
   const [fundingType, setFundingType] = useState<string | null>(null)
   const [fundingNotes, setFundingNotes] = useState('')
+  const [studyLevel, setStudyLevel] = useState<string[]>([])
   const [eligibility, setEligibility] = useState('')
   const [languageReq, setLanguageReq] = useState('')
   const [ageMin, setAgeMin] = useState('')
@@ -90,6 +108,12 @@ export default function SubmissionDetailPage({
 
   useEffect(() => {
     async function load() {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        window.location.href = '/admin/login'
+        return
+      }
+
       const { data } = await supabase
         .from('submissions')
         .select('*')
@@ -101,10 +125,14 @@ export default function SubmissionDetailPage({
         setSub(s)
         setTitle(s.title)
         setUrl(s.url)
+        setDetailsUrl(s.details_url ?? s.source_url ?? s.url)
+        setApplicationMethod(s.application_method ?? 'portal')
+        setRouteVerified(s.application_route_status === 'verified')
         setCategorySlug(s.category_slug)
         setHostCountries(s.host_countries?.join(', ') ?? '')
         setCitizenships(s.eligible_citizenships?.join(', ') ?? '')
         setTargetFields(s.target_fields?.join(', ') ?? '')
+        setStudyLevel(s.study_level ?? [])
         setDeadlineText(s.deadline_text ?? '')
         setFundingType(s.funding_type)
         setFundingNotes(s.funding_notes ?? '')
@@ -123,8 +151,9 @@ export default function SubmissionDetailPage({
     setTimeout(() => setToast(null), 3000)
   }
 
-  async function saveEdits(options?: { quietSuccess?: boolean }): Promise<boolean> {
-    const { quietSuccess = false } = options ?? {}
+  async function saveEdits(options?: { quietSuccess?: boolean; forceVerified?: boolean }): Promise<boolean> {
+    const { quietSuccess = false, forceVerified } = options ?? {}
+    const isVerified = forceVerified !== undefined ? forceVerified : routeVerified
 
     // Yazım hatası olan bir bölüm slug'ı sessizce çalışır ama kaydı o bölümü
     // seçen HERKESTEN gizler; hata hiçbir yerde görünmez. Bu yüzden kaydetmeyi
@@ -140,6 +169,12 @@ export default function SubmissionDetailPage({
       .update({
         title,
         url,
+        details_url: detailsUrl || url,
+        application_route_status: isVerified ? 'verified' : 'unverified',
+        application_method: isVerified ? (applicationMethod || 'portal') : null,
+        application_url_verified_at: isVerified ? new Date().toISOString() : null,
+        application_url_final: isVerified ? url : null,
+        application_url_evidence: isVerified ? 'İnsan admin bağlantıyı açarak doğruladı' : null,
         category_slug: categorySlug,
         host_countries: hostCountries ? hostCountries.split(',').map(s => s.trim().toUpperCase()) : [],
         // 107: onay RPC'si bu iki alanı submission'dan okuyor. Boş = kısıt yok
@@ -154,6 +189,7 @@ export default function SubmissionDetailPage({
         deadline_text: deadlineText || null,
         funding_type: fundingType,
         funding_notes: fundingNotes || null,
+        study_level: studyLevel.length > 0 ? studyLevel : null,
         eligibility_notes: eligibility || null,
         language_requirement: languageReq || null,
         age_min: ageMin ? parseInt(ageMin) : null,
@@ -165,12 +201,22 @@ export default function SubmissionDetailPage({
       showToast('Hata: ' + error.message)
       return false
     }
+    if (isVerified) setRouteVerified(true)
     if (!quietSuccess) showToast('Kaydedildi')
     return true
   }
 
-  async function handleApprove() {
-    const saved = await saveEdits({ quietSuccess: true })
+  async function handleApprove(forceVerify = false) {
+    if (!routeVerified && !forceVerify) {
+      setShowRouteVerifyModal(true)
+      return
+    }
+
+    if (forceVerify) {
+      setRouteVerified(true)
+    }
+
+    const saved = await saveEdits({ quietSuccess: true, forceVerified: forceVerify || routeVerified })
     if (!saved) return
     setActionLoading(true)
     const { error } = await supabase.rpc('approve_submission', { p_id: id })
@@ -178,6 +224,7 @@ export default function SubmissionDetailPage({
     if (error) {
       showToast('Hata: ' + error.message)
     } else {
+      setShowRouteVerifyModal(false)
       showToast('Onaylandı, fırsat sisteme eklendi.')
       setSub(prev => prev ? { ...prev, status: 'approved' } : null)
     }
@@ -287,8 +334,40 @@ export default function SubmissionDetailPage({
           <Label text="Başlık" />
           <input value={title} onChange={e => setTitle(e.target.value)} style={{ ...inputStyle, marginBottom: 12 }} />
 
-          <Label text="URL" />
+          <Label text="Doğrudan başvuru URL'si" />
           <input value={url} onChange={e => setUrl(e.target.value)} style={{ ...inputStyle, marginBottom: 12 }} />
+
+          <Label text="Resmî bilgi / koşullar URL'si" />
+          <input value={detailsUrl} onChange={e => setDetailsUrl(e.target.value)} style={{ ...inputStyle, marginBottom: 12 }} />
+
+          <Label text="Başvuru yöntemi" />
+          <select
+            value={applicationMethod ?? 'portal'}
+            onChange={e => setApplicationMethod(e.target.value as Submission['application_method'])}
+            style={{ ...inputStyle, marginBottom: 10 }}
+          >
+            <option value="portal">Başvuru portalı</option>
+            <option value="online_form">Online form</option>
+            <option value="email">E-posta</option>
+            <option value="document">İndirilebilir form</option>
+          </select>
+          <div style={{
+            background: routeVerified ? '#E1F5EE' : '#FFF9E6',
+            border: `1px solid ${routeVerified ? '#9FE1CB' : '#FDE68A'}`,
+            borderRadius: 8, padding: '10px 12px', marginBottom: 14,
+          }}>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, color: '#333', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={routeVerified}
+                onChange={e => setRouteVerified(e.target.checked)}
+                style={{ marginTop: 2, accentColor: '#085041' }}
+              />
+              <span>
+                <strong>Doğrudan başvuru adımı doğrulandı:</strong> Bu bağlantıyı açtım; kullanıcı buradan doğrudan başvuruyu başlatabiliyor. (Yayına almak için zorunludur)
+              </span>
+            </label>
+          </div>
 
           <Label text="Kategori" />
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -363,7 +442,33 @@ export default function SubmissionDetailPage({
           <Label text="Finansman notları" />
           <input value={fundingNotes} onChange={e => setFundingNotes(e.target.value)} style={{ ...inputStyle, marginBottom: 12 }} />
 
-          <Label text="Kimler başvurabilir" />
+          <Label text="Öğrenim Seviyesi / Kimler İçin?" />
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+            {STUDY_LEVELS.map(s => {
+              const active = studyLevel.includes(s.value)
+              return (
+                <button
+                  key={s.value}
+                  type="button"
+                  onClick={() => {
+                    setStudyLevel(prev =>
+                      prev.includes(s.value) ? prev.filter(x => x !== s.value) : [...prev, s.value]
+                    )
+                  }}
+                  style={{
+                    fontSize: 11, fontWeight: 500, padding: '4px 10px', borderRadius: 20,
+                    background: active ? '#1a6b5a' : 'transparent',
+                    color: active ? '#fff' : '#1a6b5a',
+                    border: '0.5px solid #1a6b5a66', cursor: 'pointer',
+                  }}
+                >
+                  {s.label}
+                </button>
+              )
+            })}
+          </div>
+
+          <Label text="Kimler başvurabilir (Notlar)" />
           <input value={eligibility} onChange={e => setEligibility(e.target.value)} style={{ ...inputStyle, marginBottom: 12 }} />
 
           <Label text="Dil şartı" />
@@ -422,7 +527,7 @@ export default function SubmissionDetailPage({
           {canReview && (
             <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
               <button
-                onClick={handleApprove}
+                onClick={() => handleApprove()}
                 disabled={actionLoading}
                 style={{
                   flex: 1, padding: '12px', borderRadius: 10,
@@ -502,6 +607,61 @@ export default function SubmissionDetailPage({
             </div>
           )}
         </div>
+
+        {/* Route verification confirmation modal */}
+        {showRouteVerifyModal && (
+          <div style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 300, padding: 16,
+          }}>
+            <div style={{
+              background: '#fff', borderRadius: 14, padding: 24,
+              maxWidth: 480, width: '100%', boxShadow: '0 8px 30px rgba(0,0,0,0.2)',
+            }}>
+              <div style={{ fontSize: 16, fontWeight: 600, color: '#1a1a1a', marginBottom: 12 }}>
+                Başvuru Bağlantısını Doğrula ve Onayla
+              </div>
+              <p style={{ fontSize: 13, color: '#555', lineHeight: 1.5, marginBottom: 16 }}>
+                &quot;Doğrudan başvuru adımı doğrulandı&quot; kutusu işaretlenmemiş. Fırsatın yayına alınabilmesi için doğrudan başvuru adresi gereklidir.
+              </p>
+              <div style={{
+                background: '#f8f8f8', border: '1px solid #e5e5e5', borderRadius: 8,
+                padding: '10px 12px', fontSize: 12, marginBottom: 16, wordBreak: 'break-all',
+              }}>
+                <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Başvuru URL&apos;si:</div>
+                <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: '#534AB7', textDecoration: 'underline' }}>
+                  {url}
+                </a>
+              </div>
+              <p style={{ fontSize: 12, color: '#777', marginBottom: 20 }}>
+                Bu bağlantıyı kontrol ettiyseniz, &quot;Doğrula ve Onayla&quot; butonuna basarak doğrudan sisteme ekleyebilirsiniz.
+              </p>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowRouteVerifyModal(false)}
+                  disabled={actionLoading}
+                  style={{ padding: '8px 14px', borderRadius: 8, border: '0.5px solid #ccc', background: '#fff', fontSize: 13, cursor: 'pointer' }}
+                >
+                  Vazgeç
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApprove(true)}
+                  disabled={actionLoading}
+                  style={{
+                    padding: '8px 16px', borderRadius: 8, border: 'none',
+                    background: '#085041', color: '#fff', fontSize: 13, fontWeight: 500,
+                    cursor: actionLoading ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {actionLoading ? 'Onaylanıyor…' : 'Doğrula ve Onayla'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Toast */}
         {toast && (

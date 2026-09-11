@@ -38,6 +38,11 @@ export type Opportunity = {
   /** 101 SQL sonrası: Türkçe kısa özet (migration çalışmadıysa undefined) */
   summary_tr?: string | null
   eligibility_notes_tr?: string | null
+  /** 113 SQL: bilgi sayfası ve doğrulanmış gerçek başvuru adımı ayrımı */
+  details_url?: string | null
+  application_route_status?: 'verified' | 'guided' | 'unverified' | 'missing' | null
+  application_method?: 'online_form' | 'portal' | 'email' | 'document' | null
+  application_url_verified_at?: string | null
 }
 
 export type MatchParams = {
@@ -49,8 +54,6 @@ export type MatchParams = {
   p_highest_edu?: string | null
   p_field?: string | null
   p_language?: string | null
-  /** İngilizce seviyesi: null (beyan yok) | 'none' (hiç bilmiyorum) | 'A1'..'C2' */
-  p_english?: string | null
 }
 
 export type FilterOptions = {

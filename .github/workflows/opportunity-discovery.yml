@@ -1,0 +1,95 @@
+name: Opportunity Discovery
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opportunity-discovery
+  cancel-in-progress: false
+
+on:
+  schedule:
+    # Her gün Türkiye saatiyle yaklaşık 06:20 (UTC 03:20)
+    - cron: '20 3 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Veritabanına yazmadan tara'
+        type: boolean
+        default: true
+        required: false
+      source:
+        description: 'Kaynak: all, nasilgitmis veya daad'
+        type: choice
+        options: [all, nasilgitmis, daad]
+        default: all
+        required: true
+      limit:
+        description: 'nasilgitmis için en fazla yeni detay (1-100)'
+        type: string
+        default: '30'
+        required: false
+
+jobs:
+  discover:
+    name: Find verified opportunity candidates
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install scraper dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt "scrapling[fetchers]==0.4.8"
+          scrapling install
+
+      - name: Discover new opportunities
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_SOURCE: ${{ inputs.source }}
+          INPUT_LIMIT: ${{ inputs.limit }}
+        shell: bash
+        run: |
+          SOURCE="${INPUT_SOURCE:-all}"
+          LIMIT="${INPUT_LIMIT:-30}"
+          if [[ ! "$LIMIT" =~ ^[1-9][0-9]*$ ]] || [ "$LIMIT" -gt 100 ]; then
+            echo "Geçersiz limit: $LIMIT" >&2
+            exit 2
+          fi
+
+          ARGS=()
+          if [ "$INPUT_DRY_RUN" = "true" ]; then
+            ARGS+=(--dry-run)
+          fi
+
+          case "$SOURCE" in
+            all|nasilgitmis)
+              python nasilgitmis_scraper.py "${ARGS[@]}" --max-pages 2 --limit "$LIMIT"
+              ;;
+          esac
+          case "$SOURCE" in
+            all|daad)
+              python daad_scraper.py "${ARGS[@]}"
+              ;;
+          esac
+
+          if [[ "$SOURCE" != "all" && "$SOURCE" != "nasilgitmis" && "$SOURCE" != "daad" ]]; then
+            echo "Geçersiz kaynak: $SOURCE" >&2
+            exit 2
+          fi
+
+      # Youth Opportunities bu ortamda tekrarlayan timeout verdi. Kaynak
+      # sağlığı düzelmeden schedule'a eklenmeyecek.

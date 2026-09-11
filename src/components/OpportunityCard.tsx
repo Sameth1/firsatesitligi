@@ -13,6 +13,13 @@ const FUNDING_LABELS: Record<string, string> = {
   stipend: 'Harçlık',
 }
 
+const APPLICATION_LABELS: Record<string, string> = {
+  online_form: 'Hemen Başvur',
+  portal: 'Başvuruyu Başlat',
+  email: 'E-posta ile Başvur',
+  document: 'Formu İndir',
+}
+
 // Fon türü rozetleri — koyu zeminde okunur kalsın diye dolgu düşük opaklıkta,
 // metin ve kenarlık aynı renk ailesinden.
 const FUNDING_STYLE: Record<string, { tint: string; fg: string; icon: string }> = {
@@ -63,6 +70,11 @@ export default function OpportunityCard({ opp }: { opp: Opportunity }) {
   const urgent = days !== null && days <= 30
   const funding = FUNDING_STYLE[opp.funding_type] ?? FUNDING_STYLE.free
   const iconSrc = CATEGORY_ICON_SRC[opp.category_slug]
+  const hasDirectApplication = opp.application_route_status === 'verified'
+  const primaryUrl = hasDirectApplication
+    ? opp.official_url
+    : (opp.details_url || opp.official_url)
+  const applicationLabel = APPLICATION_LABELS[opp.application_method || ''] || 'Hemen Başvur'
 
   const deadlineText = opp.deadline
     ? new Date(opp.deadline).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -224,21 +236,36 @@ export default function OpportunityCard({ opp }: { opp: Opportunity }) {
           {deadlineText}
         </span>
 
-        <a
-          href={opp.official_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="apply-link apply-btn"
-          style={{
-            fontSize: 13, fontWeight: 600, color: '#150F35', textDecoration: 'none',
-            padding: '11px 21px', borderRadius: 999,
-            background: 'var(--grad-brand)',
-            boxShadow: '0 14px 28px -14px rgba(124, 92, 255, 0.95)',
-            display: 'inline-flex', alignItems: 'center', gap: 7, whiteSpace: 'nowrap',
-          }}
-        >
-          Başvuru sayfası <span className="apply-arrow">↗</span>
-        </a>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {hasDirectApplication && opp.details_url && opp.details_url !== opp.official_url && (
+            <a
+              href={opp.details_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ fontSize: 12, color: 'var(--text-mid)', textDecoration: 'underline' }}
+            >
+              Koşulları Gör ↗
+            </a>
+          )}
+          <a
+            href={primaryUrl}
+            target={primaryUrl.startsWith('mailto:') ? undefined : '_blank'}
+            rel="noopener noreferrer"
+            className="apply-link apply-btn"
+            style={{
+              fontSize: 13, fontWeight: 600,
+              color: hasDirectApplication ? '#150F35' : 'var(--text-hi)',
+              textDecoration: 'none', padding: '11px 21px', borderRadius: 999,
+              background: hasDirectApplication ? 'var(--grad-brand)' : 'rgba(255,255,255,0.10)',
+              border: hasDirectApplication ? 'none' : '1px solid rgba(255,255,255,0.18)',
+              boxShadow: hasDirectApplication ? '0 14px 28px -14px rgba(124, 92, 255, 0.95)' : 'none',
+              display: 'inline-flex', alignItems: 'center', gap: 7, whiteSpace: 'nowrap',
+            }}
+          >
+            {hasDirectApplication ? applicationLabel : 'Koşullar ve Başvuru'}
+            <span className="apply-arrow">↗</span>
+          </a>
+        </div>
       </div>
     </article>
   )

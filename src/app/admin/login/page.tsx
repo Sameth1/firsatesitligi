@@ -8,6 +8,11 @@ type Status = 'idle' | 'loading' | 'sent' | 'error'
 const OTP_EXPIRED_HINT =
   'Magic link süresi doldu veya zaten kullanıldı. Bazı e-posta uygulamaları (Outlook, Gmail güvenli tarama vb.) linki önizleyerek kodu tek kullanımlık hale getirir — mümkünse web postadan tıkla veya yeni link iste.'
 
+const ALLOWED_ADMIN_EMAILS = [
+  'samethicler@gmail.com',
+  'utkuakalin9@icloud.com',
+]
+
 export default function AdminLogin() {
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<Status>('idle')
@@ -38,7 +43,14 @@ export default function AdminLogin() {
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
-    if (!email.includes('@')) return
+    const cleanEmail = email.trim().toLowerCase()
+    if (!cleanEmail.includes('@')) return
+
+    if (!ALLOWED_ADMIN_EMAILS.includes(cleanEmail)) {
+      setStatus('error')
+      setErrorDetail('Bu e-posta adresi yetkili admin listesinde bulunmuyor.')
+      return
+    }
 
     setStatus('loading')
     setErrorDetail(null)
@@ -52,7 +64,7 @@ export default function AdminLogin() {
     }
     const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent('/admin')}`
     const { error } = await supabase.auth.signInWithOtp({
-      email,
+      email: cleanEmail,
       options: {
         emailRedirectTo: redirectTo,
         // Bu sayfa herkese açık. Varsayılan (shouldCreateUser: true) ile

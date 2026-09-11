@@ -154,7 +154,7 @@ Sistem baştan tarandı; bulgular ve durumları:
 
 Uygulanan agent migration'ları: 094, 095, 096, 097, **099, 100 ve iki-tur kapısı**. İki-tur kapısının SQL'i canlı projeye uygulanmıştır; repoda migration 105 olarak tutulur. Migration 106 kör doğruluk testi için hazırlanmıştır ve canlıya uygulanmayı bekler. Migration 098 yalnız eski kullanılmayan görünüm temizliğidir ve henüz uygulanmadı.
 
-Doğrudan link geçmişi: Eski `official_url=kaynak yazı` hatası için `audit_apply_links.py` ve `backfill_apply_links.py` yazılmıştı. Youthop ve Nasıl Gitmiş scraper'ları dış Apply linkini çıkarmaya başlamıştı; ancak kaynak ile hedef ayrı DB alanlarında tutulmuyordu. Migration 100 ve güncel scraper'lar bu ayrımı kalıcı hale getirir. Agent hedef linki kontrol ederken tarih/kategori kanıtını ayrı kaynak sayfasından okuyabilir.
+Doğrudan link geçmişi: Eski `official_url=kaynak yazı` hatası için `audit_apply_links.py` ve `backfill_apply_links.py` yazılmıştı. Migration 114 ile üç adres ayrılır: `source_url` keşif kaynağı, `details_url` resmî koşul sayfası, `official_url` gerçek başvuru aksiyonu. En fazla iki adım izleyen çözücü yalnız doğrulanmış form/portal/e-posta/belgeyi “Başvur” olarak işaretler. Eski kayıtlar silinmez; doğrulanana kadar kartta “Koşulları Gör” görünür. Yeni submission doğrulanmış rota olmadan onaylanamaz. Migration 114 henüz canlıya uygulanmadı; `backfill_apply_links.py` varsayılan olarak salt-okunur rapordur.
 
 Migration 097 sonrası doğrulanan canlı durum:
 
@@ -175,7 +175,7 @@ Migration 097 sonrası doğrulanan canlı durum:
 
 ## Kod ve PR durumu
 
-- PR [#40](https://github.com/Sameth1/firsatesitligi/pull/40)–[#45](https://github.com/Sameth1/firsatesitligi/pull/45) `master` dalına merge edildi.
+- PR [#40](https://github.com/Sameth1/firsatesitligi/pull/40)–[#45](https://github.com/Sameth1/firsatesitligi/pull/45) `master` dalına merge edildi. PR #47 açık ve CI temizdir; bu çalışma onun üstünden başlayan `codex/direct-application-links` dalındadır.
 - Kör doğruluk testi PR #42 ile merge edildi; migration 106 henüz canlıya uygulanmadı.
 - Revize e-posta/token yolu migration 108 sonrasında kullanılmaz; bildirim Edge Function'ı canlıya alınmadı.
 

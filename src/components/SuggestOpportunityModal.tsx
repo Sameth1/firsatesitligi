@@ -17,6 +17,14 @@ const FUNDING_TYPES = [
   { value: 'stipend', label: 'Harçlık' },
 ]
 
+const STUDY_LEVELS = [
+  { value: 'high_school', label: 'Lise' },
+  { value: 'bachelor',    label: 'Lisans' },
+  { value: 'master',      label: 'Yüksek Lisans' },
+  { value: 'phd',         label: 'Doktora' },
+  { value: 'graduate',    label: 'Mezun / Genç Profesyonel' },
+]
+
 interface Props {
   searchSnapshot?: Record<string, unknown>
   onClose: () => void
@@ -43,6 +51,10 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
   )
   const [deadlineText, setDeadlineText] = useState('')
   const [fundingType, setFundingType] = useState<string | null>(null)
+  const [ageMin, setAgeMin] = useState('')
+  const [ageMax, setAgeMax] = useState('')
+  const [selectedStudyLevels, setSelectedStudyLevels] = useState<string[]>([])
+  const [citizenshipOnlyTR, setCitizenshipOnlyTR] = useState(false)
   const [eligibility, setEligibility] = useState('')
   const [languageReq, setLanguageReq] = useState('')
   const [description, setDescription] = useState('')
@@ -83,6 +95,10 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
           host_countries: hostCountry ? [hostCountry.toUpperCase()] : [],
           deadline_text: deadlineText || null,
           funding_type: fundingType,
+          age_min: ageMin ? parseInt(ageMin, 10) : null,
+          age_max: ageMax ? parseInt(ageMax, 10) : null,
+          study_level: selectedStudyLevels.length > 0 ? selectedStudyLevels : null,
+          eligible_citizenships: citizenshipOnlyTR ? ['TR'] : null,
           eligibility_notes: eligibility || null,
           language_requirement: languageReq || null,
           description: description || null,
@@ -293,11 +309,79 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
                   ))}
                 </div>
 
-                <Label text="Kimler başvurabilir" />
+                {/* Yaş Aralığı */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                  <div>
+                    <Label text="Min. Yaş" />
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={ageMin}
+                      onChange={e => setAgeMin(e.target.value)}
+                      placeholder="Örn: 18"
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div>
+                    <Label text="Maks. Yaş" />
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={ageMax}
+                      onChange={e => setAgeMax(e.target.value)}
+                      placeholder="Örn: 30"
+                      style={inputStyle}
+                    />
+                  </div>
+                </div>
+
+                {/* Öğrenim Seviyesi */}
+                <Label text="Kimler için? (Öğrenim Seviyesi)" />
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+                  {STUDY_LEVELS.map(s => {
+                    const active = selectedStudyLevels.includes(s.value)
+                    return (
+                      <button
+                        key={s.value}
+                        type="button"
+                        onClick={() => {
+                          setSelectedStudyLevels(prev =>
+                            prev.includes(s.value) ? prev.filter(x => x !== s.value) : [...prev, s.value]
+                          )
+                        }}
+                        style={{
+                          fontSize: 11, fontWeight: 500, padding: '4px 10px', borderRadius: 20,
+                          background: active ? 'rgba(175, 137, 255, 0.28)' : 'rgba(255,255,255,0.04)',
+                          color: active ? '#fff' : '#C4A8FF',
+                          border: `1px solid ${active ? 'rgba(175, 137, 255, 0.75)' : 'rgba(255,255,255,0.12)'}`,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {s.label}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {/* Vatandaşlık Filtresi */}
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, cursor: 'pointer', fontSize: 12, color: 'var(--text-mid)' }}>
+                  <input
+                    type="checkbox"
+                    checked={citizenshipOnlyTR}
+                    onChange={e => setCitizenshipOnlyTR(e.target.checked)}
+                    style={{ accentColor: '#2BE0C8', cursor: 'pointer', width: 14, height: 14 }}
+                  />
+                  <span>Yalnızca T.C. Vatandaşlarına açık</span>
+                </label>
+
+                {/* Diğer Başvuru Şartları */}
+                <Label text="Diğer başvuru koşulları (Not ortalaması, bölüm vb.)" />
                 <input
                   value={eligibility}
                   onChange={e => setEligibility(e.target.value)}
-                  placeholder="18-30 yaş, tüm vatandaşlıklar"
+                  placeholder="Örn: 2.50+ GANO, Mühendislik öğrencisi vb."
                   style={{ ...inputStyle, marginBottom: 10 }}
                 />
 

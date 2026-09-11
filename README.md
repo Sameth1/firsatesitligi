@@ -161,6 +161,7 @@ Tüm scriptler kök dizinde yer alır; `.env` dosyasından `SUPABASE_URL` + `SUP
 | `agent_reach_url_scraper.py` | Herhangi bir fırsat URL'sini Jina Reader'dan geçirip alan çıkarımı yapar | `submissions` (pending) |
 | `validate_submissions.py` | İki katmanlı doğrulama ajanı (heuristik + NVIDIA NIM LLM), uygun önerileri otomatik onaylar | `submissions` → `opportunities` |
 | `link_audit_runner.py` | Aktif fırsatların `official_url`'lerine GET atıp sağlık durumunu kaydeder | `opportunities.last_url_check_*` |
+| `backfill_apply_links.py` | Bilgi sayfasından gerçek form/portal/e-posta/belgeyi en fazla iki adımda bulur; varsayılan salt-okunur rapor üretir | `opportunities` (yalnız `--apply`) |
 | `fix_broken_links.py` | Bozuk URL'leri aday URL'lerle değiştirir; hiçbiri çalışmazsa `is_active=false` yapar | `opportunities` |
 
 ### Otonom Fırsat Keşif Ajanı (`site_bulucu.py` + `say_firsatlari.py`)
@@ -203,6 +204,8 @@ PostgreSQL şeması Supabase üzerinde barınır. Migration'lar `docs/sql/` alt�
 | `106_agent_accuracy_evaluation.sql` | 30–50 kayıtlık kör insan etiketli agent doğruluk testi, metrikler ve admin RPC'leri |
 | `107_secure_submission_route.sql` | Aynı-IP paralel istek yarışını kilitler ve rate limit'i atlayan doğrudan anon INSERT yolunu kapatır |
 | `108_agent_revision_flow.sql` | İnsan gönderisindeki admin revize notunu agenta yollar; agent yalnız boş alanları kanıtla doldurup insan onayına döndürür |
+| `109`–`112` | Uyruk/bölüm/kademe/yaş filtrelerini kanıtlı veriye taşır; sahte yaş varsayılanını kaldırır |
+| `114_direct_application_routes.sql` | Kaynak, resmî koşul sayfası ve doğrulanmış başvuru aksiyonunu ayırır; doğrulanmamış yeni kaydı yayından engeller |
 
 Migration'lar `npm run db:0XX` script'leriyle bağlı Supabase projesine uygulanır (bkz. `package.json`).
 

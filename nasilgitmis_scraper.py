@@ -25,13 +25,14 @@ import re
 import sys
 import time
 import requests
-from datetime import date
+from datetime import date, datetime, timezone
 from dotenv import load_dotenv
 from scrapling.fetchers import Fetcher, StealthyFetcher
 
 # Ortak başvuru-linki çıkarımı (reach.extract_apply_link). reach import sırasında
 # load_dotenv + stdout reconfigure çalıştırır; yan etkisi yok, run() yalnız __main__'de.
 import agent_reach_url_scraper as reach
+from discovery_gate import candidate_blockers
 
 # Windows konsolu (cp1254) emoji/Türkçe karakterde UnicodeEncodeError verir;
 # çıktıyı UTF-8'e sabitle.
@@ -435,9 +436,9 @@ def parse_post(url, category_slug):
     # html.unescape eder. Bulunamazsa kaynak yazıya fallback + admin uyarısı
     # (eskiden submission atlanıyordu; artık eklenir ama official_url=kaynak
     # olduğu için işaretlenir).
-    apply_url = reach.extract_apply_link(page, url)
-    if apply_url:
-        submission_url = apply_url
+    route = reach.resolve_application_link(page, url)
+    if route.verified:
+        submission_url = route.application_url
         funding_notes = f"nasilgitmis.com'dan çekildi — kaynak yazı: {url}"
         admin_note = None
     else:
@@ -452,7 +453,16 @@ def parse_post(url, category_slug):
     rec = {
         "title":                title,
         "url":                  submission_url,
+        "details_url":          route.details_url,
         "source_url":           url,
+        "application_route_status": "verified" if route.verified else "unverified",
+        "application_method":   route.application_method,
+        "application_url_verified_at": (
+            datetime.now(timezone.utc).isoformat() if route.verified else None
+        ),
+        "application_url_check_status": route.status_code,
+        "application_url_final": route.final_url,
+        "application_url_evidence": route.evidence,
         "category_slug":        category_slug,
         "deadline_text":        deadline,      # 'YYYY-MM-DD' ya da None (text)
         "host_countries":       host_countries,
@@ -474,7 +484,7 @@ def parse_post(url, category_slug):
 
 # ─── Ana akış ─────────────────────────────────────────────────────────────────
 
-def scrape_category(cat_url, category_slug, max_pages=5):
+def scrape_category(cat_url, category_slug, max_pages=5, dry_run=False, budget=None):
     """Bir kategoriyi baştan sona tara."""
     print(f"\n📂 Kategori: {cat_url}")
     added = skipped = errors = 0
@@ -489,9 +499,14 @@ def scrape_category(cat_url, category_slug, max_pages=5):
         print(f"  {len(links)} yazı bulundu")
 
         for link in links:
+            if budget is not None and budget["remaining"] <= 0:
+                return added, skipped, errors
             if url_exists(link):
                 skipped += 1
                 continue
+
+            if budget is not None:
+                budget["remaining"] -= 1
 
             record = parse_post(link, category_slug)
 
@@ -502,6 +517,17 @@ def scrape_category(cat_url, category_slug, max_pages=5):
             if not record.get("category_slug"):
                 print(f"    ⚠ category_slug eksik, atlandı: {link}")
                 errors += 1
+                continue
+
+            blockers = candidate_blockers(record)
+            if blockers:
+                print(f"    🚫 kalite kapısı: {record['title'][:55]} — {'; '.join(blockers)}")
+                errors += 1
+                continue
+
+            if dry_run:
+                added += 1
+                print(f"    🧪 uygun aday: {record['title'][:55]}")
                 continue
 
             ok, detay = insert(record)
@@ -521,22 +547,28 @@ def scrape_category(cat_url, category_slug, max_pages=5):
     return added, skipped, errors
 
 
-def run():
-    print("🚀 nasilgitmis.com scraper başladı")
+def run(dry_run=False, max_pages=3, limit=None):
+    print("🚀 nasilgitmis.com scraper başladı"
+          + (" — DRY-RUN" if dry_run else ""))
     print(f"   Supabase: {SUPABASE_URL}")
     print("   Hedef: submissions tablosu (status=pending)\n")
 
-    if not SUPABASE_KEY:
+    if not dry_run and not SUPABASE_KEY:
         print("❌ SUPABASE_SERVICE_ROLE_KEY bulunamadı. .env dosyasını kontrol et.")
         return
 
     total_added = total_skipped = total_errors = 0
+    budget = {"remaining": limit} if limit else None
 
     for cat_url, slug in SITE_CATEGORIES.items():
-        a, s, e = scrape_category(cat_url, slug, max_pages=3)
+        a, s, e = scrape_category(
+            cat_url, slug, max_pages=max_pages, dry_run=dry_run, budget=budget
+        )
         total_added   += a
         total_skipped += s
         total_errors  += e
+        if budget is not None and budget["remaining"] <= 0:
+            break
 
     print("\n" + "─" * 40)
     print(f"✅ Eklendi  : {total_added} pending submission")
@@ -547,4 +579,11 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    import argparse
+    parser = argparse.ArgumentParser(description="nasilgitmis.com scraper")
+    parser.add_argument("--dry-run", action="store_true", help="DB'ye yazma")
+    parser.add_argument("--max-pages", type=int, default=3)
+    parser.add_argument("--limit", type=int, help="en fazla bu kadar yeni detay sayfası işle")
+    args = parser.parse_args()
+    run(dry_run=args.dry_run, max_pages=max(1, min(args.max_pages, 10)),
+        limit=args.limit)
