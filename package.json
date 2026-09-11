@@ -26,6 +26,7 @@
     "db:104": "npx supabase db query --linked -f docs/sql/104_submission_rate_limit.sql",
     "db:105": "npx supabase db query --linked -f docs/sql/105_agent_two_pass_evidence_gate.sql",
     "db:106": "npx supabase db query --linked -f docs/sql/106_agent_accuracy_evaluation.sql",
+    "db:107": "npx supabase db query --linked -f docs/sql/107_secure_submission_route.sql",
     "db:insert-programs": "node scripts/insert_programs.js"
   },
   "dependencies": {

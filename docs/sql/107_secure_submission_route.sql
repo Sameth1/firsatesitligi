@@ -1,41 +1,13 @@
 -- ============================================================
--- 104 · Öneri formu için gerçek rate limit
--- Supabase Dashboard → SQL Editor → tek seferde çalıştır
+-- 107 · Öneri route'unu zorunlu kıl + eşzamanlı rate-limit yarışı kapat
+-- Önkoşul: 104 ve Vercel'de SUPABASE_SERVICE_ROLE_KEY
 -- ============================================================
--- SORUN:
---   check_submission_rate_limit trigger'ı zaten vardı ama ilk satırı
---     if new.submitter_ip is not null then
---   Halka açık form (SuggestOpportunityModal) tarayıcıdan doğrudan insert
---   ediyor ve submitter_ip GÖNDERMİYOR — gönderemez de: tarayıcı kendi genel
---   IP'sini bilmez, bilse bile istemciden gelen IP'ye güvenilemez. Sonuç:
---   trigger her seferinde no-op, rate limit fiilen YOK. Herhangi biri
---   submissions tablosunu sınırsız şişirebiliyordu.
---
--- ÇÖZÜM:
---   IP'yi yalnız SUNUCU bilebilir. Öneri artık kendi API route'umuzdan
---   (/api/submit-opportunity) geçiyor; route, Vercel'in yazdığı
---   x-forwarded-for başlığından gerçek IP'yi okuyup bu RPC'ye veriyor.
---
---   RPC EXECUTE yetkisi yalnız service_role'a verildi. anon çağıramaz, yani
---   istemci sahte IP ile rate limit'i atlayamaz.
---
---   Aynı IP için transaction advisory lock alınır. Böylece eşzamanlı istekler
---   count ve insert arasından birlikte geçemez.
---
--- SINIRLAR (ikisi birden uygulanır):
---   • 3 / dakika  → hızlı seri gönderimi keser
---   • 20 / gün    → yavaş ama ısrarlı doldurmayı keser
---   IP'si bilinmeyen (null) çağrı reddedilir; sessizce limitsiz geçmesin.
---
--- NOT: eski trigger yerinde bırakıldı — service_role'ün doğrudan yazdığı
---   scraper akışları için zararsız bir emniyet ağı olarak kalıyor.
---
--- IDEMPOTENT: evet.
--- ============================================================
+-- UYARI: Bu migration uygulanmadan önce sunucu route'unun gerekli env
+-- değişkenleriyle çalıştığı doğrulanmalıdır. Uygulandıktan sonra tarayıcıdan
+-- doğrudan submissions INSERT tamamen kapanır.
 
 begin;
 
--- IP + zaman sorgusu indekssiz tablo taraması yapmasın.
 create index if not exists idx_submissions_ip_created
   on public.submissions (submitter_ip, created_at desc)
   where submitter_ip is not null;
@@ -63,8 +35,8 @@ begin
     raise exception 'Başlık ve bağlantı zorunlu' using errcode = 'check_violation';
   end if;
 
-  -- Aynı IP'den gelen paralel istekleri bu transaction bitene kadar sırala.
-  -- Salt "count sonra insert" READ COMMITTED altında yarışa açıktır.
+  -- Bir IP için sayım+insert bölümünü seri hale getir. Aksi halde aynı anda
+  -- başlayan istekler birbirlerinin henüz commit edilmemiş satırlarını görmez.
   perform pg_advisory_xact_lock(hashtextextended(host(p_ip), 0));
 
   select
@@ -74,10 +46,6 @@ begin
   from public.submissions
   where submitter_ip = p_ip;
 
-  -- 53400 = configuration_limit_exceeded. GEÇERLİ bir Postgres SQLSTATE'i
-  -- olması şart: 'too_many_requests' diye bir koşul adı yok, kullanılırsa
-  -- Postgres 42704 (undefined_object) fırlatır ve çağıran taraf limiti
-  -- diğer hatalardan ayırt edemez. Route bu kodu HTTP 429'a çeviriyor.
   if v_dakika >= 3 then
     raise exception 'Çok hızlı gönderiyorsun, bir dakika bekle'
       using errcode = '53400';
@@ -87,9 +55,6 @@ begin
       using errcode = '53400';
   end if;
 
-  -- submission_origin / review_stage BİLİNÇLİ olarak sabit: istemciden
-  -- gelen değerlere bakılmıyor, böylece "agent" gibi görünüp otomatik onay
-  -- hattına düşmek mümkün değil (bkz. 103).
   insert into public.submissions (
     title, url, category_slug, submitter_nickname, submitter_email,
     host_countries, deadline_text, funding_type, eligibility_notes,
@@ -123,8 +88,27 @@ begin
 end;
 $function$;
 
--- Yalnız service_role. anon/authenticated çağıramaz → sahte IP ile atlatma yok.
-revoke all on function public.submit_human_opportunity(inet, jsonb) from public, anon, authenticated;
-grant execute on function public.submit_human_opportunity(inet, jsonb) to service_role;
+revoke all on function public.submit_human_opportunity(inet, jsonb)
+  from public, anon, authenticated;
+grant execute on function public.submit_human_opportunity(inet, jsonb)
+  to service_role;
+
+-- İstemcinin route'u atlayıp rate limit olmadan yazmasını sağlayan tüm INSERT
+-- politikalarını kaldır. Admin kararları RPC, scraper'lar service_role kullanır.
+do $policies$
+declare
+  v_policy record;
+begin
+  for v_policy in
+    select policyname
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'submissions'
+      and cmd = 'INSERT'
+  loop
+    execute format('drop policy %I on public.submissions', v_policy.policyname);
+  end loop;
+end;
+$policies$;
 
 commit;

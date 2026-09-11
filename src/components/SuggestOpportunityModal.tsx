@@ -1,6 +1,5 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { supabase } from '@/lib/supabase'
 
 const CATEGORIES = [
   { slug: 'scholarship',   label: 'Burs' },
@@ -53,6 +52,7 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
 
   // State
   const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+  const [errorMessage, setErrorMessage] = useState('')
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -68,24 +68,37 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
     if (honeypot) return // bot
 
     setStatus('loading')
+    setErrorMessage('')
 
-    const { error } = await supabase.from('submissions').insert({
-      title: title.trim(),
-      url: url.trim(),
-      category_slug: categorySlug,
-      submitter_nickname: nickname.trim() || null,
-      submitter_email: email.trim() || null,
-      host_countries: hostCountry ? [hostCountry.toUpperCase()] : [],
-      deadline_text: deadlineText || null,
-      funding_type: fundingType,
-      eligibility_notes: eligibility || null,
-      language_requirement: languageReq || null,
-      description: description || null,
-      submission_origin: 'human',
-      review_stage: 'human_review',
-    })
-
-    setStatus(error ? 'error' : 'done')
+    try {
+      const response = await fetch('/api/submit-opportunity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: title.trim(),
+          url: url.trim(),
+          category_slug: categorySlug,
+          submitter_nickname: nickname.trim() || null,
+          submitter_email: email.trim() || null,
+          host_countries: hostCountry ? [hostCountry.toUpperCase()] : [],
+          deadline_text: deadlineText || null,
+          funding_type: fundingType,
+          eligibility_notes: eligibility || null,
+          language_requirement: languageReq || null,
+          description: description || null,
+        }),
+      })
+      const result = await response.json().catch(() => null) as { error?: string } | null
+      if (!response.ok) {
+        throw new Error(result?.error || `Öneri gönderilemedi (HTTP ${response.status}).`)
+      }
+      setStatus('done')
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Öneri gönderilemedi. Tekrar dene.',
+      )
+      setStatus('error')
+    }
   }
 
   const inputStyle: React.CSSProperties = {
@@ -120,9 +133,7 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
             <div style={{
               fontSize: 14, fontWeight: 500, color: '#7BF0DC', marginBottom: 8,
             }}>
-              {email
-                ? 'Teşekkürler, ekibimiz inceleyecek. Durum email\'ine düşecek.'
-                : 'Teşekkürler, ekibimiz inceleyecek.'}
+              Teşekkürler, ekibimiz inceleyecek.
             </div>
             <button
               onClick={onClose}
@@ -222,7 +233,7 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
                 style={{ ...inputStyle, marginBottom: 2 }}
               />
               <div style={{ fontSize: 10.5, color: 'var(--text-low)', marginBottom: 12, lineHeight: 1.5 }}>
-                Revize veya onay durumunda haber vereceğiz. Boş bırakırsan rahatsız etmeyiz.
+                Gerekirse seninle iletişime geçebilmemiz için bırakabilirsin.
               </div>
             </div>
 
@@ -341,7 +352,7 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
 
             {status === 'error' && (
               <div style={{ fontSize: 11, color: '#FFB4B4', marginTop: 8, textAlign: 'center' }}>
-                Bir hata oluştu, tekrar dene.
+                {errorMessage}
               </div>
             )}
           </form>
