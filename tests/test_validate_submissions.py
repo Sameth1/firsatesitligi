@@ -33,6 +33,19 @@ def high_confidence_verdict():
     }
 
 
+def verdict_with_quotes(page_text):
+    verdict = high_confidence_verdict()
+    verdict["kanitlar"] = {
+        "guncellik": "Applications are open until 31 December 2099",
+        "son_tarih": "31 December 2099",
+        "kategori": "Scholarship programme",
+        "finansman": "Fully funded",
+        "ulke": "Hosted in Germany",
+        "uygunluk": "Bachelor students may apply",
+    }
+    return verdict
+
+
 class VerdictParsingTests(unittest.TestCase):
     def test_string_true_does_not_pass_boolean_gate(self):
         verdict = high_confidence_verdict()
@@ -52,6 +65,27 @@ class VerdictParsingTests(unittest.TestCase):
 
         self.assertIs(parsed["tek_firsat"], False)
         self.assertIs(parsed["son_tarih_dogrulandi"], False)
+
+
+class RejectionMemoryTests(unittest.TestCase):
+    def test_meaningful_legacy_notes_are_normalized(self):
+        self.assertEqual(
+            validator.normalize_legacy_human_rejection("  TR   YOK ")[0],
+            "not_eligible",
+        )
+        self.assertEqual(
+            validator.normalize_legacy_human_rejection("geçmiş tarihi")[0],
+            "expired",
+        )
+
+    def test_ambiguous_legacy_notes_are_ignored(self):
+        self.assertIsNone(validator.normalize_legacy_human_rejection("yok"))
+        self.assertIsNone(validator.normalize_legacy_human_rejection("am"))
+
+    def test_memory_weight_thresholds(self):
+        self.assertEqual(validator._memory_weight(1), "example")
+        self.assertEqual(validator._memory_weight(3), "warning")
+        self.assertEqual(validator._memory_weight(5), "strong")
 
 
 class ApprovalGateTests(unittest.TestCase):
@@ -135,6 +169,36 @@ class ApprovalGateTests(unittest.TestCase):
 
         self.assertEqual(validator.direct_link_blockers(submission), [])
 
+    def test_tracking_and_www_variants_are_duplicate(self):
+        first = "https://www.example.org/program/?utm_source=newsletter&ref=home"
+        second = "http://example.org/program"
+
+        self.assertEqual(validator._norm_url(first), validator._norm_url(second))
+
+    def test_generic_homepage_is_not_direct_link(self):
+        submission = complete_submission()
+        submission["url"] = "https://example.org/"
+
+        self.assertTrue(validator.direct_link_blockers(submission))
+
+    def test_evidence_quotes_must_exist_in_page(self):
+        page = (
+            "Applications are open until 31 December 2099. Scholarship programme. "
+            "Fully funded. Hosted in Germany. Bachelor students may apply."
+        )
+        verdict = verdict_with_quotes(page)
+
+        self.assertEqual(validator.evidence_quote_blockers(page, verdict), [])
+        verdict["kanitlar"]["finansman"] = "Monthly stipend of 5000 euros"
+        self.assertTrue(validator.evidence_quote_blockers(page, verdict))
+
+    def test_missing_quote_object_fails_closed(self):
+        blockers = validator.evidence_quote_blockers(
+            "Some page text", high_confidence_verdict()
+        )
+
+        self.assertEqual(len(blockers), len(validator.EVIDENCE_QUOTE_FIELDS))
+
 
 class HistoricApprovalClassificationTests(unittest.TestCase):
     def test_active_expired_record_should_close(self):
@@ -189,6 +253,26 @@ class DecisionFlowTests(unittest.TestCase):
 
         self.assertEqual(result, "llm_red")
         self.assertEqual(apply_decision.call_args.args[1], "reddet")
+
+    @patch("validate_submissions.judge_with_llm", return_value=None)
+    @patch("validate_submissions.fetch_page")
+    @patch("validate_submissions.apply_decision")
+    def test_llm_outage_stays_in_agent_retry_queue(
+        self, apply_decision, fetch_page, _judge_with_llm
+    ):
+        fetch_page.return_value = (
+            200,
+            "https://example.org/program/apply",
+            "<html><body>" + ("Current scholarship details. " * 10) + "</body></html>",
+            None,
+        )
+        submission = complete_submission()
+        submission.update({"id": "test", "source_url": submission["url"]})
+
+        result = validator.process(submission, True, set(), set(), {"llm_calls": 0})
+
+        self.assertEqual(result, "tekrar")
+        self.assertEqual(apply_decision.call_args.args[1], "tekrar")
 
 
 if __name__ == "__main__":
