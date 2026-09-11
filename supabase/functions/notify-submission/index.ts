@@ -1,3 +1,9 @@
+// UYARI (114): Bu fonksiyon HİÇ deploy edilmedi ve şu hâliyle deploy EDİLMEMELİ.
+// İçindeki revize dalı `submission_revision_tokens` tablosuna yazıyor; o tablo
+// ve /revise/[token] sayfası 114 ile kaldırıldı (akış hiç çalışmamıştı, yerine
+// ajan revize akışı geldi — bkz. 108). Bildirim e-postası isteniyorsa önce bu
+// dal sökülmeli. Dosya, ileride e-posta altyapısı kurulursa başlangıç noktası
+// olsun diye duruyor.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')

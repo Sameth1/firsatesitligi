@@ -33,6 +33,7 @@
     "db:111": "npx supabase db query --linked -f docs/sql/111_filter_fields_backfill.sql",
     "db:112": "npx supabase db query --linked -f docs/sql/112_age_limits_evidence_only.sql",
     "db:113": "npx supabase db query --linked -f docs/sql/113_rpc_surface_hardening.sql",
+    "db:114": "npx supabase db query --linked -f docs/sql/114_subscriber_rate_limit_and_dead_flow.sql",
     "db:insert-programs": "node scripts/insert_programs.js"
   },
   "dependencies": {
@@ -41,7 +42,7 @@
     "@syncfusion/ej2-base": "^33.2.3",
     "@syncfusion/ej2-react-grids": "^33.2.10",
     "gsap": "^3.15.0",
-    "next": "16.2.4",
+    "next": "^16.3.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "three": "^0.185.1"
