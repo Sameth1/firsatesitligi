@@ -114,7 +114,7 @@ def main():
         report.append(item)
         guided = (
             not route.verified
-            and route.status_code == 200
+            and route.details_status_code == 200
             and is_safe_guided_url(route.details_url)
         )
         bucket = "verified" if route.verified else "guided" if guided else "unresolved"

@@ -70,6 +70,8 @@ class ApplicationRouteTests(unittest.TestCase):
             "https://nasilgitmis.com/item", source, fetcher=map_fetcher(pages)
         )
 
+        self.assertEqual(route.details_status_code, 200)
+
         self.assertFalse(route.verified)
         self.assertIsNone(route.application_url)
         self.assertEqual(route.details_url, "https://official.test/program")
@@ -202,6 +204,8 @@ class ApplicationRouteTests(unittest.TestCase):
 
         self.assertFalse(route.verified)
         self.assertIsNone(route.application_url)
+        self.assertEqual(route.status_code, 401)
+        self.assertEqual(route.details_status_code, 200)
 
 
 if __name__ == "__main__":

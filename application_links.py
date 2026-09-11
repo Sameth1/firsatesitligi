@@ -101,6 +101,7 @@ class ApplicationRoute:
     final_url: str | None
     evidence: str | None
     reason: str
+    details_status_code: int | None = None
 
     def submission_fields(self) -> dict:
         """Yeni submission için DB kolonlarına uygun alanları döndürür."""
@@ -328,10 +329,12 @@ def resolve_application_route(
     first = FetchResult(200, start_url, source_html) if source_html is not None else fetcher(start_url)
     if not first.body:
         return ApplicationRoute(None, start_url, None, False, first.status, first.final_url,
-                                None, first.error or "başlangıç sayfası okunamadı")
+                                None, first.error or "başlangıç sayfası okunamadı",
+                                details_status_code=first.status)
 
     initial_host = _host(start_url)
     details_url = start_url
+    details_status_code = first.status
     queue: list[tuple[str, str, int]] = [(first.final_url or start_url, first.body, 0)]
     visited = set()
     best_unverified: tuple[Candidate, FetchResult] | None = None
@@ -346,11 +349,13 @@ def resolve_application_route(
         if _is_form_provider(page_url):
             return ApplicationRoute(page_url, details_url, "online_form", True, 200,
                                     page_url, "Bilinen form sağlayıcısı URL'i",
-                                    "sayfanın kendisi doğrulanmış form sağlayıcısı")
+                                    "sayfanın kendisi doğrulanmış form sağlayıcısı",
+                                    details_status_code=details_status_code)
         if real_form:
             return ApplicationRoute(page_url, details_url, "online_form", True, 200,
                                     page_url, "Sayfada başvuru formu doğrulandı",
-                                    "sayfanın kendisi başvuru formu")
+                                    "sayfanın kendisi başvuru formu",
+                                    details_status_code=details_status_code)
         page_path = urlsplit(page_url).path
         if (_host(page_url) not in AGGREGATOR_HOSTS
                 and _ACTION_PATH_RE.search(page_path)
@@ -358,7 +363,8 @@ def resolve_application_route(
                 and not _SEARCH_PATH_RE.search(page_path)):
             return ApplicationRoute(page_url, details_url, "portal", True, 200,
                                     page_url, "URL doğrudan başvuru yolu içeriyor",
-                                    "sayfanın kendisi başvuru portalı")
+                                    "sayfanın kendisi başvuru portalı",
+                                    details_status_code=details_status_code)
 
         for candidate in candidates:
             if candidate.kind == "details":
@@ -366,6 +372,8 @@ def resolve_application_route(
                     details_url = candidate.url
                 if depth < max_hops:
                     target = fetcher(candidate.url)
+                    if candidate.url == details_url:
+                        details_status_code = target.status
                     if _healthy_target(target) and target.body:
                         queue.append((target.final_url, target.body, depth + 1))
                 continue
@@ -379,10 +387,12 @@ def resolve_application_route(
                     candidate.url, details_url, "online_form", True, 200,
                     candidate.url, evidence,
                     "sayfa içi başvuru bölümüne doğrudan bağlantı doğrulandı",
+                    details_status_code=details_status_code,
                 )
             if candidate.method == "email":
                 return ApplicationRoute(candidate.url, details_url, "email", True, None,
-                                        candidate.url, evidence, "e-posta başvurusu doğrulandı")
+                                        candidate.url, evidence, "e-posta başvurusu doğrulandı",
+                                        details_status_code=details_status_code)
             if candidate.method == "online_form" and _is_form_provider(candidate.url):
                 target = fetcher(candidate.url)
                 if _healthy_target(target):
@@ -390,6 +400,7 @@ def resolve_application_route(
                         target.final_url, details_url, "online_form", True,
                         target.status, target.final_url, evidence,
                         "form sağlayıcısı anonim erişimle açıldı",
+                        details_status_code=details_status_code,
                     )
                 if best_unverified is None or candidate.score > best_unverified[0].score:
                     best_unverified = (candidate, target)
@@ -400,14 +411,16 @@ def resolve_application_route(
                 if candidate.method == "document":
                     return ApplicationRoute(target.final_url, details_url, "document", True,
                                             target.status, target.final_url, evidence,
-                                            "başvuru belgesi açıldı")
+                                            "başvuru belgesi açıldı",
+                                            details_status_code=details_status_code)
                 target_candidates, target_form = extract_candidates(target.body, target.final_url)
                 direct_path = bool(_ACTION_PATH_RE.search(urlsplit(target.final_url).path))
                 if target_form or direct_path:
                     method = "online_form" if target_form else candidate.method
                     return ApplicationRoute(target.final_url, details_url, method, True,
                                             target.status, target.final_url, evidence,
-                                            "başvuru hedefi açıldı ve doğrulandı")
+                                            "başvuru hedefi açıldı ve doğrulandı",
+                                            details_status_code=details_status_code)
                 if depth < max_hops:
                     queue.append((target.final_url, target.body, depth + 1))
             if best_unverified is None or candidate.score > best_unverified[0].score:
@@ -417,6 +430,8 @@ def resolve_application_route(
         candidate, target = best_unverified
         return ApplicationRoute(None, details_url, candidate.method, False, target.status,
                                 target.final_url, f'“{candidate.label}” bağlantısı',
-                                "aday başvuru hedefi teknik olarak doğrulanamadı")
+                                "aday başvuru hedefi teknik olarak doğrulanamadı",
+                                details_status_code=details_status_code)
     return ApplicationRoute(None, details_url, None, False, first.status, first.final_url,
-                            None, "doğrudan başvuru adımı bulunamadı")
+                            None, "doğrudan başvuru adımı bulunamadı",
+                            details_status_code=details_status_code)
