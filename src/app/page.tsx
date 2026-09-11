@@ -15,7 +15,6 @@ import { ALL_COUNTRIES, POPULAR_CITIZENSHIP_CODES, countryNameTr } from '@/lib/c
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import RangeSlider from '@/components/form/RangeSlider'
-import StepSlider from '@/components/form/StepSlider'
 import ChoiceGrid from '@/components/form/ChoiceGrid'
 
 const COUNTRIES: { code: string; label: string; language: string | null }[] = [
@@ -40,15 +39,7 @@ const CATEGORIES = [
   { slug: 'exchange',      label: 'Değişim' },
 ]
 
-const HIGHEST_EDU_LEVELS = [
-  { value: 'lise',          label: 'Lise' },
-  { value: 'on_lisans',     label: 'Ön Lisans' },
-  { value: 'lisans',        label: 'Lisans' },
-  { value: 'yuksek_lisans', label: 'Yüksek Lisans' },
-  { value: 'doktora',       label: 'Doktora' },
-]
-
-// ChoiceGrid / StepSlider için görünüm listeleri. Değerler (value) yukarıdaki
+// Form bileşenleri için görünüm listeleri. Değerler (value) yukarıdaki
 // listelerle birebir aynı — yalnız sunum katmanı zenginleşiyor,
 // match_opportunities'e giden parametreler değişmiyor.
 // Emoji bayrak (🇩🇪) Windows'ta render olmuyor — kullanıcı sadece "DE" görüyor.
@@ -94,26 +85,6 @@ const STUDY_LEVEL_OPTIONS = [
   { value: 'master',   label: 'Yüksek Lisans', icon: '📗' },
   { value: 'phd',      label: 'Doktora',       icon: '🔬' },
   { value: 'any',      label: 'Fark etmez',    icon: '✨' },
-]
-
-// Eğitim seviyesi doğal bir merdiven — bu yüzden kart yerine çekmeli bar.
-const HIGHEST_EDU_STOPS = [
-  { value: 'lise',          short: 'Lise',   label: 'Lise',          icon: '🏫' },
-  { value: 'on_lisans',     short: 'Ön Lis.', label: 'Ön Lisans',    icon: '📒' },
-  { value: 'lisans',        short: 'Lisans', label: 'Lisans',        icon: '📘' },
-  { value: 'yuksek_lisans', short: 'Y.Lis.', label: 'Yüksek Lisans', icon: '📗' },
-  { value: 'doktora',       short: 'Dr.',    label: 'Doktora',       icon: '🎓' },
-]
-
-// Dil barının durakları — "Bilmiyorum" en solda, filtre uygulanmaz.
-const CEFR_STOPS = [
-  { value: 'none', short: '—',  label: 'Bilmiyorum / önemli değil' },
-  { value: 'A1',   short: 'A1', label: 'A1 — Başlangıç' },
-  { value: 'A2',   short: 'A2', label: 'A2 — Temel' },
-  { value: 'B1',   short: 'B1', label: 'B1 — Orta' },
-  { value: 'B2',   short: 'B2', label: 'B2 — İyi' },
-  { value: 'C1',   short: 'C1', label: 'C1 — İleri' },
-  { value: 'C2',   short: 'C2', label: 'C2 — Anadil seviyesi' },
 ]
 
 // Popüler bölümler — kullanıcı dostu etiket + DB'de eşlenebilecek slug
@@ -231,9 +202,7 @@ export default function Home() {
   const [citizenship, setCitizenship] = useState('TR')
   const [age, setAge] = useState('')
   const [studyLevel, setStudyLevel] = useState<string | null>(null)
-  const [highestEdu, setHighestEdu] = useState<string | null>(null)
   const [field, setField] = useState<string | null>(null)
-  const [languageLevel, setLanguageLevel] = useState<string | null>(null)
 
   const formRef = useRef<HTMLElement>(null)
   const prevStepRef = useRef<Step | null>(null)
@@ -315,21 +284,12 @@ export default function Home() {
     return () => ctx.revert()
   }, [step, results, activeCategory])
 
-  const selectedCountry = COUNTRIES.find(c => c.code === country) ?? null
-  const targetLanguage = selectedCountry?.language ?? null
-
   // İlerleme göstergesi: kaç anlamlı alan dolduruldu?
   const filledFlags = [
-    category, country, age === '' ? null : age, highestEdu, studyLevel, field,
-    languageLevel === 'none' ? null : languageLevel,
+    category, country, age === '' ? null : age, studyLevel, field,
   ]
   const activeFilterCount = filledFlags.filter(Boolean).length
   const progress = Math.round((activeFilterCount / filledFlags.length) * 100)
-
-  function handleCountryChange(newCountry: string | null) {
-    setCountry(newCountry)
-    setLanguageLevel(null)
-  }
 
   async function handleSearch() {
     setLoading(true)
@@ -342,9 +302,9 @@ export default function Home() {
       p_citizenship:   citizenship || 'TR',
       p_age:           age ? parseInt(age) : null,
       p_study_level:   studyLevel || null,
-      p_highest_edu:   highestEdu || null,
+      p_highest_edu:   null,
       p_field:         field || null,
-      p_language:      languageLevel && languageLevel !== 'none' ? targetLanguage : null,
+      p_language:      null,
     }
 
     // Akıllı fallback: tam eşleşme yoksa filtreleri önem sırasına göre
@@ -352,9 +312,7 @@ export default function Home() {
     // gevşemez — kullanıcının gitmek istediği yer ve kimliği korunur.
     const fallbackOrder: { key: keyof MatchParams; label: string }[] = [
       { key: 'p_field',         label: 'Bölüm' },
-      { key: 'p_language',      label: 'Dil seviyesi' },
       { key: 'p_age',           label: 'Yaş' },
-      { key: 'p_highest_edu',   label: 'En yüksek eğitim' },
       { key: 'p_study_level',   label: 'Eğitim kademesi' },
       { key: 'p_category_slug', label: 'Kategori' },
     ]
@@ -364,11 +322,16 @@ export default function Home() {
     let data: Opportunity[] | null = null
 
     const run = async (p: MatchParams) => {
-      const res = await supabase.rpc('match_opportunities', p)
-      if (res.error) {
-        return { ok: false as const, error: res.error.message, rows: [] as Opportunity[] }
+      try {
+        const res = await supabase.rpc('match_opportunities', p)
+        if (res.error) {
+          return { ok: false as const, error: res.error.message, rows: [] as Opportunity[] }
+        }
+        return { ok: true as const, rows: ((res.data as Opportunity[]) ?? []) }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Beklenmeyen bağlantı hatası.'
+        return { ok: false as const, error: message, rows: [] as Opportunity[] }
       }
-      return { ok: true as const, rows: ((res.data as Opportunity[]) ?? []) }
     }
 
     const first = await run(params)
@@ -400,7 +363,7 @@ export default function Home() {
     setResults(data ?? [])
     setRelaxedFilters(relaxed)
     setActiveCategory(null)
-    setSearchSnapshot({ country, category, citizenship, studyLevel, highestEdu, field, targetLanguage, languageLevel })
+    setSearchSnapshot({ country, category, citizenship, studyLevel, field })
     setStep('results')
     setLoading(false)
   }
@@ -476,9 +439,7 @@ export default function Home() {
           >
             <strong>Arama yapılamadı.</strong> {searchError}
             <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-mid)' }}>
-              Veritabanında güncel SQL yoksa:{' '}
-              <code style={{ fontSize: 11 }}>docs/sql/090_one_shot_after_006.sql</code> dosyasını Supabase SQL
-              Editor’da bir kez çalıştırın.
+              Lütfen kısa bir süre sonra tekrar deneyin.
             </div>
           </div>
         )}
@@ -527,15 +488,6 @@ export default function Home() {
                 describe={ageBlurb}
               />
 
-              <StepSlider
-                label="Halihazırdaki en yüksek eğitim seviyen"
-                hint="opsiyonel — barı çek"
-                stops={HIGHEST_EDU_STOPS}
-                value={highestEdu}
-                onChange={setHighestEdu}
-                accent="#2BE0C8"
-              />
-
               <div>
                 <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-hi)', marginBottom: 10 }}>
                   Bölümün <span style={{ fontWeight: 400, color: 'var(--text-low)' }}>· opsiyonel</span>
@@ -578,23 +530,10 @@ export default function Home() {
                 hint="opsiyonel"
                 options={COUNTRY_OPTIONS}
                 value={country}
-                onChange={handleCountryChange}
+                onChange={setCountry}
                 columns={4}
                 accent="#9B6BFF"
               />
-
-              {targetLanguage && (
-                <div className="fx-fade-in-up">
-                  <StepSlider
-                    label={`${targetLanguage} seviyen`}
-                    hint="opsiyonel — bilmiyorsan boş bırak"
-                    stops={CEFR_STOPS}
-                    value={languageLevel}
-                    onChange={setLanguageLevel}
-                    accent="#FFB547"
-                  />
-                </div>
-              )}
 
               <ChoiceGrid
                 label="Başvurmak istediğin eğitim kademesi"
@@ -710,12 +649,6 @@ export default function Home() {
             </span>
           )}
           {category && <span>· {CATEGORIES.find(c => c.slug === category)?.label}</span>}
-          {(searchSnapshot.highestEdu as string | null) && (
-            <span>· Mevcut: {HIGHEST_EDU_LEVELS.find(l => l.value === searchSnapshot.highestEdu)?.label}</span>
-          )}
-          {targetLanguage && languageLevel && languageLevel !== 'none' && (
-            <span>· {targetLanguage} {languageLevel}</span>
-          )}
         </div>
 
         {/* Filter chips */}

@@ -6,8 +6,8 @@ Yayındaki (is_active=true) fırsatları periyodik olarak denetler:
   2. Ölü Bağlantılar: HTTP 404/410 dönen resmi başvuru linklerini is_active=false yapar.
   3. Kapanmış Formlar: Google Forms '/closedform' veya sayfa içi 'application closed'
      gibi sinyaller içeren formları tespit edip is_active=false yapar.
-  4. Durum Güncellemesi: opportunities tablosunun last_url_check_* ve last_verified_at
-     kolonlarını günceller; admin panelindeki link-audit ekranını besler.
+  4. Durum Güncellemesi: opportunities tablosunun last_url_check_* kolonlarını
+     günceller; insan/ajan içerik doğrulaması olan last_verified_at'e dokunmaz.
   5. GitHub Actions: $GITHUB_STEP_SUMMARY ortam değişkeni varsa Markdown rapor üretir.
 
 Kullanım:
@@ -141,6 +141,17 @@ def get_opportunity_deadline(opp: dict) -> date | None:
     return parse_deadline(opp.get("deadline_notes"))
 
 
+def has_stale_title_year(title: str | None, today: date | None = None) -> bool:
+    """Başlıktaki tüm açık yıllar geçmişteyse kaydı eski sayar.
+
+    `2025-2026` gibi içinde mevcut yıl geçen dönemler bu kapıya takılmaz;
+    yıl yazmayan sürekli programlar hakkında da varsayım yapılmaz.
+    """
+    current_year = (today or date.today()).year
+    years = [int(value) for value in re.findall(r"\b20\d{2}\b", title or "")]
+    return bool(years) and max(years) < current_year
+
+
 def patch_opportunity(opp_id: str, patch: dict, dry_run: bool = False) -> bool:
     """opportunities tablosuna PATCH atar."""
     if dry_run:
@@ -231,6 +242,7 @@ def write_github_summary(stats: dict, details: list[dict]):
         "| :--- | :---: |",
         f"| Toplam İncelenen Aktif Fırsat | **{stats['total_checked']}** |",
         f"| ⏰ Süresi Dolduğu İçin Kapatılan | **{stats['expired_deactivated']}** |",
+        f"| 🗓️ Başlıktaki Dönem Eski Olduğu İçin Kapatılan | **{stats['stale_year_deactivated']}** |",
         f"| 💀 Ölü Link (HTTP 404/410) Nedeniyle Kapatılan | **{stats['dead_deactivated']}** |",
         f"| 🚫 Kapanmış Form Sinyaliyle Kapatılan | **{stats['closed_deactivated']}** |",
         f"| ✅ Aktif ve Canlı Kalan (200 OK) | **{stats['alive_ok']}** |",
@@ -282,6 +294,7 @@ def main():
     stats = {
         "total_checked": 0,
         "expired_deactivated": 0,
+        "stale_year_deactivated": 0,
         "dead_deactivated": 0,
         "closed_deactivated": 0,
         "alive_ok": 0,
@@ -309,10 +322,27 @@ def main():
                 "reason": "Süresi Doldu",
                 "detail": f"Son tarih: {dl}",
             })
+        elif dl is None and has_stale_title_year(opp.get("title"), today):
+            stats["stale_year_deactivated"] += 1
+            print(f"  🗓️ [ESKİ DÖNEM] {opp['title'][:55]}")
+            patch_opportunity(
+                opp["id"],
+                {"is_active": False, "last_verified_at": now_iso},
+                args.dry_run,
+            )
+            deactivated_details.append({
+                "title": opp["title"],
+                "reason": "Eski Dönem",
+                "detail": "Başlıktaki en yeni yıl geçmişte",
+            })
         else:
             remaining_for_url_check.append(opp)
 
-    print(f"✓ Tarih taraması bitti: {stats['expired_deactivated']} fırsat süresi dolduğu için kapatıldı.\n")
+    print(
+        "✓ Tarih taraması bitti: "
+        f"{stats['expired_deactivated']} son tarih + "
+        f"{stats['stale_year_deactivated']} eski dönem kaydı kapatıldı.\n"
+    )
 
     if args.skip_url_check:
         print("⏭️ --skip-url-check belirtildiği için URL canlılık denetimi atlandı.")
@@ -394,7 +424,6 @@ def main():
                     "last_url_check_status": status,
                     "last_url_check_error": None,
                     "last_url_check_final_url": final_url,
-                    "last_verified_at": now_iso,
                 },
                 args.dry_run
             )
@@ -424,11 +453,17 @@ def main():
     print("=" * 65)
     print(f"Toplam Kontrol Edilen   : {stats['total_checked']}")
     print(f"⏰ Süresi Dolan (Kapatıldı): {stats['expired_deactivated']}")
+    print(f"🗓️ Eski Dönem (Kapatıldı): {stats['stale_year_deactivated']}")
     print(f"💀 Ölü Link (Kapatıldı)    : {stats['dead_deactivated']}")
     print(f"🚫 Kapalı Form (Kapatıldı) : {stats['closed_deactivated']}")
     print(f"✅ Canlı & Aktif (200 OK)  : {stats['alive_ok']}")
     print(f"⚠️ Geçici Uyarı (Açık Kaldı): {stats['transient_warnings']}")
-    total_deact = stats['expired_deactivated'] + stats['dead_deactivated'] + stats['closed_deactivated']
+    total_deact = (
+        stats['expired_deactivated']
+        + stats['stale_year_deactivated']
+        + stats['dead_deactivated']
+        + stats['closed_deactivated']
+    )
     print(f"🛑 Toplam Pasifleştirilen  : {total_deact}")
     print("=" * 65)
 

@@ -34,6 +34,9 @@
     "db:112": "npx supabase db query --linked -f docs/sql/112_age_limits_evidence_only.sql",
     "db:113": "npx supabase db query --linked -f docs/sql/113_rpc_surface_hardening.sql",
     "db:114": "npx supabase db query --linked -f docs/sql/114_direct_application_routes.sql",
+    "db:115": "npx supabase db query --linked -f docs/sql/115_structured_submission_inputs.sql",
+    "db:116": "npx supabase db query --linked -f docs/sql/116_drop_legacy_match_overload.sql",
+    "db:117": "npx supabase db query --linked -f docs/sql/117_active_opportunity_category_guard.sql",
     "db:insert-programs": "node scripts/insert_programs.js"
   },
   "dependencies": {

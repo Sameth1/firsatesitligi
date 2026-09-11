@@ -1,5 +1,12 @@
 name: Agent Triage & Revision
 
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-triage
+  cancel-in-progress: false
+
 on:
   schedule:
     # Her 4 saatte bir otomatik çalıştır
@@ -26,13 +33,16 @@ jobs:
   triage:
     name: Run Agent Triage & Human Revision
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -47,19 +57,26 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_RECHECK: ${{ inputs.recheck }}
+          INPUT_LIMIT: ${{ inputs.limit }}
         run: |
-          ARGS=""
-          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
-            ARGS="$ARGS --dry-run"
+          ARGS=()
+          if [ "$INPUT_DRY_RUN" = "true" ]; then
+            ARGS+=(--dry-run)
           fi
-          if [ "${{ github.event.inputs.recheck }}" = "true" ]; then
-            ARGS="$ARGS --recheck"
+          if [ "$INPUT_RECHECK" = "true" ]; then
+            ARGS+=(--recheck)
           fi
-          
-          LIMIT="${{ github.event.inputs.limit || '50' }}"
-          if [ -n "$LIMIT" ] && [ "$LIMIT" != "0" ] && [ "$LIMIT" != "all" ]; then
-            ARGS="$ARGS --limit $LIMIT"
+
+          LIMIT="${INPUT_LIMIT:-50}"
+          if [ "$LIMIT" = "0" ] || [ "$LIMIT" = "all" ]; then
+            :
+          elif [[ "$LIMIT" =~ ^[1-9][0-9]*$ ]]; then
+            ARGS+=(--limit "$LIMIT")
+          else
+            echo "Geçersiz limit: $LIMIT" >&2
+            exit 2
           fi
-          
-          echo "Running: python validate_submissions.py $ARGS"
-          python validate_submissions.py $ARGS
+
+          python validate_submissions.py "${ARGS[@]}"

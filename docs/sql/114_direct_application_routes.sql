@@ -135,6 +135,7 @@ for each row execute function public.copy_verified_application_route();
 drop function if exists public.match_opportunities(text, text, text, integer, text, text);
 drop function if exists public.match_opportunities(text, text, text, integer, text, text, text);
 drop function if exists public.match_opportunities(text, text, text, integer, text, text, text, text);
+drop function if exists public.match_opportunities(text, text, text, integer, text, text, text, text, text);
 
 create function public.match_opportunities(
   p_host_country text default null,
@@ -171,8 +172,9 @@ as $function$
     opp.application_route_status, opp.application_method,
     opp.application_url_verified_at
   from public.opportunity_cards oc
-  left join public.opportunities opp on opp.id = oc.id
-  where coalesce(opp.is_active, true) = true
+  join public.opportunities opp on opp.id = oc.id
+  where opp.is_active = true
+    and oc.category_slug is not null
     and (p_host_country is null or '*' = any(oc.host_countries) or p_host_country = any(oc.host_countries))
     and (p_category_slug is null or oc.category_slug = p_category_slug)
     and ('all' = any(oc.eligible_citizenships) or p_citizenship = any(oc.eligible_citizenships))

@@ -1,5 +1,12 @@
 name: Audit Opportunities
 
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-opportunities
+  cancel-in-progress: false
+
 on:
   schedule:
     # Her gece UTC 03:00'te (Türkiye Saatiyle 06:00) otomatik çalıştır
@@ -21,13 +28,16 @@ jobs:
   audit:
     name: Run Opportunity Health & Link Audit
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -41,18 +51,22 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_LIMIT: ${{ inputs.limit }}
         run: |
-          ARGS=""
-          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
-            ARGS="$ARGS --dry-run"
+          ARGS=()
+          if [ "$INPUT_DRY_RUN" = "true" ]; then
+            ARGS+=(--dry-run)
           fi
-          
-          LIMIT="${{ github.event.inputs.limit || '100' }}"
+
+          LIMIT="${INPUT_LIMIT:-100}"
           if [ "$LIMIT" = "0" ] || [ "$LIMIT" = "all" ]; then
-            ARGS="$ARGS --check-all"
+            ARGS+=(--check-all)
+          elif [[ "$LIMIT" =~ ^[1-9][0-9]*$ ]]; then
+            ARGS+=(--limit "$LIMIT")
           else
-            ARGS="$ARGS --limit $LIMIT"
+            echo "Geçersiz limit: $LIMIT" >&2
+            exit 2
           fi
-          
-          echo "Running: python scripts/audit_opportunities.py $ARGS"
-          python scripts/audit_opportunities.py $ARGS
+
+          python scripts/audit_opportunities.py "${ARGS[@]}"

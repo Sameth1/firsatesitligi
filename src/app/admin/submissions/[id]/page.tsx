@@ -19,6 +19,14 @@ const FUNDING_TYPES = [
   { value: 'stipend', label: 'Harçlık' },
 ]
 
+const STUDY_LEVELS = [
+  { value: 'high_school', label: 'Lise' },
+  { value: 'bachelor',    label: 'Lisans' },
+  { value: 'master',      label: 'Yüksek Lisans' },
+  { value: 'phd',         label: 'Doktora' },
+  { value: 'graduate',    label: 'Mezun / Genç Profesyonel' },
+]
+
 interface Submission {
   id: string
   title: string
@@ -31,6 +39,7 @@ interface Submission {
   host_countries: string[]
   eligible_citizenships: string[] | null
   target_fields: string[] | null
+  study_level: string[] | null
   deadline_text: string | null
   funding_type: string | null
   funding_notes: string | null
@@ -81,6 +90,7 @@ export default function SubmissionDetailPage({
   const [deadlineText, setDeadlineText] = useState('')
   const [fundingType, setFundingType] = useState<string | null>(null)
   const [fundingNotes, setFundingNotes] = useState('')
+  const [studyLevel, setStudyLevel] = useState<string[]>([])
   const [eligibility, setEligibility] = useState('')
   const [languageReq, setLanguageReq] = useState('')
   const [ageMin, setAgeMin] = useState('')
@@ -112,6 +122,7 @@ export default function SubmissionDetailPage({
         setHostCountries(s.host_countries?.join(', ') ?? '')
         setCitizenships(s.eligible_citizenships?.join(', ') ?? '')
         setTargetFields(s.target_fields?.join(', ') ?? '')
+        setStudyLevel(s.study_level ?? [])
         setDeadlineText(s.deadline_text ?? '')
         setFundingType(s.funding_type)
         setFundingNotes(s.funding_notes ?? '')
@@ -159,6 +170,7 @@ export default function SubmissionDetailPage({
         deadline_text: deadlineText || null,
         funding_type: fundingType,
         funding_notes: fundingNotes || null,
+        study_level: studyLevel.length > 0 ? studyLevel : null,
         eligibility_notes: eligibility || null,
         language_requirement: languageReq || null,
         age_min: ageMin ? parseInt(ageMin) : null,
@@ -411,7 +423,33 @@ export default function SubmissionDetailPage({
           <Label text="Finansman notları" />
           <input value={fundingNotes} onChange={e => setFundingNotes(e.target.value)} style={{ ...inputStyle, marginBottom: 12 }} />
 
-          <Label text="Kimler başvurabilir" />
+          <Label text="Öğrenim Seviyesi / Kimler İçin?" />
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+            {STUDY_LEVELS.map(s => {
+              const active = studyLevel.includes(s.value)
+              return (
+                <button
+                  key={s.value}
+                  type="button"
+                  onClick={() => {
+                    setStudyLevel(prev =>
+                      prev.includes(s.value) ? prev.filter(x => x !== s.value) : [...prev, s.value]
+                    )
+                  }}
+                  style={{
+                    fontSize: 11, fontWeight: 500, padding: '4px 10px', borderRadius: 20,
+                    background: active ? '#1a6b5a' : 'transparent',
+                    color: active ? '#fff' : '#1a6b5a',
+                    border: '0.5px solid #1a6b5a66', cursor: 'pointer',
+                  }}
+                >
+                  {s.label}
+                </button>
+              )
+            })}
+          </div>
+
+          <Label text="Kimler başvurabilir (Notlar)" />
           <input value={eligibility} onChange={e => setEligibility(e.target.value)} style={{ ...inputStyle, marginBottom: 12 }} />
 
           <Label text="Dil şartı" />

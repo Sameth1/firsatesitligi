@@ -134,6 +134,37 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Geçersiz e-posta adresi.' }, { status: 400 })
   }
 
+  let ageMin: number | null = null
+  let ageMax: number | null = null
+  if (body.age_min !== undefined && body.age_min !== null && body.age_min !== '') {
+    const parsed = Number(body.age_min)
+    if (!Number.isNaN(parsed) && parsed >= 0 && parsed <= 120) {
+      ageMin = Math.floor(parsed)
+    }
+  }
+  if (body.age_max !== undefined && body.age_max !== null && body.age_max !== '') {
+    const parsed = Number(body.age_max)
+    if (!Number.isNaN(parsed) && parsed >= 0 && parsed <= 120) {
+      ageMax = Math.floor(parsed)
+    }
+  }
+  if (ageMin !== null && ageMax !== null && ageMin > ageMax) {
+    return NextResponse.json({ error: 'Minimum yaş, maksimum yaştan büyük olamaz.' }, { status: 400 })
+  }
+
+  const VALID_STUDY_LEVELS = new Set(['high_school', 'bachelor', 'master', 'phd', 'graduate'])
+  const studyLevel = Array.isArray(body.study_level)
+    ? body.study_level
+        .map(value => String(value).trim().toLowerCase())
+        .filter(value => VALID_STUDY_LEVELS.has(value))
+    : []
+
+  const eligibleCitizenships = Array.isArray(body.eligible_citizenships)
+    ? body.eligible_citizenships
+        .map(value => String(value).trim().toUpperCase())
+        .filter(code => /^[A-Z]{2}$|^\*$/.test(code))
+    : []
+
   const payload = {
     title,
     url: rawUrl,
@@ -143,6 +174,10 @@ export async function POST(req: Request) {
     host_countries: hostCountries,
     deadline_text: deadlineText,
     funding_type: fundingType,
+    age_min: ageMin,
+    age_max: ageMax,
+    study_level: studyLevel.length > 0 ? studyLevel : null,
+    eligible_citizenships: eligibleCitizenships.length > 0 ? eligibleCitizenships : null,
     eligibility_notes: eligibilityNotes,
     language_requirement: languageRequirement,
     description,
