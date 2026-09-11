@@ -1,6 +1,6 @@
 import json
 import unittest
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from unittest.mock import patch
 
 import validate_submissions as validator
@@ -297,6 +297,32 @@ class HistoricApprovalClassificationTests(unittest.TestCase):
 
 
 class DecisionFlowTests(unittest.TestCase):
+    def test_future_deadline_cannot_be_called_closed_without_closed_quote(self):
+        submission = complete_submission()
+        submission["deadline_text"] = "2026-09-12"
+        verdict = verdict_with_quotes("")
+        verdict.update({"durum": "kapali", "guven": "yuksek"})
+        verdict["kanitlar"]["guncellik"] = "Deadline: 12 September 2026"
+
+        blockers = validator.verdict_date_consistency_blockers(
+            submission, verdict, today=date(2026, 9, 11)
+        )
+
+        self.assertTrue(blockers)
+
+    def test_explicit_closed_quote_can_override_future_recorded_deadline(self):
+        submission = complete_submission()
+        submission["deadline_text"] = "2026-09-12"
+        verdict = verdict_with_quotes("")
+        verdict.update({"durum": "kapali", "guven": "yuksek"})
+        verdict["kanitlar"]["guncellik"] = "Applications are closed"
+
+        blockers = validator.verdict_date_consistency_blockers(
+            submission, verdict, today=date(2026, 9, 11)
+        )
+
+        self.assertEqual(blockers, [])
+
     @patch("validate_submissions.apply_decision")
     def test_incomplete_record_is_rejected_not_queued(self, apply_decision):
         submission = complete_submission()
@@ -340,6 +366,31 @@ class DecisionFlowTests(unittest.TestCase):
 
         self.assertEqual(result, "tekrar")
         self.assertEqual(apply_decision.call_args.args[1], "tekrar")
+
+    @patch("validate_submissions.judge_with_llm")
+    @patch("validate_submissions.fetch_page")
+    @patch("validate_submissions.apply_decision")
+    def test_login_required_application_link_is_rejected_before_llm(
+        self, apply_decision, fetch_page, judge_with_llm
+    ):
+        fetch_page.side_effect = [
+            (401, "https://docs.google.com/forms/d/e/example/viewform", "", None),
+            (200, "https://source.example/program", "<p>Programme details</p>", None),
+        ]
+        submission = complete_submission()
+        submission.update({
+            "id": "test",
+            "url": "https://docs.google.com/forms/d/e/example/viewform",
+            "application_url_final": "https://docs.google.com/forms/d/e/example/viewform",
+            "source_url": "https://source.example/program",
+        })
+
+        result = validator.process(submission, True, set(), set(), {"llm_calls": 0})
+
+        self.assertEqual(result, "llm_red")
+        self.assertEqual(apply_decision.call_args.args[1], "reddet")
+        self.assertIn("HTTP 401", apply_decision.call_args.args[2])
+        judge_with_llm.assert_not_called()
 
 
 class AgentRevisionTests(unittest.TestCase):

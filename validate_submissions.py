@@ -97,6 +97,7 @@ LLM_REASONING_EFFORT = os.getenv("LLM_REASONING_EFFORT", "none")
 # gelir; bütçe darsa content yarım/boş kalır (finish_reason='length') → parse
 # edilemez. Bu yüzden geniş tut.
 LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "3000"))
+PLATFORM_TIMEZONE = timezone(timedelta(hours=3), name="Europe/Istanbul")
 
 AGENT_MARKER = "[ajan]"       # admin_note öneki — tekrar çalıştırmada atlamak için
 HUMAN_REJECT_RE = re.compile(r"^\[insan\]\s+RED:([a-z0-9_]+)\s+—\s+(.+)$")
@@ -193,6 +194,18 @@ EVIDENCE_QUOTE_FIELDS = {
     "dil": "dil filtresi alıntısı",
     "bolum": "bölüm filtresi alıntısı",
 }
+
+EXPLICIT_CLOSED_PHRASES = (
+    "başvurular kapandı", "basvurular kapandi", "başvuru sona erdi",
+    "basvuru sona erdi", "applications closed", "applications are closed",
+    "deadline has passed", "no longer accepting applications",
+    "programme has ended", "program has ended",
+)
+
+
+def platform_today():
+    """GitHub runner'ın UTC saatinden bağımsız platform tarihi."""
+    return datetime.now(PLATFORM_TIMEZONE).date()
 
 HTTP_HEADERS = {
     "User-Agent": (
@@ -766,7 +779,7 @@ def classify_historic_approval(sub, opportunity):
     if opportunity is None:
         return "admin_kontrolu", blockers + ["yayındaki fırsat kaydı bulunamadı"]
     deadline = opportunity_deadline(opportunity) or parse_deadline(sub.get("deadline_text"))
-    if opportunity.get("is_active") and deadline is not None and deadline < date.today():
+    if opportunity.get("is_active") and deadline is not None and deadline < platform_today():
         return "kapatilmali", [f"son başvuru tarihi geçmiş: {deadline.isoformat()}"]
     if not opportunity.get("is_active"):
         return "zaten_kapali", blockers
@@ -1381,7 +1394,7 @@ def judge_with_llm(sub, url, http_note, page_text, prior_verdict=None):
             f"İLK KARAR: {json.dumps(prior_verdict, ensure_ascii=False)}"
         )
     user_text = (
-        f"BUGÜNÜN TARİHİ: {date.today().isoformat()}\n"
+        f"BUGÜNÜN TARİHİ: {platform_today().isoformat()}\n"
         "(Fırsatın açık/kapalı olduğunu bu tarihe göre belirle; kendi tarih bilgine güvenme.)\n\n"
         "SUBMISSION\n"
         f"Başlık: {sub.get('title') or '(yok)'}\n"
@@ -1442,7 +1455,7 @@ def submission_completeness_blockers(sub):
     deadline = parse_deadline(sub.get("deadline_text"))
     if deadline is None:
         blockers.append("tam ve işlenebilir son başvuru tarihi eksik")
-    elif deadline < date.today():
+    elif deadline < platform_today():
         blockers.append("son başvuru tarihi geçmiş")
     if sub.get("funding_type") not in VALID_FUNDING_TYPES:
         blockers.append("finansman türü eksik veya geçersiz")
@@ -1549,6 +1562,26 @@ def evidence_rejection_reasons(verdict):
     return [label for field, label in labels.items() if verdict.get(field) is not True]
 
 
+def verdict_date_consistency_blockers(sub, verdict, today=None):
+    """LLM'in takvim hesabı yapısal son tarihle çelişirse karar verme."""
+    today = today or platform_today()
+    deadline = parse_deadline(sub.get("deadline_text"))
+    if deadline is None:
+        return []
+    if deadline < today and verdict.get("durum") != "kapali":
+        return ["LLM geçmiş son tarihi açık/belirsiz saydı"]
+    if deadline >= today and verdict.get("durum") == "kapali":
+        quote = _normalize_evidence_text(
+            (verdict.get("kanitlar") or {}).get("guncellik")
+        )
+        if not any(phrase in quote for phrase in EXPLICIT_CLOSED_PHRASES):
+            return [
+                f"LLM {deadline.isoformat()} tarihini geçmiş saydı; "
+                "sayfada açık kapanış alıntısı yok"
+            ]
+    return []
+
+
 def decide(verdict):
     """Karar dict'i -> (eylem, gerekce). eylem: reddet | onayla | belirsiz.
     Otomatik ONAY yalnızca açık + kategori-uygun + güven yüksek olduğunda;
@@ -1578,7 +1611,7 @@ def _verified_revision_value(field, value, evidence, page_text, today=None):
     quote = _normalize_evidence_text(evidence.get(field))
     if len(quote) < 5 or quote not in _normalize_evidence_text(page_text):
         return None
-    today = today or date.today()
+    today = today or platform_today()
 
     if field == "title":
         value = str(value).strip()
@@ -1721,7 +1754,7 @@ def suggest_revision_with_llm(sub, page_text):
         )
     }
     user_text = (
-        f"BUGÜNÜN TARİHİ: {date.today().isoformat()}\n\n"
+        f"BUGÜNÜN TARİHİ: {platform_today().isoformat()}\n\n"
         f"İNSAN ADMİNİN REVİZE GÖREVİ:\n{_revision_request_note(sub)}\n\n"
         "MEVCUT KAYIT (dolu alanlara dokunma):\n"
         f"{json.dumps(visible_fields, ensure_ascii=False)}\n\n"
@@ -1863,7 +1896,7 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
 
     # Heuristik 2 — kayıtlı son başvuru tarihi geçmiş (LLM'siz)
     dl = parse_deadline(sub.get("deadline_text"))
-    if dl is not None and dl < date.today():
+    if dl is not None and dl < platform_today():
         apply_decision(sub, "reddet",
                        f"Son başvuru tarihi geçmiş: {dl.isoformat()}", dry_run)
         print(f"  SÜRESİ GEÇMİŞ ({dl}) → REDDET")
@@ -1934,6 +1967,11 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
         apply_decision(sub, "reddet", f"Ölü bağlantı (HTTP {status})", dry_run)
         print(f"  HTTP {status} → REDDET")
         return "olu_link"
+    if status == 401:
+        reason = "Başvuru bağlantısı herkese açık değil (HTTP 401)"
+        apply_decision(sub, "reddet", reason, dry_run)
+        print(f"  {reason} → REDDET")
+        return "llm_red"
     if final_url and _url_host(final_url) in AGGREGATOR_DOMAINS:
         apply_decision(sub, "reddet",
                        "Doğrudan link kaynak/derleme sitesine yönlendiriyor", dry_run)
@@ -1993,6 +2031,13 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
         return "tekrar"
 
     sub["_agent_eval_validation"] = verdict
+
+    date_errors = verdict_date_consistency_blockers(sub, verdict)
+    if date_errors:
+        reason = "Agent tarih kontrolü tutarsız: " + "; ".join(date_errors)
+        apply_decision(sub, "tekrar", reason, dry_run)
+        print(f"  → TEKRAR DENE — {reason}")
+        return "tekrar"
 
     print(f"  LLM: durum={verdict['durum']} "
           f"kategori_uygun={verdict['kategori_uygun']} guven={verdict['guven']}")
@@ -2261,7 +2306,7 @@ def audit_opportunity(opp, dry_run):
 
     # 1) Son başvuru tarihi geçmiş mi? (URL'e gitmeden — istek tasarrufu)
     dl = opportunity_deadline(opp)
-    if dl is not None and dl < date.today():
+    if dl is not None and dl < platform_today():
         update_opportunity(opp_id,
                            {"is_active": False, "last_verified_at": now_iso}, dry_run)
         print(f"  Son başvuru tarihi geçmiş ({dl}) → PASİFLEŞTİRİLDİ")
