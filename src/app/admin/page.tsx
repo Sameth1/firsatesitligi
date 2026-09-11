@@ -21,6 +21,7 @@ interface Submission {
   created_at: string
   submission_origin: 'human' | 'agent'
   review_stage: string
+  application_route_status?: 'verified' | 'unverified' | 'missing'
 }
 
 interface Stats {
@@ -78,6 +79,7 @@ export default function AdminPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [verifyApproveSub, setVerifyApproveSub] = useState<Submission | null>(null)
 
   useEffect(() => {
     let active = true
@@ -141,14 +143,48 @@ export default function AdminPage() {
     setTimeout(() => setToast(null), 3000)
   }
 
-  async function handleApprove(id: string) {
-    setActionLoading(id)
-    const { error } = await supabase.rpc('approve_submission', { p_id: id })
+  async function handleApprove(sub: Submission) {
+    if (sub.application_route_status !== 'verified') {
+      setVerifyApproveSub(sub)
+      return
+    }
+    setActionLoading(sub.id)
+    const { error } = await supabase.rpc('approve_submission', { p_id: sub.id })
     setActionLoading(null)
     if (error) {
       showToast('Hata: ' + error.message)
     } else {
       showToast('Onaylandı, fırsat sisteme eklendi.')
+      refresh()
+    }
+  }
+
+  async function handleConfirmVerifyAndApprove(sub: Submission) {
+    setActionLoading(sub.id)
+    const { error: updateError } = await supabase
+      .from('submissions')
+      .update({
+        application_route_status: 'verified',
+        application_method: 'portal',
+        application_url_verified_at: new Date().toISOString(),
+        application_url_final: sub.url,
+        application_url_evidence: 'İnsan admin listeden doğrulayarak onayladı',
+      })
+      .eq('id', sub.id)
+
+    if (updateError) {
+      setActionLoading(null)
+      showToast('Hata: ' + updateError.message)
+      return
+    }
+
+    const { error } = await supabase.rpc('approve_submission', { p_id: sub.id })
+    setActionLoading(null)
+    setVerifyApproveSub(null)
+    if (error) {
+      showToast('Hata: ' + error.message)
+    } else {
+      showToast('Doğrulandı ve onaylandı; fırsat sisteme eklendi.')
       refresh()
     }
   }
@@ -398,7 +434,7 @@ export default function AdminPage() {
                       color="#085041"
                       bg="#E1F5EE"
                       loading={actionLoading === sub.id}
-                      onClick={() => handleApprove(sub.id)}
+                      onClick={() => handleApprove(sub)}
                     />
                     {sub.submission_origin === 'human' ? (
                       <ActionBtn
@@ -459,6 +495,71 @@ export default function AdminPage() {
                 )}
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Verify and Approve Modal */}
+        {verifyApproveSub && (
+          <div style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 300, padding: 16,
+          }}>
+            <div style={{
+              background: '#fff', borderRadius: 14, padding: 24,
+              maxWidth: 480, width: '100%', boxShadow: '0 8px 30px rgba(0,0,0,0.2)',
+            }}>
+              <div style={{ fontSize: 16, fontWeight: 600, color: '#1a1a1a', marginBottom: 12 }}>
+                Başvuru Bağlantısını Doğrula ve Onayla
+              </div>
+              <p style={{ fontSize: 13, color: '#555', lineHeight: 1.5, marginBottom: 16 }}>
+                <strong>{verifyApproveSub.title}</strong> fırsatının başvuru rotası henüz &quot;doğrulanmış&quot; olarak kaydedilmemiş.
+              </p>
+              <div style={{
+                background: '#f8f8f8', border: '1px solid #e5e5e5', borderRadius: 8,
+                padding: '10px 12px', fontSize: 12, marginBottom: 16, wordBreak: 'break-all',
+              }}>
+                <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Başvuru URL&apos;si:</div>
+                <a href={verifyApproveSub.url} target="_blank" rel="noopener noreferrer" style={{ color: '#534AB7', textDecoration: 'underline' }}>
+                  {verifyApproveSub.url}
+                </a>
+              </div>
+              <p style={{ fontSize: 12, color: '#777', marginBottom: 20 }}>
+                Bu bağlantıdan doğrudan başvuru yapılabildiğini onaylıyorsanız &quot;Doğrula ve Onayla&quot; butonuna tıklayabilirsiniz.
+              </p>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setVerifyApproveSub(null)}
+                  disabled={Boolean(actionLoading)}
+                  style={{ padding: '8px 14px', borderRadius: 8, border: '0.5px solid #ccc', background: '#fff', fontSize: 13, cursor: 'pointer' }}
+                >
+                  Vazgeç
+                </button>
+                <Link
+                  href={`/admin/submissions/${verifyApproveSub.id}`}
+                  style={{
+                    padding: '8px 14px', borderRadius: 8, border: '0.5px solid #AFA9EC',
+                    background: '#EEEDFE', color: '#3C3489', fontSize: 13, textDecoration: 'none',
+                    display: 'inline-flex', alignItems: 'center',
+                  }}
+                >
+                  Detayda İncele
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => handleConfirmVerifyAndApprove(verifyApproveSub)}
+                  disabled={Boolean(actionLoading)}
+                  style={{
+                    padding: '8px 16px', borderRadius: 8, border: 'none',
+                    background: '#085041', color: '#fff', fontSize: 13, fontWeight: 500,
+                    cursor: actionLoading ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {actionLoading ? 'Onaylanıyor…' : 'Doğrula ve Onayla'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
 

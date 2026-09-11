@@ -66,6 +66,7 @@ export default function SubmissionDetailPage({
   const [toast, setToast] = useState<string | null>(null)
   const [reviseNote, setReviseNote] = useState('')
   const [showReject, setShowReject] = useState(false)
+  const [showRouteVerifyModal, setShowRouteVerifyModal] = useState(false)
 
   // Editable fields
   const [title, setTitle] = useState('')
@@ -123,8 +124,9 @@ export default function SubmissionDetailPage({
     setTimeout(() => setToast(null), 3000)
   }
 
-  async function saveEdits(options?: { quietSuccess?: boolean }): Promise<boolean> {
-    const { quietSuccess = false } = options ?? {}
+  async function saveEdits(options?: { quietSuccess?: boolean; forceVerified?: boolean }): Promise<boolean> {
+    const { quietSuccess = false, forceVerified } = options ?? {}
+    const isVerified = forceVerified !== undefined ? forceVerified : routeVerified
 
     const { error } = await supabase
       .from('submissions')
@@ -132,11 +134,11 @@ export default function SubmissionDetailPage({
         title,
         url,
         details_url: detailsUrl || url,
-        application_route_status: routeVerified ? 'verified' : 'unverified',
-        application_method: routeVerified ? applicationMethod : null,
-        application_url_verified_at: routeVerified ? new Date().toISOString() : null,
-        application_url_final: routeVerified ? url : null,
-        application_url_evidence: routeVerified ? 'İnsan admin bağlantıyı açarak doğruladı' : null,
+        application_route_status: isVerified ? 'verified' : 'unverified',
+        application_method: isVerified ? (applicationMethod || 'portal') : null,
+        application_url_verified_at: isVerified ? new Date().toISOString() : null,
+        application_url_final: isVerified ? url : null,
+        application_url_evidence: isVerified ? 'İnsan admin bağlantıyı açarak doğruladı' : null,
         category_slug: categorySlug,
         host_countries: hostCountries ? hostCountries.split(',').map(s => s.trim().toUpperCase()) : [],
         // 107: onay RPC'si bu iki alanı submission'dan okuyor. Boş = kısıt yok
@@ -162,12 +164,22 @@ export default function SubmissionDetailPage({
       showToast('Hata: ' + error.message)
       return false
     }
+    if (isVerified) setRouteVerified(true)
     if (!quietSuccess) showToast('Kaydedildi')
     return true
   }
 
-  async function handleApprove() {
-    const saved = await saveEdits({ quietSuccess: true })
+  async function handleApprove(forceVerify = false) {
+    if (!routeVerified && !forceVerify) {
+      setShowRouteVerifyModal(true)
+      return
+    }
+
+    if (forceVerify) {
+      setRouteVerified(true)
+    }
+
+    const saved = await saveEdits({ quietSuccess: true, forceVerified: forceVerify || routeVerified })
     if (!saved) return
     setActionLoading(true)
     const { error } = await supabase.rpc('approve_submission', { p_id: id })
@@ -175,6 +187,7 @@ export default function SubmissionDetailPage({
     if (error) {
       showToast('Hata: ' + error.message)
     } else {
+      setShowRouteVerifyModal(false)
       showToast('Onaylandı, fırsat sisteme eklendi.')
       setSub(prev => prev ? { ...prev, status: 'approved' } : null)
     }
@@ -301,15 +314,23 @@ export default function SubmissionDetailPage({
             <option value="email">E-posta</option>
             <option value="document">İndirilebilir form</option>
           </select>
-          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 14, fontSize: 12, color: '#555' }}>
-            <input
-              type="checkbox"
-              checked={routeVerified}
-              onChange={e => setRouteVerified(e.target.checked)}
-              style={{ marginTop: 2 }}
-            />
-            Bu bağlantıyı açtım; kullanıcı doğrudan başvuruyu başlatabiliyor.
-          </label>
+          <div style={{
+            background: routeVerified ? '#E1F5EE' : '#FFF9E6',
+            border: `1px solid ${routeVerified ? '#9FE1CB' : '#FDE68A'}`,
+            borderRadius: 8, padding: '10px 12px', marginBottom: 14,
+          }}>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, color: '#333', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={routeVerified}
+                onChange={e => setRouteVerified(e.target.checked)}
+                style={{ marginTop: 2, accentColor: '#085041' }}
+              />
+              <span>
+                <strong>Doğrudan başvuru adımı doğrulandı:</strong> Bu bağlantıyı açtım; kullanıcı buradan doğrudan başvuruyu başlatabiliyor. (Yayına almak için zorunludur)
+              </span>
+            </label>
+          </div>
 
           <Label text="Kategori" />
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -443,7 +464,7 @@ export default function SubmissionDetailPage({
           {canReview && (
             <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
               <button
-                onClick={handleApprove}
+                onClick={() => handleApprove()}
                 disabled={actionLoading}
                 style={{
                   flex: 1, padding: '12px', borderRadius: 10,
@@ -523,6 +544,61 @@ export default function SubmissionDetailPage({
             </div>
           )}
         </div>
+
+        {/* Route verification confirmation modal */}
+        {showRouteVerifyModal && (
+          <div style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 300, padding: 16,
+          }}>
+            <div style={{
+              background: '#fff', borderRadius: 14, padding: 24,
+              maxWidth: 480, width: '100%', boxShadow: '0 8px 30px rgba(0,0,0,0.2)',
+            }}>
+              <div style={{ fontSize: 16, fontWeight: 600, color: '#1a1a1a', marginBottom: 12 }}>
+                Başvuru Bağlantısını Doğrula ve Onayla
+              </div>
+              <p style={{ fontSize: 13, color: '#555', lineHeight: 1.5, marginBottom: 16 }}>
+                &quot;Doğrudan başvuru adımı doğrulandı&quot; kutusu işaretlenmemiş. Fırsatın yayına alınabilmesi için doğrudan başvuru adresi gereklidir.
+              </p>
+              <div style={{
+                background: '#f8f8f8', border: '1px solid #e5e5e5', borderRadius: 8,
+                padding: '10px 12px', fontSize: 12, marginBottom: 16, wordBreak: 'break-all',
+              }}>
+                <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Başvuru URL&apos;si:</div>
+                <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: '#534AB7', textDecoration: 'underline' }}>
+                  {url}
+                </a>
+              </div>
+              <p style={{ fontSize: 12, color: '#777', marginBottom: 20 }}>
+                Bu bağlantıyı kontrol ettiyseniz, &quot;Doğrula ve Onayla&quot; butonuna basarak doğrudan sisteme ekleyebilirsiniz.
+              </p>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowRouteVerifyModal(false)}
+                  disabled={actionLoading}
+                  style={{ padding: '8px 14px', borderRadius: 8, border: '0.5px solid #ccc', background: '#fff', fontSize: 13, cursor: 'pointer' }}
+                >
+                  Vazgeç
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApprove(true)}
+                  disabled={actionLoading}
+                  style={{
+                    padding: '8px 16px', borderRadius: 8, border: 'none',
+                    background: '#085041', color: '#fff', fontSize: 13, fontWeight: 500,
+                    cursor: actionLoading ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {actionLoading ? 'Onaylanıyor…' : 'Doğrula ve Onayla'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Toast */}
         {toast && (
