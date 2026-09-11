@@ -255,18 +255,18 @@ Bu doğrulamaların herhangi birinde kanıt yoksa veya kayıtla çelişiyorsa fa
 5) Kanıt alıntıları — `kanitlar` içindeki her değeri SAYFA METNİNDEN
 BİREBİR, kısa bir alıntı olarak kopyala. Uydurma, özet veya yorum yazma.
 Güncellik, son tarih, kategori, finansman, ülke ve uygunluk için ayrı alıntı
-bulamıyorsan ilgili doğrulama alanı false olmalıdır. uyruk_kisiti veya
-bolum_kisiti dolduruyorsan bunların her biri için de ayrı, birebir alıntı ver;
-alıntı yoksa ilgili kısıtı null bırak.
+bulamıyorsan ilgili doğrulama alanı false olmalıdır. Uyruk, yaş, eğitim,
+dil ve bölüm filtrelerinin her biri için ayrı, birebir alıntı ver; alıntı
+yoksa ilgili *_dogrulandi alanı false olmalıdır.
 
 KRİTİK: Eksik zorunlu bilgi de kayıt hatasıdır. "kapali", kategori_uygun=false veya yayın doğrulamalarından herhangi birinin false olması submission'ın OTOMATİK REDDEDİLMESİNE yol açar. Kanıt görmeden true üretme. "belirsiz" yalnız bütün yayın doğrulamaları true olduğu halde genel karar güveni orta/düşük kaldığında kullanılabilir.
 
 EK ALANLAR — kimin göreceğini belirler, bu yüzden fazladan temkinli ol:
-5) uyruk_kisiti — Sayfa başvuranın UYRUĞUNA şart koyuyor mu?
+5) eligible_citizenships — Sayfa başvuranın UYRUĞUNA şart koyuyor mu?
    - Koyuyorsa uygun ülkelerin ISO 3166-1 alfa-2 kod dizisi (ör. yalnız Çin vatandaşları için ["CN"]); bir ülke grubu ise o grubun bütün kodlarını say.
    - Uyruktan hiç söz etmiyorsa, "her uyruktan" diyorsa ya da EMİN DEĞİLSEN: null.
    - "Uluslararası/yabancı öğrenciler", "X ülkesinde okuyor olmak", "X'te çalışma izni" uyruk şartı DEĞİLDİR → null.
-6) bolum_kisiti — Fırsat belli bölümlerle sınırlı mı?
+6) target_fields — Fırsat belli bölümlerle sınırlı mı?
    - Sınırlıysa şu slug'lardan uygun OLANLARIN TAMAMI; bir aileyi kapsıyorsa (ör. mühendislik) ailenin bütün slug'larını yaz:
      computer_science, software_engineering, electrical_engineering, mechanical_engineering, industrial_engineering, civil_engineering, chemical_engineering, environmental_engineering, aerospace_engineering, biomedical_engineering, medicine, dentistry, pharmacy, nursing, veterinary, psychology, public_health, mathematics, physics, chemistry, biology, molecular_biology, statistics, data_science, law, international_relations, political_science, public_policy, sociology, anthropology, history, philosophy, social_sciences, human_rights, business, economics, finance, marketing, management, logistics, education, english_teaching, linguistics, literature, architecture, urban_planning, industrial_design, graphic_design, fine_arts, music, cinema, communication, journalism, agriculture, tourism, gastronomy, ngo, youth_work, environmental_science
    - "Bütün bölümlere açık" diyorsa, bölümden söz etmiyorsa ya da EMİN DEĞİLSEN: null.
