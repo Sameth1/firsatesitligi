@@ -27,7 +27,10 @@ const HeroCanvas = dynamic(() => import('./HeroCanvas'), { ssr: false })
 // İki parça ayrı ayrı animasyona giriyor (uçak başlık bandını kat ederken);
 // aralarında boşluk YOK, dar ekranda taşmak yerine alt satıra kayabilsinler
 // diye ayrı inline-block'lar.
-const HEADLINE = ['fırsat', 'eşitliği']
+// Büyük harf Türkçe kurallarına göre ELLE yazılıyor: CSS text-transform
+// uppercase, tarayıcı diline göre 'ı'yı 'I' yerine 'I' ama 'i'yi de 'I'
+// yapabiliyor (tr-TR yerelinde doğrusu 'İ'). Sabit metin bu riski kaldırıyor.
+const HEADLINE = ['FIRSAT', 'EŞİTLİĞİ']
 
 export default function Hero({ onStart }: { onStart: () => void }) {
   const rootRef = useRef<HTMLElement>(null)
