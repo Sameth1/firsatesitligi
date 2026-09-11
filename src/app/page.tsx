@@ -18,16 +18,18 @@ import RangeSlider from '@/components/form/RangeSlider'
 import ChoiceGrid from '@/components/form/ChoiceGrid'
 
 const COUNTRIES: { code: string; label: string; language: string | null }[] = [
-  { code: 'DE', label: '🇩🇪 Almanya',     language: 'Almanca' },
-  { code: 'FR', label: '🇫🇷 Fransa',      language: 'Fransızca' },
-  { code: 'ES', label: '🇪🇸 İspanya',     language: 'İspanyolca' },
-  { code: 'GB', label: '🇬🇧 İngiltere',   language: 'İngilizce' },
-  { code: 'US', label: '🇺🇸 ABD',         language: 'İngilizce' },
-  { code: 'IT', label: '🇮🇹 İtalya',      language: 'İtalyanca' },
-  { code: 'NL', label: '🇳🇱 Hollanda',    language: 'Hollandaca' },
-  { code: 'SE', label: '🇸🇪 İsveç',       language: 'İsveççe' },
-  { code: 'AT', label: '🇦🇹 Avusturya',   language: 'Almanca' },
-  { code: 'BE', label: '🇧🇪 Belçika',     language: 'Fransızca' },
+  { code: 'DE', label: 'Almanya',     language: 'Almanca' },
+  { code: 'TR', label: 'Türkiye',     language: 'Yurt İçi' },
+  { code: 'FR', label: 'Fransa',      language: 'Fransızca' },
+  { code: 'GB', label: 'İngiltere',   language: 'İngilizce' },
+  { code: 'US', label: 'ABD',         language: 'İngilizce' },
+  { code: 'CH', label: 'İsviçre',     language: 'Almanca / Fransızca' },
+  { code: 'IT', label: 'İtalya',      language: 'İtalyanca' },
+  { code: 'ES', label: 'İspanya',     language: 'İspanyolca' },
+  { code: 'NL', label: 'Hollanda',    language: 'Hollandaca' },
+  { code: 'BE', label: 'Belçika',     language: 'Fransızca' },
+  { code: 'AT', label: 'Avusturya',   language: 'Almanca' },
+  { code: 'SE', label: 'İsveç',       language: 'İsveççe' },
 ]
 
 const CATEGORIES = [
@@ -259,30 +261,18 @@ export default function Home() {
         { opacity: 0, y: 26, scale: 0.94 },
         { opacity: 1, y: 0, scale: 1, duration: 0.6, delay: 0.3, stagger: 0.06, ease: 'back.out(1.6)' })
 
-      // Sonuç sayacı 0'dan gerçek değere saysın
-      const countEl = document.querySelector('[data-count]')
-      if (countEl) {
-        const target = Number(countEl.textContent || '0')
-        const obj = { v: 0 }
-        gsap.to(obj, {
-          v: target, duration: 1.0, ease: 'power2.out',
-          onUpdate: () => { countEl.textContent = String(Math.round(obj.v)) },
-        })
-      }
-
       // Sonuç kartları: görünüm alanına girdikçe teker teker belirir
       ScrollTrigger.batch('.opp-card', {
         start: 'top 92%',
         onEnter: batch => gsap.fromTo(batch,
-          { opacity: 0, y: 30, scale: 0.98 },
-          { opacity: 1, y: 0, scale: 1, duration: 0.6, stagger: 0.07, ease: 'power3.out', overwrite: true }),
+          { opacity: 0, y: 24, scale: 0.98 },
+          { opacity: 1, y: 0, scale: 1, duration: 0.5, stagger: 0.06, ease: 'power3.out', overwrite: true }),
       })
-      gsap.set('.opp-card', { opacity: 0 })
       ScrollTrigger.refresh()
     })
 
     return () => ctx.revert()
-  }, [step, results, activeCategory])
+  }, [step, results])
 
   // İlerleme göstergesi: kaç anlamlı alan dolduruldu?
   const filledFlags = [
@@ -525,15 +515,20 @@ export default function Home() {
             <PanelTitle badge="03" title="Hedefin" subtitle="Nereye, ne için" />
 
             <div style={{ display: 'grid', gap: 30 }}>
-              <ChoiceGrid
-                label="Nereye gitmek istiyorsun?"
-                hint="opsiyonel"
-                options={COUNTRY_OPTIONS}
-                value={country}
-                onChange={setCountry}
-                columns={4}
-                accent="#9B6BFF"
-              />
+              <div>
+                <ChoiceGrid
+                  label="Nereye gitmek istiyorsun?"
+                  hint="opsiyonel"
+                  options={COUNTRY_OPTIONS}
+                  value={country}
+                  onChange={setCountry}
+                  columns={4}
+                  accent="#9B6BFF"
+                />
+                <div style={{ fontSize: 11.5, color: 'var(--text-low)', marginTop: 8, lineHeight: 1.5 }}>
+                  Şu an açık fırsatı bulunan ülkeler listelenmiştir. Seçim yapmazsan tüm yurt içi ve yurt dışı fırsatlar taranır.
+                </div>
+              </div>
 
               <ChoiceGrid
                 label="Başvurmak istediğin eğitim kademesi"
@@ -635,7 +630,9 @@ export default function Home() {
             {filtered.length}
           </span>
           <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-hi)' }}>
-            fırsat bulundu
+            {activeCategory
+              ? `${CATEGORIES.find(c => c.slug === activeCategory)?.label ?? ''} fırsatı bulundu`
+              : 'fırsat bulundu'}
           </span>
         </div>
         <div style={{
@@ -697,17 +694,31 @@ export default function Home() {
           }}>
             Bu kriterlere uygun fırsat bulunamadı.
             <br />
-            <button
-              onClick={() => setStep('form')}
-              className="ghost-btn"
-              style={{
-                marginTop: 16, color: '#fff', background: 'rgba(124, 92, 255, 0.22)',
-                border: '1px solid rgba(124, 92, 255, 0.55)', borderRadius: 999,
-                padding: '10px 20px', cursor: 'pointer', fontSize: 13, fontWeight: 600,
-              }}
-            >
-              Filtreleri genişlet →
-            </button>
+            {activeCategory ? (
+              <button
+                onClick={() => setActiveCategory(null)}
+                className="ghost-btn"
+                style={{
+                  marginTop: 16, color: '#fff', background: 'rgba(124, 92, 255, 0.22)',
+                  border: '1px solid rgba(124, 92, 255, 0.55)', borderRadius: 999,
+                  padding: '10px 20px', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                }}
+              >
+                Tüm kategorileri göster ({results.length}) →
+              </button>
+            ) : (
+              <button
+                onClick={() => setStep('form')}
+                className="ghost-btn"
+                style={{
+                  marginTop: 16, color: '#fff', background: 'rgba(124, 92, 255, 0.22)',
+                  border: '1px solid rgba(124, 92, 255, 0.55)', borderRadius: 999,
+                  padding: '10px 20px', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                }}
+              >
+                Filtreleri genişlet →
+              </button>
+            )}
           </div>
         ) : (
           // Tek sütunlu katı liste yerine ızgara — geniş ekranda iki kart yan yana
