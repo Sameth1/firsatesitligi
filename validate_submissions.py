@@ -95,6 +95,24 @@ VALID_FUNDING_TYPES = {"full", "partial", "free", "stipend"}
 VALID_CATEGORY_SLUGS = {"scholarship", "volunteering", "youth_project",
                         "internship", "summer_school", "exchange"}
 VALID_STUDY_LEVELS = {"bachelor", "master", "phd", "any"}
+# UI'daki bölüm listesiyle (src/app/page.tsx → FIELDS) BİREBİR aynı olmalı;
+# eşleşmeyen bir slug yazmak kaydı o bölümü seçen kullanıcıdan gizler.
+VALID_FIELDS = {
+    "computer_science", "software_engineering", "electrical_engineering",
+    "mechanical_engineering", "industrial_engineering", "civil_engineering",
+    "chemical_engineering", "environmental_engineering", "aerospace_engineering",
+    "biomedical_engineering", "medicine", "dentistry", "pharmacy", "nursing",
+    "veterinary", "psychology", "public_health", "mathematics", "physics",
+    "chemistry", "biology", "molecular_biology", "statistics", "data_science",
+    "law", "international_relations", "political_science", "public_policy",
+    "sociology", "anthropology", "history", "philosophy", "social_sciences",
+    "human_rights", "business", "economics", "finance", "marketing",
+    "management", "logistics", "education", "english_teaching", "linguistics",
+    "literature", "architecture", "urban_planning", "industrial_design",
+    "graphic_design", "fine_arts", "music", "cinema", "communication",
+    "journalism", "agriculture", "tourism", "gastronomy", "ngo", "youth_work",
+    "environmental_science",
+}
 # 105'te request_revision'ın admin_note'a yazdığı önek. Ajan isteği bu önekten
 # sonrasından okur; not biçimi değişirse tek yerde güncellenir.
 REVISION_MARKER = "[insan] REVİZE İSTENDİ:"
@@ -161,8 +179,14 @@ KRİTİK: Eksik zorunlu bilgi de kayıt hatasıdır. "kapali", kategori_uygun=fa
    - EMİN DEĞİLSEN null ver. Bu alan bir fırsatı kimin göreceğini belirler; uydurulmuş bir liste uygun bir adayı sistemden siler.
    - Dikkat: "yabancı/uluslararası öğrenciler", "X ülkesinde okuyor olmak", "X'te çalışma izni" uyruk şartı DEĞİLDİR → null.
 
+6) bolum_kisiti — Fırsat belli bölüm/alanlarla mı sınırlı?
+   - Sınırlıysa: şu slug listesinden uygun OLANLARIN TAMAMI. Bir alan ailesini kapsıyorsa (ör. "mühendislik") o ailenin bütün slug'larını yaz; eksik liste uygun adayı sonuçlardan siler.
+     computer_science, software_engineering, electrical_engineering, mechanical_engineering, industrial_engineering, civil_engineering, chemical_engineering, environmental_engineering, aerospace_engineering, biomedical_engineering, medicine, dentistry, pharmacy, nursing, veterinary, psychology, public_health, mathematics, physics, chemistry, biology, molecular_biology, statistics, data_science, law, international_relations, political_science, public_policy, sociology, anthropology, history, philosophy, social_sciences, human_rights, business, economics, finance, marketing, management, logistics, education, english_teaching, linguistics, literature, architecture, urban_planning, industrial_design, graphic_design, fine_arts, music, cinema, communication, journalism, agriculture, tourism, gastronomy, ngo, youth_work, environmental_science
+   - "Bütün bölümlere açık", "all disciplines" ya da bölümden hiç söz etmiyorsa: null.
+   - EMİN DEĞİLSEN null.
+
 ÇIKTI: Yanıtını yalnızca şu alanlara sahip TEK bir JSON nesnesi olarak ver. Markdown, ``` işareti veya açıklama EKLEME:
-{"durum": "acik|kapali|belirsiz", "kategori_uygun": true|false, "guven": "yuksek|orta|dusuk", "tek_firsat": true|false, "dogrudan_firsat_sayfasi": true|false, "son_tarih_dogrulandi": true|false, "finansman_dogrulandi": true|false, "ulke_dogrulandi": true|false, "uygunluk_dogrulandi": true|false, "uyruk_kisiti": null, "gerekce": "<kararını dayandıran kanıtı belirten Türkçe tek cümle>"}"""
+{"durum": "acik|kapali|belirsiz", "kategori_uygun": true|false, "guven": "yuksek|orta|dusuk", "tek_firsat": true|false, "dogrudan_firsat_sayfasi": true|false, "son_tarih_dogrulandi": true|false, "finansman_dogrulandi": true|false, "ulke_dogrulandi": true|false, "uygunluk_dogrulandi": true|false, "uyruk_kisiti": null, "bolum_kisiti": null, "gerekce": "<kararını dayandıran kanıtı belirten Türkçe tek cümle>"}"""
 
 
 # ─── Supabase ─────────────────────────────────────────────────────────────────
@@ -227,7 +251,7 @@ def fetch_revision_queue():
         # doldurabildiği için hangilerinin boş olduğunu görmesi gerekiyor.
         "select": ("id,title,url,source_url,category_slug,host_countries,eligibility_notes,"
                    "deadline_text,funding_type,funding_notes,language_requirement,"
-                   "age_min,age_max,study_level,eligible_citizenships,description,admin_note,"
+                   "age_min,age_max,study_level,eligible_citizenships,target_fields,description,admin_note,"
                    "submitter_nickname,submission_origin,review_stage"),
         "order": "reviewed_at.asc",
     }
@@ -544,20 +568,25 @@ def approve_submission(sub, verdict, dry_run):
     # 107: onay RPC'si uyruğu submission'dan okuyor. Model sayfada AÇIK bir
     # uyruk şartı gördüyse RPC'den ÖNCE yaz — yoksa kayıt {all} ile açılır ve
     # başvuramayacak kullanıcılara görünür (bkz. 106'daki Yemen/Çin kayıtları).
-    codes = verdict.get("uyruk_kisiti")
-    if codes:
+    on_patch = {}
+    if verdict.get("uyruk_kisiti"):
+        on_patch["eligible_citizenships"] = verdict["uyruk_kisiti"]
+    if verdict.get("bolum_kisiti"):
+        on_patch["target_fields"] = verdict["bolum_kisiti"]
+    if on_patch:
         try:
             requests.patch(
                 f"{SUPABASE_URL}/rest/v1/submissions",
                 headers={**sb_headers(), "Prefer": "return=minimal"},
                 params={"id": f"eq.{sub['id']}"},
-                json={"eligible_citizenships": codes}, timeout=20,
+                json=on_patch, timeout=20,
             ).raise_for_status()
-            print(f"  uyruk şartı yazıldı: {', '.join(codes)}")
+            for k, v in on_patch.items():
+                print(f"  {k} yazıldı: {', '.join(v)}")
         except requests.exceptions.RequestException as e:
             # Yazılamazsa onayı iptal et: {all} ile yayına girmesindense
             # admin kuyruğunda beklesin.
-            return False, f"uyruk şartı yazılamadı: {e}"
+            return False, f"filtre alanları yazılamadı: {e}"
 
     try:
         res = requests.post(
@@ -761,6 +790,24 @@ def clean_citizenships(raw):
     return codes or None
 
 
+def clean_fields(raw):
+    """LLM'in verdiği bölüm listesini geçerli slug'lara süzer → list | None.
+
+    Tanınmayan slug düşer. Hiçbiri kalmazsa None: bölümü yanlış daraltmak,
+    uygun adayı sonuçlardan siler — hiç daraltmamak daha güvenli."""
+    if raw is None:
+        return None
+    items = raw if isinstance(raw, list) else [raw]
+    out = []
+    for f in items[:70]:
+        f = str(f).strip().lower()
+        if f in ("all", "any", "*"):
+            return None
+        if f in VALID_FIELDS and f not in out:
+            out.append(f)
+    return sorted(out) or None
+
+
 def _parse_verdict(text):
     """LLM'in metin yanıtından JSON kararı çıkarır (savunmacı)."""
     t = (text or "").strip()
@@ -788,6 +835,7 @@ def _parse_verdict(text):
         **{field: v.get(field) is True for field in boolean_fields},
         "guven": guven,
         "uyruk_kisiti": clean_citizenships(v.get("uyruk_kisiti")),
+        "bolum_kisiti": clean_fields(v.get("bolum_kisiti")),
         "gerekce": (str(v.get("gerekce") or "").strip()[:300] or "(gerekçe yok)"),
     }
 
@@ -1021,12 +1069,13 @@ ALAN BİÇİMLERİ (uymayan öneri atılır):
 - host_countries: ISO 3166-1 alfa-2 kod dizisi, ör. ["DE","FR"]. Program dünyanın her yerinde/uzaktan ise ["*"].
 - deadline_text: gün-ay-yıl içeren tam tarih, ör. "15 Eylül 2026". Yıl veya ay eksikse null ver.
 - study_level: bachelor | master | phd | any değerlerinden dizi
+- target_fields: Fırsat belli bölümlerle sınırlıysa geçerli slug'ların TAMAMI (computer_science, medicine, law, journalism, history, architecture, music, fine_arts, economics, ... UI listesindeki değerler). Bütün bölümlere açıksa ya da emin değilsen null.
 - eligible_citizenships: Sayfa başvuranın UYRUĞUNA şart koyuyorsa uygun ülkelerin ISO 3166-1 alfa-2 kod dizisi, ör. yalnız Çin vatandaşları için ["CN"]. Şart yoksa ya da emin değilsen null — yanlış daraltma uygun bir adayı sistemden siler. "Uluslararası öğrenciler", "orada okumak", "çalışma izni" uyruk şartı DEĞİLDİR.
 - age_min / age_max: tam sayı
 - eligibility_notes / funding_notes / language_requirement: Türkçe kısa metin
 
 ÇIKTI: Yanıtını yalnızca şu alanlara sahip TEK bir JSON nesnesi olarak ver. Markdown, ``` işareti veya açıklama EKLEME:
-{"karar": "uygun|sorunlu|belirsiz", "admin_notu_cevabi": "<adminin isteğine Türkçe doğrudan cevap, 1-2 cümle>", "gerekce": "<kararını dayandıran kanıtı belirten Türkçe tek cümle>", "alan_onerileri": {"category_slug": null, "host_countries": null, "deadline_text": null, "funding_type": null, "funding_notes": null, "eligibility_notes": null, "language_requirement": null, "study_level": null, "eligible_citizenships": null, "age_min": null, "age_max": null}}"""
+{"karar": "uygun|sorunlu|belirsiz", "admin_notu_cevabi": "<adminin isteğine Türkçe doğrudan cevap, 1-2 cümle>", "gerekce": "<kararını dayandıran kanıtı belirten Türkçe tek cümle>", "alan_onerileri": {"category_slug": null, "host_countries": null, "deadline_text": null, "funding_type": null, "funding_notes": null, "eligibility_notes": null, "language_requirement": null, "study_level": null, "eligible_citizenships": null, "target_fields": null, "age_min": null, "age_max": null}}"""
 
 # Ajanın doldurabileceği alanlar → admin panelinde göründükleri Türkçe adları.
 # Sıra notta ve ekranda aynı okunsun diye anlamlı: önce sınıflandırma, sonra
@@ -1041,6 +1090,7 @@ FILLABLE_FIELDS = {
     "language_requirement": "dil şartı",
     "study_level": "eğitim kademesi",
     "eligible_citizenships": "uyruk şartı",
+    "target_fields": "bölüm kısıtı",
     "age_min": "min yaş",
     "age_max": "max yaş",
 }
@@ -1134,6 +1184,11 @@ def sanitize_suggestions(sub, oneriler):
         codes = clean_citizenships(oneriler["eligible_citizenships"])
         if codes:
             patch["eligible_citizenships"] = codes
+
+    if offered("target_fields"):
+        alanlar = clean_fields(oneriler["target_fields"])
+        if alanlar:
+            patch["target_fields"] = alanlar
 
     if offered("study_level"):
         raw = oneriler["study_level"]

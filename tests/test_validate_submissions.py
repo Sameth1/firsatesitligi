@@ -400,7 +400,7 @@ class CitizenshipTests(unittest.TestCase):
         ok, detay = validator.approve_submission({'id': 'sub-1'}, verdict, dry_run=False)
 
         self.assertFalse(ok)
-        self.assertIn('uyruk', detay)
+        self.assertIn('yazılamadı', detay)
         http_post.assert_not_called()
 
     @patch('validate_submissions.requests.post')
@@ -414,6 +414,28 @@ class CitizenshipTests(unittest.TestCase):
 
         self.assertTrue(ok)
         http_patch.assert_not_called()
+
+    def test_field_restriction_is_written_too(self):
+        with patch('validate_submissions.requests.post') as http_post, \
+             patch('validate_submissions.requests.patch') as http_patch:
+            http_post.return_value.status_code = 200
+            http_post.return_value.json.return_value = {'opportunity_id': 'opp-1'}
+            verdict = high_confidence_verdict()
+            verdict['uyruk_kisiti'] = ['CN']
+            verdict['bolum_kisiti'] = ['medicine', 'nursing']
+
+            validator.approve_submission({'id': 'sub-1'}, verdict, dry_run=False)
+
+            self.assertEqual(http_patch.call_args.kwargs['json'], {
+                'eligible_citizenships': ['CN'],
+                'target_fields': ['medicine', 'nursing'],
+            })
+
+    def test_unknown_field_slugs_are_dropped(self):
+        # UI'da olmayan bir slug yazmak kaydı o bölümü seçenden gizlerdi.
+        self.assertEqual(validator.clean_fields(['medicine', 'uydurma_bolum']), ['medicine'])
+        self.assertIsNone(validator.clean_fields(['all']))
+        self.assertIsNone(validator.clean_fields(['hepsi', 'xyz']))
 
     def test_revision_fills_citizenship_only_when_empty(self):
         bos = revision_submission(eligible_citizenships=[])

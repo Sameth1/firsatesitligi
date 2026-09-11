@@ -26,6 +26,7 @@ interface Submission {
   category_slug: string | null
   host_countries: string[]
   eligible_citizenships: string[] | null
+  target_fields: string[] | null
   deadline_text: string | null
   funding_type: string | null
   funding_notes: string | null
@@ -72,6 +73,7 @@ export default function SubmissionDetailPage({
   const [categorySlug, setCategorySlug] = useState<string | null>(null)
   const [hostCountries, setHostCountries] = useState('')
   const [citizenships, setCitizenships] = useState('')
+  const [targetFields, setTargetFields] = useState('')
   const [deadlineText, setDeadlineText] = useState('')
   const [fundingType, setFundingType] = useState<string | null>(null)
   const [fundingNotes, setFundingNotes] = useState('')
@@ -96,6 +98,7 @@ export default function SubmissionDetailPage({
         setCategorySlug(s.category_slug)
         setHostCountries(s.host_countries?.join(', ') ?? '')
         setCitizenships(s.eligible_citizenships?.join(', ') ?? '')
+        setTargetFields(s.target_fields?.join(', ') ?? '')
         setDeadlineText(s.deadline_text ?? '')
         setFundingType(s.funding_type)
         setFundingNotes(s.funding_notes ?? '')
@@ -127,6 +130,11 @@ export default function SubmissionDetailPage({
         // Boş = uyruk şartı yok; onay RPC'si bunu {all} olarak yazar (107).
         eligible_citizenships: citizenships
           ? citizenships.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
+          : null,
+        // Boş = bölüm kısıtı yok. Eksik/yanlış slug, o bölümü seçen kullanıcıdan
+        // kaydı gizler — emin değilsen boş bırak.
+        target_fields: targetFields
+          ? targetFields.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
           : null,
         deadline_text: deadlineText || null,
         funding_type: fundingType,
@@ -342,6 +350,14 @@ export default function SubmissionDetailPage({
             value={citizenships}
             onChange={e => setCitizenships(e.target.value)}
             placeholder="CN, PS  ·  boş bırakırsan herkese açık sayılır"
+            style={{ ...inputStyle, marginBottom: 12 }}
+          />
+
+          <Label text="Bölüm kısıtı — slug'lar, virgülle (boş = kısıt yok)" />
+          <input
+            value={targetFields}
+            onChange={e => setTargetFields(e.target.value)}
+            placeholder="medicine, nursing  ·  bir aileyi kapsıyorsa hepsini yaz"
             style={{ ...inputStyle, marginBottom: 12 }}
           />
 

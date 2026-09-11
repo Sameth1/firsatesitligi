@@ -83,6 +83,26 @@ uyruk `{all}`, 134'ünde bölüm `{all}`).
   hiç daraltmamaktan daha zararlıdır — uygun bir adayı sistemden siler.
 - Admin panelinde öneri detayında "Uyruk şartı" alanı elle düzenlenebilir.
 
+### 108 / 109 — kaynaktan doğrulanmış backfill
+
+141 aktif kaydın resmî sayfası tek tek indirildi (111'i alınabildi) ve uyruk,
+bölüm, kademe, yaş kanıtları okundu. Uygulanan kural: **yanlış daraltmak, hiç
+daraltmamaktan zararlıdır.** Daraltma yalnız kaynakta açık şart varken yapılır;
+bir bölüm ailesi yazılırken ailenin BÜTÜN slug'ları birlikte yazılır.
+
+- **108**: 17 kayıtta bölüm/kademe/uyruk kaynağından dolduruldu. 106'da
+  Afreximbank stajını yanlış daralttığım ortaya çıktı (kaynak "non-African
+  students" da kabul ediyor) — geri alındı. Georg Forster kayıtlarının uyruk
+  şüphesi Humboldt'un resmî PDF listesiyle kapandı: **Türkiye listede var**.
+- **109**: yaş sınırı kaydı SESSİZCE gizleyen tek filtre. 33 kaydın 20'sinde
+  sınırın kaynakta hiçbir dayanağı yoktu (`age_max=30/35` kümeleri); bunlar
+  kaldırıldı, yaş sınırlı kayıt 33 → 16'ya indi. Kaynağı da kapatıldı:
+  `scraper_api.py` yaş bulamayınca `age_max = age_max or 30` yazıyordu.
+
+Ajan artık hem uyruk hem bölüm kısıtını sayfadan çıkarıp onaydan önce
+submission'a yazıyor; emin değilse boş bırakıyor. Admin panelinde ikisi de elle
+düzenlenebiliyor.
+
 ## İnsan redlerinden öğrenme
 
 - Her insan kararı `submission_review_events` tablosuna kalıcı snapshot olarak yazılır.
