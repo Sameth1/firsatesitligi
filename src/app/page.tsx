@@ -313,7 +313,12 @@ export default function Home() {
         if (res.error) {
           return { ok: false as const, error: res.error.message, rows: [] as Opportunity[] }
         }
-        return { ok: true as const, rows: ((res.data as Opportunity[]) ?? []) }
+        const rows = ((res.data as Opportunity[]) ?? []).filter(opp =>
+          opp.application_route_status === 'verified'
+          && Boolean(opp.official_url)
+          && Boolean(opp.application_url_verified_at)
+        )
+        return { ok: true as const, rows }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Beklenmeyen bağlantı hatası.'
         return { ok: false as const, error: message, rows: [] as Opportunity[] }
