@@ -155,8 +155,14 @@ Bu doğrulamaların herhangi birinde kanıt yoksa veya kayıtla çelişiyorsa fa
 
 KRİTİK: Eksik zorunlu bilgi de kayıt hatasıdır. "kapali", kategori_uygun=false veya yayın doğrulamalarından herhangi birinin false olması submission'ın OTOMATİK REDDEDİLMESİNE yol açar. Kanıt görmeden true üretme. "belirsiz" yalnız bütün yayın doğrulamaları true olduğu halde genel karar güveni orta/düşük kaldığında kullanılabilir.
 
+5) uyruk_kisiti — Sayfa, başvuranın UYRUĞUNA (vatandaşlığına) dair bir şart koyuyor mu?
+   - Şart varsa: uygun ülkelerin ISO 3166-1 alfa-2 kodlarından oluşan dizi. Ör. yalnız Çin vatandaşları için ["CN"]; "Afrika Birliği üye ülkeleri vatandaşları" gibi bir grup için o grubun ülke kodlarını say.
+   - Sayfa uyruk şartından HİÇ söz etmiyorsa ya da "her uyruktan" diyorsa: null.
+   - EMİN DEĞİLSEN null ver. Bu alan bir fırsatı kimin göreceğini belirler; uydurulmuş bir liste uygun bir adayı sistemden siler.
+   - Dikkat: "yabancı/uluslararası öğrenciler", "X ülkesinde okuyor olmak", "X'te çalışma izni" uyruk şartı DEĞİLDİR → null.
+
 ÇIKTI: Yanıtını yalnızca şu alanlara sahip TEK bir JSON nesnesi olarak ver. Markdown, ``` işareti veya açıklama EKLEME:
-{"durum": "acik|kapali|belirsiz", "kategori_uygun": true|false, "guven": "yuksek|orta|dusuk", "tek_firsat": true|false, "dogrudan_firsat_sayfasi": true|false, "son_tarih_dogrulandi": true|false, "finansman_dogrulandi": true|false, "ulke_dogrulandi": true|false, "uygunluk_dogrulandi": true|false, "gerekce": "<kararını dayandıran kanıtı belirten Türkçe tek cümle>"}"""
+{"durum": "acik|kapali|belirsiz", "kategori_uygun": true|false, "guven": "yuksek|orta|dusuk", "tek_firsat": true|false, "dogrudan_firsat_sayfasi": true|false, "son_tarih_dogrulandi": true|false, "finansman_dogrulandi": true|false, "ulke_dogrulandi": true|false, "uygunluk_dogrulandi": true|false, "uyruk_kisiti": null, "gerekce": "<kararını dayandıran kanıtı belirten Türkçe tek cümle>"}"""
 
 
 # ─── Supabase ─────────────────────────────────────────────────────────────────
@@ -221,7 +227,7 @@ def fetch_revision_queue():
         # doldurabildiği için hangilerinin boş olduğunu görmesi gerekiyor.
         "select": ("id,title,url,source_url,category_slug,host_countries,eligibility_notes,"
                    "deadline_text,funding_type,funding_notes,language_requirement,"
-                   "age_min,age_max,study_level,description,admin_note,"
+                   "age_min,age_max,study_level,eligible_citizenships,description,admin_note,"
                    "submitter_nickname,submission_origin,review_stage"),
         "order": "reviewed_at.asc",
     }
@@ -534,6 +540,25 @@ def approve_submission(sub, verdict, dry_run):
     düşer: submission'ı öneri olarak 'pending' bırakır."""
     if dry_run:
         return True, "(dry-run — RPC çağrılmadı)"
+
+    # 107: onay RPC'si uyruğu submission'dan okuyor. Model sayfada AÇIK bir
+    # uyruk şartı gördüyse RPC'den ÖNCE yaz — yoksa kayıt {all} ile açılır ve
+    # başvuramayacak kullanıcılara görünür (bkz. 106'daki Yemen/Çin kayıtları).
+    codes = verdict.get("uyruk_kisiti")
+    if codes:
+        try:
+            requests.patch(
+                f"{SUPABASE_URL}/rest/v1/submissions",
+                headers={**sb_headers(), "Prefer": "return=minimal"},
+                params={"id": f"eq.{sub['id']}"},
+                json={"eligible_citizenships": codes}, timeout=20,
+            ).raise_for_status()
+            print(f"  uyruk şartı yazıldı: {', '.join(codes)}")
+        except requests.exceptions.RequestException as e:
+            # Yazılamazsa onayı iptal et: {all} ile yayına girmesindense
+            # admin kuyruğunda beklesin.
+            return False, f"uyruk şartı yazılamadı: {e}"
+
     try:
         res = requests.post(
             f"{SUPABASE_URL}/rest/v1/rpc/agent_approve_submission",
@@ -717,6 +742,25 @@ def _loads_lenient(t):
     return None
 
 
+def clean_citizenships(raw):
+    """LLM'in verdiği uyruk listesini ISO 3166-1 alfa-2 koda süzer → list | None.
+
+    Uydurulmuş/tanınmayan değer sessizce düşer. Hiçbir geçerli kod kalmazsa None
+    döner ve kayıt eskisi gibi {all} ile açılır: uyruk şartını YANLIŞ daraltmak,
+    hiç daraltmamaktan daha zararlı (uygun adayı sistemden siler)."""
+    if raw is None:
+        return None
+    items = raw if isinstance(raw, list) else [raw]
+    codes = []
+    for c in items[:80]:
+        c = str(c).strip().upper()
+        if c in ("*", "ALL", "GLOBAL", "WORLDWIDE", "ANY"):
+            return None                      # şart yok demek
+        if re.fullmatch(r"[A-Z]{2}", c) and c not in codes:
+            codes.append(c)
+    return codes or None
+
+
 def _parse_verdict(text):
     """LLM'in metin yanıtından JSON kararı çıkarır (savunmacı)."""
     t = (text or "").strip()
@@ -743,6 +787,7 @@ def _parse_verdict(text):
         "durum": durum,
         **{field: v.get(field) is True for field in boolean_fields},
         "guven": guven,
+        "uyruk_kisiti": clean_citizenships(v.get("uyruk_kisiti")),
         "gerekce": (str(v.get("gerekce") or "").strip()[:300] or "(gerekçe yok)"),
     }
 
@@ -976,11 +1021,12 @@ ALAN BİÇİMLERİ (uymayan öneri atılır):
 - host_countries: ISO 3166-1 alfa-2 kod dizisi, ör. ["DE","FR"]. Program dünyanın her yerinde/uzaktan ise ["*"].
 - deadline_text: gün-ay-yıl içeren tam tarih, ör. "15 Eylül 2026". Yıl veya ay eksikse null ver.
 - study_level: bachelor | master | phd | any değerlerinden dizi
+- eligible_citizenships: Sayfa başvuranın UYRUĞUNA şart koyuyorsa uygun ülkelerin ISO 3166-1 alfa-2 kod dizisi, ör. yalnız Çin vatandaşları için ["CN"]. Şart yoksa ya da emin değilsen null — yanlış daraltma uygun bir adayı sistemden siler. "Uluslararası öğrenciler", "orada okumak", "çalışma izni" uyruk şartı DEĞİLDİR.
 - age_min / age_max: tam sayı
 - eligibility_notes / funding_notes / language_requirement: Türkçe kısa metin
 
 ÇIKTI: Yanıtını yalnızca şu alanlara sahip TEK bir JSON nesnesi olarak ver. Markdown, ``` işareti veya açıklama EKLEME:
-{"karar": "uygun|sorunlu|belirsiz", "admin_notu_cevabi": "<adminin isteğine Türkçe doğrudan cevap, 1-2 cümle>", "gerekce": "<kararını dayandıran kanıtı belirten Türkçe tek cümle>", "alan_onerileri": {"category_slug": null, "host_countries": null, "deadline_text": null, "funding_type": null, "funding_notes": null, "eligibility_notes": null, "language_requirement": null, "study_level": null, "age_min": null, "age_max": null}}"""
+{"karar": "uygun|sorunlu|belirsiz", "admin_notu_cevabi": "<adminin isteğine Türkçe doğrudan cevap, 1-2 cümle>", "gerekce": "<kararını dayandıran kanıtı belirten Türkçe tek cümle>", "alan_onerileri": {"category_slug": null, "host_countries": null, "deadline_text": null, "funding_type": null, "funding_notes": null, "eligibility_notes": null, "language_requirement": null, "study_level": null, "eligible_citizenships": null, "age_min": null, "age_max": null}}"""
 
 # Ajanın doldurabileceği alanlar → admin panelinde göründükleri Türkçe adları.
 # Sıra notta ve ekranda aynı okunsun diye anlamlı: önce sınıflandırma, sonra
@@ -994,6 +1040,7 @@ FILLABLE_FIELDS = {
     "eligibility_notes": "uygunluk koşulları",
     "language_requirement": "dil şartı",
     "study_level": "eğitim kademesi",
+    "eligible_citizenships": "uyruk şartı",
     "age_min": "min yaş",
     "age_max": "max yaş",
 }
@@ -1083,6 +1130,11 @@ def sanitize_suggestions(sub, oneriler):
             if v:
                 patch[field] = v
 
+    if offered("eligible_citizenships"):
+        codes = clean_citizenships(oneriler["eligible_citizenships"])
+        if codes:
+            patch["eligible_citizenships"] = codes
+
     if offered("study_level"):
         raw = oneriler["study_level"]
         levels = sorted({str(x).strip().lower() for x in
@@ -1145,6 +1197,7 @@ def review_revision_with_llm(sub, url, http_note, page_text, istek, blanks):
         f"Finansman notu: {sub.get('funding_notes') or '(BOŞ)'}\n"
         f"Eğitim kademesi: {', '.join(sub.get('study_level') or []) or '(BOŞ)'}\n"
         f"Dil şartı: {sub.get('language_requirement') or '(BOŞ)'}\n"
+        f"Uyruk şartı: {', '.join(sub.get('eligible_citizenships') or []) or '(BOŞ)'}\n"
         f"Yaş aralığı: {sub.get('age_min') if sub.get('age_min') is not None else '(BOŞ)'}"
         f" - {sub.get('age_max') if sub.get('age_max') is not None else '(BOŞ)'}\n"
         f"Uygunluk notu: {(sub.get('eligibility_notes') or '(BOŞ)')[:400]}\n"

@@ -58,6 +58,31 @@ Yeni scraper kayıtları `submissions` tablosuna `submission_origin=agent`, `rev
 6. Eski tarih, yanlış/eksik bilgi, liste-kaynak sayfası veya doğrudan olmayan link reddedilir. `agent_uncertain` yalnız tarihi güncel, doğrudan hedefi ve bütün alanları doğrulanmış kayıtta açık/kapalı kararı gerçekten çelişkiliyse kullanılır.
 7. Agent kaydında Revize yoktur; admin alanları düzeltebilir, sonra Onayla veya Reddet seçer.
 
+## Filtre alanları ve uyruk (106 / 107)
+
+Arama filtresi `match_opportunities` içinde doğru kurulu:
+
+```
+'all' = any(oc.eligible_citizenships) or p_citizenship = any(oc.eligible_citizenships)
+```
+
+Sorun bu kolonların hiç dolmamasıydı. Onay RPC'leri `opportunities`'e INSERT
+ederken `eligible_citizenships`, `target_fields` ve (elle onayda) `study_level`
+alanlarını submission'dan okumak yerine **sabit** `{all}` / `{any}` yazıyordu.
+Sonuç: yalnız Çin/Filistin/Yemen/Afrika vatandaşlarına açık programlar Türkiye
+uyruğuyla arayan kullanıcıya da çıkıyordu (ölçüm: aktif 141 kaydın 127'sinde
+uyruk `{all}`, 134'ünde bölüm `{all}`).
+
+- **106** kanıtı olan kayıtları düzeltti, emin olunamayanları
+  `review_flag='uyruk_belirsiz'` ile admin panelindeki **Belirsizler**'e attı.
+- **107** kaynağı kapattı: `submissions`'a `eligible_citizenships` ve
+  `target_fields` kolonları eklendi, iki onay RPC'si de artık bu alanları
+  submission'dan okuyor (boş/NULL → eskisi gibi `{all}`).
+- Ajan, sayfada **açıkça yazan** uyruk şartını çıkarıp onaydan önce
+  submission'a yazıyor; emin değilse boş bırakıyor. Uyruğu yanlış daraltmak,
+  hiç daraltmamaktan daha zararlıdır — uygun bir adayı sistemden siler.
+- Admin panelinde öneri detayında "Uyruk şartı" alanı elle düzenlenebilir.
+
 ## İnsan redlerinden öğrenme
 
 - Her insan kararı `submission_review_events` tablosuna kalıcı snapshot olarak yazılır.

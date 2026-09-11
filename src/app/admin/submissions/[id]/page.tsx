@@ -25,6 +25,7 @@ interface Submission {
   url: string
   category_slug: string | null
   host_countries: string[]
+  eligible_citizenships: string[] | null
   deadline_text: string | null
   funding_type: string | null
   funding_notes: string | null
@@ -70,6 +71,7 @@ export default function SubmissionDetailPage({
   const [url, setUrl] = useState('')
   const [categorySlug, setCategorySlug] = useState<string | null>(null)
   const [hostCountries, setHostCountries] = useState('')
+  const [citizenships, setCitizenships] = useState('')
   const [deadlineText, setDeadlineText] = useState('')
   const [fundingType, setFundingType] = useState<string | null>(null)
   const [fundingNotes, setFundingNotes] = useState('')
@@ -93,6 +95,7 @@ export default function SubmissionDetailPage({
         setUrl(s.url)
         setCategorySlug(s.category_slug)
         setHostCountries(s.host_countries?.join(', ') ?? '')
+        setCitizenships(s.eligible_citizenships?.join(', ') ?? '')
         setDeadlineText(s.deadline_text ?? '')
         setFundingType(s.funding_type)
         setFundingNotes(s.funding_notes ?? '')
@@ -121,6 +124,10 @@ export default function SubmissionDetailPage({
         url,
         category_slug: categorySlug,
         host_countries: hostCountries ? hostCountries.split(',').map(s => s.trim().toUpperCase()) : [],
+        // Boş = uyruk şartı yok; onay RPC'si bunu {all} olarak yazar (107).
+        eligible_citizenships: citizenships
+          ? citizenships.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
+          : null,
         deadline_text: deadlineText || null,
         funding_type: fundingType,
         funding_notes: fundingNotes || null,
@@ -326,6 +333,17 @@ export default function SubmissionDetailPage({
 
           <Label text="Kimler başvurabilir" />
           <input value={eligibility} onChange={e => setEligibility(e.target.value)} style={{ ...inputStyle, marginBottom: 12 }} />
+
+          {/* 106/107: bu alan boş kaldığı için "yalnız Çin/Filistin vatandaşlarına"
+              açık programlar TR arayan kullanıcılara çıkıyordu. Boş bırakmak
+              "uyruk şartı yok" demektir — emin değilsen boş bırak. */}
+          <Label text="Uyruk şartı — ISO kodları, virgülle (boş = şart yok)" />
+          <input
+            value={citizenships}
+            onChange={e => setCitizenships(e.target.value)}
+            placeholder="CN, PS  ·  boş bırakırsan herkese açık sayılır"
+            style={{ ...inputStyle, marginBottom: 12 }}
+          />
 
           <Label text="Dil şartı" />
           <input value={languageReq} onChange={e => setLanguageReq(e.target.value)} style={{ ...inputStyle, marginBottom: 12 }} />

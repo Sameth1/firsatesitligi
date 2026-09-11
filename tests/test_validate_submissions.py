@@ -351,5 +351,80 @@ class RevisionWriteTests(unittest.TestCase):
         self.assertEqual(apply_result.call_args.args[1], "uygun")
 
 
+class CitizenshipTests(unittest.TestCase):
+    """106/107: uyruk şartı — yanlış daraltmak hiç daraltmamaktan zararlı."""
+
+    def test_valid_codes_are_kept_uppercased_and_deduped(self):
+        self.assertEqual(validator.clean_citizenships(['cn', 'CN', 'ps']), ['CN', 'PS'])
+
+    def test_no_restriction_markers_mean_none(self):
+        for value in (None, ['all'], ['worldwide'], ['ANY'], []):
+            with self.subTest(value=value):
+                self.assertIsNone(validator.clean_citizenships(value))
+
+    def test_country_names_are_not_accepted_as_codes(self):
+        self.assertIsNone(validator.clean_citizenships(['China', 'Türkiye']))
+
+    def test_verdict_carries_citizenship_restriction(self):
+        verdict = high_confidence_verdict()
+        verdict['uyruk_kisiti'] = ['CN']
+        self.assertEqual(validator._parse_verdict(json.dumps(verdict))['uyruk_kisiti'], ['CN'])
+
+    def test_verdict_without_the_field_is_unrestricted(self):
+        self.assertIsNone(
+            validator._parse_verdict(json.dumps(high_confidence_verdict()))['uyruk_kisiti'])
+
+    @patch('validate_submissions.requests.post')
+    @patch('validate_submissions.requests.patch')
+    def test_restriction_is_written_before_the_approval_rpc(self, http_patch, http_post):
+        http_post.return_value.status_code = 200
+        http_post.return_value.json.return_value = {'opportunity_id': 'opp-1'}
+        verdict = high_confidence_verdict()
+        verdict['uyruk_kisiti'] = ['CN']
+
+        ok, _ = validator.approve_submission({'id': 'sub-1'}, verdict, dry_run=False)
+
+        self.assertTrue(ok)
+        self.assertEqual(http_patch.call_args.kwargs['json'],
+                         {'eligible_citizenships': ['CN']})
+        http_post.assert_called_once()
+
+    @patch('validate_submissions.requests.post')
+    @patch('validate_submissions.requests.patch')
+    def test_approval_is_abandoned_if_the_restriction_cannot_be_written(self, http_patch, http_post):
+        # Uyruk yazılamadıysa kayıt {all} ile yayına girmemeli.
+        http_patch.side_effect = validator.requests.exceptions.RequestException('boom')
+        verdict = high_confidence_verdict()
+        verdict['uyruk_kisiti'] = ['PS']
+
+        ok, detay = validator.approve_submission({'id': 'sub-1'}, verdict, dry_run=False)
+
+        self.assertFalse(ok)
+        self.assertIn('uyruk', detay)
+        http_post.assert_not_called()
+
+    @patch('validate_submissions.requests.post')
+    @patch('validate_submissions.requests.patch')
+    def test_unrestricted_record_is_approved_without_extra_write(self, http_patch, http_post):
+        http_post.return_value.status_code = 200
+        http_post.return_value.json.return_value = {'opportunity_id': 'opp-1'}
+
+        ok, _ = validator.approve_submission({'id': 'sub-1'}, high_confidence_verdict(),
+                                             dry_run=False)
+
+        self.assertTrue(ok)
+        http_patch.assert_not_called()
+
+    def test_revision_fills_citizenship_only_when_empty(self):
+        bos = revision_submission(eligible_citizenships=[])
+        patch_data, labels = validator.sanitize_suggestions(bos, {'eligible_citizenships': ['cn']})
+        self.assertEqual(patch_data['eligible_citizenships'], ['CN'])
+        self.assertIn('uyruk şartı', labels)
+
+        dolu = revision_submission(eligible_citizenships=['TR'])
+        patch_data, _ = validator.sanitize_suggestions(dolu, {'eligible_citizenships': ['CN']})
+        self.assertNotIn('eligible_citizenships', patch_data)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -25,6 +25,8 @@
     "db:103": "npx supabase db query --linked -f docs/sql/103_fix_submission_insert_policy.sql",
     "db:104": "npx supabase db query --linked -f docs/sql/104_submission_rate_limit.sql",
     "db:105": "npx supabase db query --linked -f docs/sql/105_agent_revision_loop.sql",
+    "db:106": "npx supabase db query --linked -f docs/sql/106_eligible_citizenships_fix.sql",
+    "db:107": "npx supabase db query --linked -f docs/sql/107_approval_carries_filters.sql",
     "db:insert-programs": "node scripts/insert_programs.js"
   },
   "dependencies": {
