@@ -200,6 +200,7 @@ PostgreSQL şeması Supabase üzerinde barınır. Migration'lar `docs/sql/` alt�
 | `099_strict_agent_approval_gate.sql` | Eksik/kanıtsız agent kaydının yayına çıkmasını Python ve DB katmanında engeller |
 | `100_submission_source_url.sql` | Kanıtın alındığı `source_url` ile doğrudan başvuru/resmî hedef olan `url` alanını ayırır |
 | `105_agent_two_pass_evidence_gate.sql` | Agent otomatik onayında iki olumlu denetim ve iki tur birebir sayfa kanıtını DB katmanında zorunlu kılar |
+| `106_agent_accuracy_evaluation.sql` | 30–50 kayıtlık kör insan etiketli agent doğruluk testi, metrikler ve admin RPC'leri |
 
 Migration'lar `npm run db:0XX` script'leriyle bağlı Supabase projesine uygulanır (bkz. `package.json`).
 
@@ -208,6 +209,7 @@ Ana tablolar:
 - **`submissions`** — inceleme bekleyen öneriler (`status`: pending / approved / needs_revision / rejected).
 - **`submission_review_events`** — insan, agent ve revize kararlarının değiştirilemez geçmişi.
 - **`agent_memories`** — insan redlerinden kaynak+kategori+neden bazında öğrenilen karar hafızası (1 örnek, 3 uyarı, 5 güçlü); agent bunu sonraki kararında doğrudan kullanır.
+- **`agent_evaluation_batches/cases`** — üretim kayıtlarını değiştirmeyen kör doğruluk testleri ve insan etiketleri.
 - **`categories`** — fırsat kategorileri (burs, staj, gönüllülük, ...).
 - **`admins`** — panel erişimi olan kullanıcılar.
 - **`documents`** — fırsata bağlı başvuru belgeleri.
@@ -353,6 +355,10 @@ npm run db:100
 
 # İki turlu agent kanıt kapısı
 npm run db:105
+
+# Kör doğruluk testi şeması ve 40 kayıtlık test kümesi
+npm run db:106
+python validate_submissions.py --create-eval-batch --limit 40
 ```
 
 > ⚠️ `SUPABASE_SERVICE_ROLE_KEY` ve `NVIDIA_API_KEY`/`GROQ_API_KEY` hassas anahtarlardır. `.env` dosyası asla commit'lenmemelidir.

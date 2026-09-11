@@ -32,6 +32,8 @@ Kullanım:
   python validate_submissions.py --dry-run      # DB'ye yazma, kararı göster
   python validate_submissions.py --recheck --dry-run --limit 10
                                                # daha önce ajan notu alan pending'leri yeniden değerlendir
+  python validate_submissions.py --create-eval-batch --limit 40
+                                               # üretime dokunmadan kör doğruluk testi hazırla
   python validate_submissions.py --audit-opportunities   # aşağıya bak
 
 AUDIT MODU — --audit-opportunities:
@@ -239,6 +241,60 @@ def fetch_pending(limit=None, recheck=False):
             or (r.get("admin_note") or "").startswith(f"{AGENT_MARKER} TEKRAR")
         ]
     return rows[:limit] if limit else rows
+
+
+def fetch_evaluation_candidates(limit):
+    """Kör doğruluk testi için çeşitli eski agent kayıtlarından örnek seçer.
+
+    Eski karar ve admin notu insana gösterilmez. Kaynak, kategori ve eski durum
+    birlikte kovaya alınır; round-robin seçim tek kaynağın teste hakim olmasını
+    önler. Aynı normalize URL yalnız bir kez seçilir.
+    """
+    res = requests.get(
+        f"{SUPABASE_URL}/rest/v1/submissions",
+        headers=sb_headers(),
+        params={
+            "submission_origin": "eq.agent",
+            "url": "not.is.null",
+            "select": ("id,title,url,source_url,category_slug,host_countries,"
+                       "eligibility_notes,deadline_text,funding_type,study_level,"
+                       "language_requirement,description,submitter_nickname,status,"
+                       "created_at"),
+            "order": "created_at.desc",
+            "limit": str(max(250, limit * 12)),
+        },
+        timeout=30,
+    )
+    res.raise_for_status()
+
+    buckets = {}
+    seen = set()
+    for row in res.json():
+        norm = _norm_url(row.get("url"))
+        if not norm or norm in seen:
+            continue
+        seen.add(norm)
+        key = (
+            row.get("status") or "unknown",
+            row.get("submitter_nickname") or "manual/unknown",
+            row.get("category_slug") or "unknown",
+        )
+        buckets.setdefault(key, []).append(row)
+
+    selected = []
+    keys = sorted(buckets)
+    while len(selected) < limit and keys:
+        next_keys = []
+        for key in keys:
+            if len(selected) >= limit:
+                break
+            bucket = buckets[key]
+            if bucket:
+                selected.append(bucket.pop(0))
+            if bucket:
+                next_keys.append(key)
+        keys = next_keys
+    return selected
 
 
 def fetch_agent_memories():
@@ -626,6 +682,10 @@ def apply_decision(sub, eylem, gerekce, dry_run):
       oner / belirsiz -> sadece admin_note; status 'pending' kalır.
       tekrar -> teknik hata; agent_queue'da kalır ve sonraki çalışmada denenir.
     reviewed_by NULL bırakılır — 'insan değil ajan işledi' sinyali."""
+    # Doğruluk testi bu geçici alanı okuyarak kararı ayrı eval tablosuna yazar.
+    # Normal üretim akışında yalnız bellekte kalır; submission payload'ına girmez.
+    sub["_agent_eval_decision"] = {"eylem": eylem, "gerekce": gerekce}
+
     if eylem == "reddet":
         note = f"{AGENT_MARKER} RED — {gerekce}"
         patch = {
@@ -1236,6 +1296,8 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
         print("  LLM hatası → AGENT KUYRUĞUNDA TEKRAR DENE")
         return "tekrar"
 
+    sub["_agent_eval_validation"] = verdict
+
     print(f"  LLM: durum={verdict['durum']} "
           f"kategori_uygun={verdict['kategori_uygun']} guven={verdict['guven']}")
 
@@ -1292,6 +1354,7 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
             print(f"  → REDDET — {reason}")
             return "llm_red"
         verdict["second_pass"] = second_verdict
+        sub["_agent_eval_validation"] = verdict
 
         # Tüm kapılar geçti → RPC ile otomatik onay. RPC aynı alanları ve LLM
         # validation nesnesini DB tarafında tekrar doğrular.
@@ -1313,6 +1376,138 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
     apply_decision(sub, eylem, gerekce, dry_run)
     print(f"  → {eylem.upper()} — {gerekce}")
     return {"reddet": "llm_red", "belirsiz": "belirsiz"}[eylem]
+
+
+# ─── Kör doğruluk testi (--create-eval-batch) ────────────────────────────────
+
+def _evaluation_snapshot(sub):
+    """Adminin göreceği donmuş kayıt; eski karar ve agent sonucu dahil değil."""
+    fields = (
+        "title", "url", "source_url", "category_slug", "host_countries",
+        "eligibility_notes", "deadline_text", "funding_type", "study_level",
+        "language_requirement", "description",
+    )
+    return {field: sub.get(field) for field in fields}
+
+
+def _evaluation_decision(eylem):
+    return {
+        "onayla": "approve",
+        "reddet": "reject",
+        "belirsiz": "uncertain",
+        "oner": "uncertain",
+        "tekrar": "retry",
+    }.get(eylem, "retry")
+
+
+def _create_evaluation_batch(name, target_size):
+    headers = {**sb_headers(), "Prefer": "return=representation"}
+    res = requests.post(
+        f"{SUPABASE_URL}/rest/v1/agent_evaluation_batches",
+        headers=headers,
+        json={
+            "name": name,
+            "target_size": target_size,
+            "status": "running",
+            "model": LLM_MODEL,
+            "prompt_version": "two-pass-evidence-v1",
+        },
+        timeout=20,
+    )
+    res.raise_for_status()
+    return res.json()[0]
+
+
+def _store_evaluation_case(batch_id, sub, outcome):
+    captured = sub.get("_agent_eval_decision") or {
+        "eylem": "tekrar", "gerekce": "Agent sonucu yakalanamadı"
+    }
+    decision = _evaluation_decision(captured["eylem"])
+    headers = {**sb_headers(), "Prefer": "return=minimal"}
+    res = requests.post(
+        f"{SUPABASE_URL}/rest/v1/agent_evaluation_cases",
+        headers=headers,
+        json={
+            "batch_id": batch_id,
+            "source_submission_id": sub["id"],
+            "source_nickname": sub.get("submitter_nickname") or "manual/unknown",
+            "category_slug": sub.get("category_slug") or "unknown",
+            "submission_snapshot": _evaluation_snapshot(sub),
+            "agent_decision": decision,
+            "agent_outcome": outcome,
+            "agent_reason": captured["gerekce"],
+            "agent_validation": sub.get("_agent_eval_validation"),
+        },
+        timeout=20,
+    )
+    res.raise_for_status()
+    return decision
+
+
+def _finish_evaluation_batch(batch_id, status):
+    now_iso = datetime.now(timezone.utc).isoformat()
+    patch = {"status": status}
+    if status == "ready":
+        patch["ready_at"] = now_iso
+    res = requests.patch(
+        f"{SUPABASE_URL}/rest/v1/agent_evaluation_batches",
+        headers={**sb_headers(), "Prefer": "return=minimal"},
+        params={"id": f"eq.{batch_id}"},
+        json=patch,
+        timeout=20,
+    )
+    res.raise_for_status()
+
+
+def run_agent_evaluation(args):
+    """30–50 kaydı üretime dokunmadan değerlendirip kör admin testine yazar."""
+    if args.limit is not None and not 30 <= args.limit <= 50:
+        raise ValueError("Doğruluk testi --limit değeri 30 ile 50 arasında olmalıdır")
+    target_size = args.limit or 40
+    candidates = fetch_evaluation_candidates(target_size)
+    if len(candidates) < 30:
+        raise ValueError(
+            f"En az 30 benzersiz kayıt gerekli; yalnız {len(candidates)} bulundu"
+        )
+
+    batch_name = args.eval_name or datetime.now().strftime("Agent doğruluk testi · %Y-%m-%d")
+    batch = _create_evaluation_batch(batch_name, len(candidates))
+    batch_id = batch["id"]
+    print(f"{len(candidates)} kayıtlık kör test hazırlanıyor · batch={batch_id}")
+    print("Bu mod submissions/opportunities durumlarını değiştirmez.")
+    print("Mevcut fırsat kopya kontrolü kapalıdır; içerik kalitesi yeni kayıt gibi ölçülür.")
+    print("─" * 64)
+
+    try:
+        memories = fetch_agent_memories()
+        seen_urls = set()
+        stats = {"llm_calls": 0}
+        decisions = Counter()
+        for index, sub in enumerate(candidates, 1):
+            sub["_memory_context"] = memory_context_for(sub, memories)
+            print(f"\n[{index}/{len(candidates)}]", end="")
+            try:
+                # known_urls bilinçli olarak boş: geçmişte yayınlanmış olumlu
+                # örnekler sırf bugün DB'de bulunduğu için kopya sayılmasın.
+                outcome = process(sub, True, set(), seen_urls, stats)
+            except requests.exceptions.RequestException as exc:
+                outcome = "tekrar"
+                apply_decision(sub, "tekrar", f"Test ağı hatası: {exc}", True)
+            decisions[_store_evaluation_case(batch_id, sub, outcome)] += 1
+        _finish_evaluation_batch(batch_id, "ready")
+    except Exception:
+        try:
+            _finish_evaluation_batch(batch_id, "failed")
+        except requests.exceptions.RequestException:
+            pass
+        raise
+
+    print("\n" + "─" * 64)
+    print(f"Test hazır: {len(candidates)} kayıt · LLM çağrısı {stats['llm_calls']}")
+    print("Agent kararları admin etiket verene kadar panelde gizlidir.")
+    for key in ("approve", "reject", "uncertain", "retry"):
+        print(f"  {key}: {decisions[key]}")
+    print("Admin ekranı: /admin/agent-eval")
 
 
 # ─── Opportunity audit (--audit-opportunities) ────────────────────────────────
@@ -1456,6 +1651,11 @@ def main():
     parser.add_argument("--reaudit-agent-approvals", action="store_true",
                         help="Eski gerçek agent onaylarını yeni sıkı kapıya göre "
                              "salt okunur sınıflandır")
+    parser.add_argument("--create-eval-batch", action="store_true",
+                        help="30–50 eski agent kaydını üretime dokunmadan "
+                             "değerlendirip kör admin doğruluk testi oluştur")
+    parser.add_argument("--eval-name",
+                        help="Doğruluk testinin admin panelinde görünen adı")
     parser.add_argument("--output", help="Re-audit JSON raporunun dosya yolu")
     args = parser.parse_args()
 
@@ -1499,6 +1699,14 @@ def main():
         print("NVIDIA NIM anahtarı (ücretsiz): https://build.nvidia.com",
               file=sys.stderr)
         sys.exit(1)
+
+    if args.create_eval_batch:
+        try:
+            run_agent_evaluation(args)
+        except (requests.exceptions.RequestException, ValueError) as e:
+            print(f"Doğruluk testi hazırlanamadı: {e}", file=sys.stderr)
+            sys.exit(1)
+        return
 
     print("Pending submission'lar çekiliyor...")
     try:

@@ -1,6 +1,6 @@
 # Fırsat Eşitliği — Güncel Proje Devralma Notu
 
-Son güncelleme: 9 Eylül 2026
+Son güncelleme: 11 Eylül 2026
 
 ## Amaç
 
@@ -55,6 +55,14 @@ Yeni scraper kayıtları `submissions` tablosuna `submission_origin=agent`, `rev
 - Güncel açık kanıt hafızayla çelişirse güncel kanıt üstündür. Hafıza tek başına kanıtsız red sebebi değildir.
 - Hafıza script değişikliği, manuel geliştirme işi veya PR önerisi üretmez.
 
+## Kör agent doğruluk testi
+
+- `python validate_submissions.py --create-eval-batch --limit 40`, kaynak/kategori çeşitliliği olan 40 eski agent kaydını bugünkü sayfalarıyla yeniden değerlendirir.
+- Test `submissions` veya `opportunities` durumlarını değiştirmez; sonuçlar ayrı eval tablolarına yazılır.
+- Admin `/admin/agent-eval` ekranında ajan kararını görmeden Onay/Red etiketi verir.
+- Etiketten sonra ajan sonucu açılır; doğruluk, otomatik karar kapsamı, onay isabeti ve yanlış onay sayısı hesaplanır.
+- Testteki insan redleri, test skoru değişmeden sonraki agent kararları için `agent_memories` hafızasına eklenir.
+
 ## Red nedenleri nerede görülür?
 
 - Admin kartında ve kayıt detayında `admin_note` gösterilir.
@@ -67,7 +75,7 @@ Yeni scraper kayıtları `submissions` tablosuna `submission_origin=agent`, `rev
 
 ## Supabase durumu
 
-Uygulanan agent migration'ları: 094, 095, 096, 097, **099, 100 ve iki-tur kapısı**. İki-tur kapısının SQL'i canlı projeye uygulanmıştır; `master` ile numara çakışması çözüldükten sonra repoda migration 105 olarak tutulur. Migration 105 iki olumlu denetim ve iki tur kanıt olmadan agent otomatik onayını DB tetikleyicisiyle engeller. Migration 098 yalnız eski kullanılmayan görünüm temizliğidir ve henüz uygulanmadı.
+Uygulanan agent migration'ları: 094, 095, 096, 097, **099, 100 ve iki-tur kapısı**. İki-tur kapısının SQL'i canlı projeye uygulanmıştır; repoda migration 105 olarak tutulur. Migration 106 kör doğruluk testi için hazırlanmıştır ve canlıya uygulanmayı bekler. Migration 098 yalnız eski kullanılmayan görünüm temizliğidir ve henüz uygulanmadı.
 
 Doğrudan link geçmişi: Eski `official_url=kaynak yazı` hatası için `audit_apply_links.py` ve `backfill_apply_links.py` yazılmıştı. Youthop ve Nasıl Gitmiş scraper'ları dış Apply linkini çıkarmaya başlamıştı; ancak kaynak ile hedef ayrı DB alanlarında tutulmuyordu. Migration 100 ve güncel scraper'lar bu ayrımı kalıcı hale getirir. Agent hedef linki kontrol ederken tarih/kategori kanıtını ayrı kaynak sayfasından okuyabilir.
 
@@ -90,8 +98,8 @@ Migration 097 sonrası doğrulanan canlı durum:
 
 ## Kod ve PR durumu
 
-- Çalışma dalı: `codex/backfill-admin-rejection-memory`.
-- PR [#40](https://github.com/Sameth1/firsatesitligi/pull/40) `master` dalına merge edildi.
+- PR [#40](https://github.com/Sameth1/firsatesitligi/pull/40) ve [#41](https://github.com/Sameth1/firsatesitligi/pull/41) `master` dalına merge edildi.
+- Kör doğruluk testi çalışması: `codex/agent-accuracy-eval`.
 - `supabase/functions/notify-submission/index.ts` içindeki yeni güvenli revize e-postası kodu ayrıca Supabase Edge Function olarak deploy edilmelidir. Bunu frontend merge ile aynı anda yapmak gerekir.
 
 ## Son doğrulamalar
@@ -101,7 +109,7 @@ Migration 097 sonrası doğrulanan canlı durum:
 - Değiştirilen frontend ve Edge Function dosyalarında ESLint: geçti.
 - `next build --webpack`: geçti.
 - Vercel preview kontrolleri: geçti.
-- Agent yayın/onay/red kapıları ve eski red hafızası için 22 birim testi: geçti.
+- Agent yayın/onay/red kapıları, eski red hafızası ve kör test ayrımı için 35 birim testi: geçti.
 - Canlı DB'de `source_url` kolonu: doğrulandı.
 - Canlı DB'de `agent_validation` kolonu ve yeni RPC imzası: doğrulandı.
 - Canlı DB'de 4 anlamlı eski insan reddi 2 hafıza grubuna aktarıldı ve
@@ -111,10 +119,10 @@ Migration 097 sonrası doğrulanan canlı durum:
 
 ## Sonraki güvenli adım
 
-1. Rapordaki 30 süresi geçmiş kaydı admin onayıyla pasifleştir; 64 kaydı panelden incele.
-2. İsteğe bağlı temizlik olarak migration 098'i çalıştır.
-3. PR #40'ı incele ve merge et.
-4. `notify-submission` Edge Function'ını deploy et; webhook ve `APP_URL`/Resend env değerlerini doğrula.
+1. Migration 106'yı canlı Supabase'e uygula.
+2. 40 kayıtlık kör test kümesini üret ve adminin `/admin/agent-eval` ekranında etiketlemesini bekle.
+3. Yanlış onay hedefi `0`; sonuçlara göre agent eşiklerini kanıta dayalı ayarla.
+4. Rapordaki eski 30 süresi geçmiş fırsatı pasifleştir; 64 kaydı ayrıca incele.
 
 ## Çalışma ilkesi
 
