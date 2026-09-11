@@ -233,14 +233,26 @@ EK ALANLAR — kimin göreceğini belirler, bu yüzden fazladan temkinli ol:
    - Koyuyorsa uygun ülkelerin ISO 3166-1 alfa-2 kod dizisi (ör. yalnız Çin vatandaşları için ["CN"]); bir ülke grubu ise o grubun bütün kodlarını say.
    - Uyruktan hiç söz etmiyorsa, "her uyruktan" diyorsa ya da EMİN DEĞİLSEN: null.
    - "Uluslararası/yabancı öğrenciler", "X ülkesinde okuyor olmak", "X'te çalışma izni" uyruk şartı DEĞİLDİR → null.
-6) bolum_kisiti — Fırsat belli bölümlerle sınırlı mı?
+6) din_sarti — Fırsat, BAŞVURANIN dinine/inancına şart koşuyor mu?
+   - true: Başvurabilmek için belli bir dine/mezhebe mensup olmak ya da o dinin
+     değerlerini benimsemek gerekiyorsa (ör. "open to protestant students",
+     "Jewish doctoral candidates", "for Christians", "involved in the Church",
+     "uphold Christian social values", "Müslüman olmak").
+   - false: Din yalnızca ÇALIŞMA ALANI olarak geçiyorsa (ilahiyat, din
+     sosyolojisi, İslam araştırmaları bursu gibi) ya da hiç geçmiyorsa. Bir
+     konuyu ÇALIŞMAK ile o dine MENSUP OLMAK farklı şeylerdir; karıştırma.
+   - Emin değilsen false.
+   true dönersen kayıt otomatik REDDEDİLİR: platform, başvuranın dinine göre
+   ayrım yapan fırsatları yayınlamaz.
+
+7) bolum_kisiti — Fırsat belli bölümlerle sınırlı mı?
    - Sınırlıysa şu slug'lardan uygun OLANLARIN TAMAMI; bir aileyi kapsıyorsa (ör. mühendislik) ailenin bütün slug'larını yaz:
      {FIELD_SLUG_LINE}
    - "Bütün bölümlere açık" diyorsa, bölümden söz etmiyorsa ya da EMİN DEĞİLSEN: null.
    Bu iki alanı YANLIŞ doldurmak, uygun bir adayı sonuçlardan tamamen siler; boş bırakmak daha güvenlidir.
 
 ÇIKTI: Yanıtını yalnızca şu alanlara sahip TEK bir JSON nesnesi olarak ver. Markdown, ``` işareti veya açıklama EKLEME:
-{"durum": "acik|kapali|belirsiz", "kategori_uygun": true|false, "guven": "yuksek|orta|dusuk", "tek_firsat": true|false, "dogrudan_firsat_sayfasi": true|false, "son_tarih_dogrulandi": true|false, "finansman_dogrulandi": true|false, "ulke_dogrulandi": true|false, "uygunluk_dogrulandi": true|false, "uyruk_kisiti": null, "bolum_kisiti": null, "kanitlar": {"guncellik": "<birebir alıntı>", "son_tarih": "<birebir alıntı>", "kategori": "<birebir alıntı>", "finansman": "<birebir alıntı>", "ulke": "<birebir alıntı>", "uygunluk": "<birebir alıntı>"}, "gerekce": "<kararını dayandıran kanıtı belirten Türkçe tek cümle>"}"""
+{"durum": "acik|kapali|belirsiz", "kategori_uygun": true|false, "guven": "yuksek|orta|dusuk", "tek_firsat": true|false, "dogrudan_firsat_sayfasi": true|false, "son_tarih_dogrulandi": true|false, "finansman_dogrulandi": true|false, "ulke_dogrulandi": true|false, "uygunluk_dogrulandi": true|false, "uyruk_kisiti": null, "bolum_kisiti": null, "din_sarti": true|false, "kanitlar": {"guncellik": "<birebir alıntı>", "son_tarih": "<birebir alıntı>", "kategori": "<birebir alıntı>", "finansman": "<birebir alıntı>", "ulke": "<birebir alıntı>", "uygunluk": "<birebir alıntı>"}, "gerekce": "<kararını dayandıran kanıtı belirten Türkçe tek cümle>"}"""
 
 
 # Prompttaki slug listesi kümeden ÜRETİLİYOR: elle yazılan bir liste
@@ -1157,6 +1169,7 @@ def _parse_verdict(text):
     # JSON boolean true gönderirse doğrulama başarılı sayılır (fail-closed).
     boolean_fields = (
         "kategori_uygun", "tek_firsat", "dogrudan_firsat_sayfasi",
+        "din_sarti"
         "son_tarih_dogrulandi", "finansman_dogrulandi",
         "ulke_dogrulandi", "uygunluk_dogrulandi",
     )
@@ -1308,6 +1321,29 @@ def submission_completeness_blockers(sub):
     return blockers
 
 
+# Din şartını yakalayan kaba tarama. AMACI RED DEĞİL: modelin "din şartı yok"
+# dediği ama metinde din geçen kayıtları otomatik onaydan çıkarıp insana
+# yönlendirmek. Yanlış alarmın bedeli bir insan bakışı; kaçırmanın bedeli
+# platform politikasının ihlali.
+RELIGION_HINTS = re.compile(
+    r"(jewish|muslim|islamic|christian|protestant|catholic|orthodox|hindu|"
+    r"buddhist|church|faith|denomination|müslüman|hristiyan|yahudi|protestan|"
+    r"katolik|ortodoks|kilise|inanç|dindar|ilahiyat)",
+    re.IGNORECASE,
+)
+
+
+def religion_hint_blockers(sub, verdict):
+    """Metinde din geçiyor ama model din_sarti=false dediyse otomatik onayı kes."""
+    if verdict.get("din_sarti") is True:
+        return []                      # zaten decide() reddedecek
+    blob = " ".join(str(sub.get(k) or "") for k in
+                    ("title", "eligibility_notes", "description"))
+    if RELIGION_HINTS.search(blob):
+        return ["metinde din/inanç ifadesi geçiyor — insan bakışı gerekiyor"]
+    return []
+
+
 def auto_approval_blockers(sub, verdict):
     """Eksiksizlik + LLM kanıt kapısı. Boş liste dışında yayın YASAK."""
     blockers = submission_completeness_blockers(sub)
@@ -1330,6 +1366,7 @@ def auto_approval_blockers(sub, verdict):
     }
     blockers.extend(label for field, label in evidence_labels.items()
                     if verdict.get(field) is not True)
+    blockers.extend(religion_hint_blockers(sub, verdict))
     return blockers
 
 
@@ -1370,6 +1407,12 @@ def decide(verdict):
     """Karar dict'i -> (eylem, gerekce). eylem: reddet | onayla | belirsiz.
     Otomatik ONAY yalnızca açık + kategori-uygun + güven yüksek olduğunda;
     otomatik RED yalnızca yüksek/orta güvenli net olumsuzlarda."""
+    # Din şartı diğer bütün kriterlerin önünde: fırsat kusursuz olsa bile
+    # başvuranın dinine göre ayrım yapıyorsa yayınlanmaz. Güven seviyesine
+    # bakılmaz — bu bir kalite değil, politika kararı.
+    if verdict.get("din_sarti") is True:
+        return "reddet", ("Başvuru koşulu başvuranın dinine/inancına şart koşuyor; "
+                          "platform politikası gereği yayınlanmıyor.")
     if verdict["guven"] == "dusuk":
         return "belirsiz", verdict["gerekce"]
     if verdict["durum"] == "kapali" and verdict["guven"] in ("yuksek", "orta"):
