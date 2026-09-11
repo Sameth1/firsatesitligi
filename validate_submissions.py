@@ -119,7 +119,22 @@ VALID_CATEGORY_SLUGS = {
     "scholarship", "volunteering", "youth_project",
     "internship", "summer_school", "exchange",
 }
-VALID_STUDY_LEVELS = {"bachelor", "master", "phd", "any"}
+VALID_STUDY_LEVELS = {
+    "high_school", "bachelor", "master", "phd", "graduate", "any",
+}
+# ISO 639-1 dil kodları. Serbest metin yerine bu kontrollü değerler arama
+# filtresinde kullanılır; language_requirement yalnızca kullanıcıya gösterilen
+# kaynak cümlesidir.
+VALID_LANGUAGE_CODES = set("""
+aa ab ae af ak am an ar as av ay az ba be bg bh bi bm bn bo br bs ca ce ch co
+cr cs cu cv cy da de dv dz ee el en eo es et eu fa ff fi fj fo fr fy ga gd gl
+gn gu gv ha he hi ho hr ht hu hy hz ia id ie ig ii ik io is it iu ja jv ka kg
+ki kj kk kl km kn ko kr ks ku kv kw ky la lb lg li ln lo lt lu lv mg mh mi mk
+ml mn mr ms mt my na nb nd ne ng nl nn no nr nv ny oc oj om or os pa pi pl ps
+pt qu rm rn ro ru rw sa sc sd se sg si sk sl sm sn so sq sr ss st su sv sw ta
+te tg th ti tk tl tn to tr ts tt tw ty ug uk ur uz ve vi vo wa wo xh yi yo za
+zh zu
+""".split())
 # ISO 3166-1 alpha-2 + uygulamada kullanılan iki bölgesel kod (EU, XK).
 # Yalnız ``[A-Z]{2}`` kontrolü ZZ gibi uydurma kodların kullanıcıları yanlış
 # elemesine izin veriyordu; filtre alanları fail-closed doğrulanır.
@@ -172,10 +187,11 @@ EVIDENCE_QUOTE_FIELDS = {
     "finansman": "finansman alıntısı",
     "ulke": "ülke/global kapsam alıntısı",
     "uygunluk": "başvuru uygunluğu alıntısı",
-}
-RESTRICTION_EVIDENCE_FIELDS = {
-    "uyruk_kisiti": ("uyruk", "uyruk kısıtı alıntısı"),
-    "bolum_kisiti": ("bolum", "bölüm kısıtı alıntısı"),
+    "uyruk": "uyruk filtresi alıntısı",
+    "yas": "yaş filtresi alıntısı",
+    "egitim": "eğitim kademesi filtresi alıntısı",
+    "dil": "dil filtresi alıntısı",
+    "bolum": "bölüm filtresi alıntısı",
 }
 
 HTTP_HEADERS = {
@@ -254,10 +270,30 @@ EK ALANLAR — kimin göreceğini belirler, bu yüzden fazladan temkinli ol:
    - Sınırlıysa şu slug'lardan uygun OLANLARIN TAMAMI; bir aileyi kapsıyorsa (ör. mühendislik) ailenin bütün slug'larını yaz:
      computer_science, software_engineering, electrical_engineering, mechanical_engineering, industrial_engineering, civil_engineering, chemical_engineering, environmental_engineering, aerospace_engineering, biomedical_engineering, medicine, dentistry, pharmacy, nursing, veterinary, psychology, public_health, mathematics, physics, chemistry, biology, molecular_biology, statistics, data_science, law, international_relations, political_science, public_policy, sociology, anthropology, history, philosophy, social_sciences, human_rights, business, economics, finance, marketing, management, logistics, education, english_teaching, linguistics, literature, architecture, urban_planning, industrial_design, graphic_design, fine_arts, music, cinema, communication, journalism, agriculture, tourism, gastronomy, ngo, youth_work, environmental_science
    - "Bütün bölümlere açık" diyorsa, bölümden söz etmiyorsa ya da EMİN DEĞİLSEN: null.
-   Bu iki alanı YANLIŞ doldurmak, uygun bir adayı sonuçlardan tamamen siler; boş bırakmak daha güvenlidir.
+   Bu iki alanı YANLIŞ doldurmak, uygun bir adayı sonuçlardan tamamen siler.
+
+FİLTRE SÖZLEŞMESİ — OTOMATİK ONAY İÇİN BEŞİ DE KESİN OLMALI:
+- uyruk_dogrulandi, yas_dogrulandi, egitim_dogrulandi,
+  dil_dogrulandi ve bolum_dogrulandi yalnız ilgili filtre sayfada açıkça
+  yazıyorsa true olabilir.
+- Bir kısıt YOKSA da bunu gösteren "all nationalities", "any field",
+  "no age limit", "all study levels", "no language requirement" gibi açık
+  bir alıntı gerekir. Sayfanın sadece hiç bahsetmemesi kısıt yok demek
+  DEĞİLDİR; bu durumda ilgili *_dogrulandi=false olmalıdır.
+- dogrulanmis_filtreler yalnız sayfada kanıtlanan son değerleri taşır:
+  host_countries ISO ülke kodları veya global için ["*"];
+  eligible_citizenships ISO kodları veya açıkça herkese açıksa ["all"];
+  age_min/age_max tam sayı veya açıkça yaş sınırı yoksa ikisi de null;
+  study_level high_school|bachelor|master|phd|graduate veya tümü için ["any"];
+  target_fields izin verilen slug'lar veya açıkça her bölümse ["all"];
+  language_requirement sayfadaki kesin şartın kısa metni veya açıkça
+  dil şartı yoksa null; required_languages ISO 639-1 küçük harf kodları
+  (English=en, German=de, Turkish=tr gibi) veya dil şartı yoksa ["all"].
+- Tahmin, ülkenin resmî dilinden dil şartı çıkarma, program adından
+  bölüm/kademe çıkarma veya sayfada yazmayan varsayılan YASAKTIR.
 
 ÇIKTI: Yanıtını yalnızca şu alanlara sahip TEK bir JSON nesnesi olarak ver. Markdown, ``` işareti veya açıklama EKLEME:
-{"durum": "acik|kapali|belirsiz", "kategori_uygun": true|false, "guven": "yuksek|orta|dusuk", "tek_firsat": true|false, "dogrudan_firsat_sayfasi": true|false, "son_tarih_dogrulandi": true|false, "finansman_dogrulandi": true|false, "ulke_dogrulandi": true|false, "uygunluk_dogrulandi": true|false, "uyruk_kisiti": null, "bolum_kisiti": null, "kanitlar": {"guncellik": "<birebir alıntı>", "son_tarih": "<birebir alıntı>", "kategori": "<birebir alıntı>", "finansman": "<birebir alıntı>", "ulke": "<birebir alıntı>", "uygunluk": "<birebir alıntı>", "uyruk": "<kısıt varsa birebir alıntı, yoksa boş>", "bolum": "<kısıt varsa birebir alıntı, yoksa boş>"}, "gerekce": "<kararını dayandıran kanıtı belirten Türkçe tek cümle>"}"""
+{"durum":"acik|kapali|belirsiz","kategori_uygun":true|false,"guven":"yuksek|orta|dusuk","tek_firsat":true|false,"dogrudan_firsat_sayfasi":true|false,"son_tarih_dogrulandi":true|false,"finansman_dogrulandi":true|false,"ulke_dogrulandi":true|false,"uygunluk_dogrulandi":true|false,"uyruk_dogrulandi":true|false,"yas_dogrulandi":true|false,"egitim_dogrulandi":true|false,"dil_dogrulandi":true|false,"bolum_dogrulandi":true|false,"dogrulanmis_filtreler":{"host_countries":["DE"],"eligible_citizenships":["all"],"age_min":18,"age_max":30,"study_level":["bachelor"],"language_requirement":"English B2","required_languages":["en"],"target_fields":["all"]},"kanitlar":{"guncellik":"<birebir alıntı>","son_tarih":"<birebir alıntı>","kategori":"<birebir alıntı>","finansman":"<birebir alıntı>","ulke":"<birebir alıntı>","uygunluk":"<birebir alıntı>","uyruk":"<birebir alıntı>","yas":"<birebir alıntı>","egitim":"<birebir alıntı>","dil":"<birebir alıntı>","bolum":"<birebir alıntı>"},"gerekce":"<kararını dayandıran kanıtı belirten Türkçe tek cümle>"}"""
 
 REVISION_SYSTEM_PROMPT = """Sen Fırsat Eşitliği platformunun kayıt revize ajanısın.
 Bir insan adminin revize notunu ve fırsat sayfasını okuyup yalnız kayıtta BOŞ
@@ -270,7 +306,7 @@ category_slug yalnız scholarship|volunteering|youth_project|internship|
 summer_school|exchange olabilir. host_countries ISO-3166 iki harfli büyük kod
 veya global için * dizisidir. deadline_text yalnız YYYY-MM-DD biçiminde tam ve
 gelecekte bir tarih olabilir. funding_type yalnız full|partial|free|stipend;
-study_level yalnız bachelor|master|phd|any değerlerinden oluşan dizidir.
+study_level yalnız high_school|bachelor|master|phd|graduate|any değerlerinden oluşan dizidir.
 eligible_citizenships ISO-3166 iki harfli büyük kod dizisidir ve YALNIZ sayfa
 başvuranın uyruğuna açık şart koyuyorsa doldurulur. target_fields, UI'daki bölüm
 slug'larından (computer_science, medicine, law, journalism, history, music, ...)
@@ -316,7 +352,8 @@ def fetch_pending(limit=None, recheck=False):
                    "application_url_check_status,application_url_evidence,"
                    "category_slug,host_countries,eligibility_notes,"
                    "deadline_text,funding_type,funding_notes,study_level,"
-                   "language_requirement,age_min,age_max,description,admin_note,"
+                   "eligible_citizenships,target_fields,"
+                   "language_requirement,required_languages,age_min,age_max,description,admin_note,"
                    "submitter_nickname,submission_origin,review_stage"),
         "order": "created_at.asc",
     }
@@ -835,14 +872,11 @@ def approve_submission(sub, verdict, dry_run):
     if dry_run:
         return True, "(dry-run — RPC çağrılmadı)"
 
-    # Onay RPC'si uyruk ve bölümü submission'dan okuyor (bkz. 110). Model
-    # sayfada AÇIK bir kısıt gördüyse RPC'den ÖNCE yazılmalı; yoksa kayıt
-    # {all} ile açılır ve başvuramayacak kullanıcılara görünür.
-    on_patch = {}
-    if verdict.get("uyruk_kisiti"):
-        on_patch["eligible_citizenships"] = verdict["uyruk_kisiti"]
-    if verdict.get("bolum_kisiti"):
-        on_patch["target_fields"] = verdict["bolum_kisiti"]
+    # Scraper tahminine güvenme: iki LLM turunun kanıtladığı kanonik filtre
+    # değerlerinin TAMAMI RPC'den önce submission'a yazılır.
+    on_patch = verdict.get("dogrulanmis_filtreler") or {}
+    if set(on_patch) != VERIFIED_FILTER_KEYS:
+        return False, "kanıtlanmış filtre seti eksik"
     if on_patch:
         try:
             requests.patch(
@@ -852,7 +886,7 @@ def approve_submission(sub, verdict, dry_run):
                 json=on_patch, timeout=20,
             ).raise_for_status()
             for k, v in on_patch.items():
-                print(f"  {k} yazıldı: {', '.join(v)}")
+                print(f"  {k} doğrulanıp yazıldı: {v}")
         except requests.exceptions.RequestException as e:
             # Yazılamazsa onayı iptal et: {all} ile yayına girmesindense
             # kayıt admin kuyruğunda beklesin.
@@ -1155,6 +1189,85 @@ def clean_fields(raw):
     return sorted(out) or None
 
 
+def _clean_verified_code_list(raw, unrestricted_marker):
+    """Kanıtlanmış ISO kod listesini temizler; geçersizde None döner."""
+    if not isinstance(raw, list) or not raw or len(raw) > 80:
+        return None
+    items = [str(item).strip() for item in raw]
+    lowered = [item.casefold() for item in items]
+    if unrestricted_marker.casefold() in lowered:
+        return [unrestricted_marker] if len(items) == 1 else None
+    codes = [item.upper() for item in items]
+    if any(code not in VALID_COUNTRY_CODES for code in codes):
+        return None
+    return list(dict.fromkeys(codes))
+
+
+def clean_verified_filters(raw):
+    """LLM filtre nesnesini fail-closed ve kanonik biçime getirir.
+
+    Anahtarı eksik, türü bozuk veya tanınmayan tek bir değer bile alanı
+    nesneden düşürür. Otomatik onay kapısı yedi alanın tamamını arar.
+    """
+    if not isinstance(raw, dict):
+        return {}
+    out = {}
+
+    host = _clean_verified_code_list(raw.get("host_countries"), "*")
+    if host is not None:
+        out["host_countries"] = host
+    citizenships = _clean_verified_code_list(
+        raw.get("eligible_citizenships"), "all"
+    )
+    if citizenships is not None:
+        out["eligible_citizenships"] = citizenships
+
+    study = raw.get("study_level")
+    if isinstance(study, list) and study:
+        levels = [str(item).strip().lower() for item in study]
+        if (all(level in VALID_STUDY_LEVELS for level in levels)
+                and not ("any" in levels and len(levels) > 1)):
+            out["study_level"] = list(dict.fromkeys(levels))
+
+    fields = raw.get("target_fields")
+    if isinstance(fields, list) and fields:
+        normalized = [str(item).strip().lower() for item in fields]
+        if normalized == ["all"]:
+            out["target_fields"] = ["all"]
+        elif all(field in VALID_FIELDS for field in normalized):
+            out["target_fields"] = sorted(set(normalized))
+
+    for key in ("age_min", "age_max"):
+        value = raw.get(key) if key in raw else "__missing__"
+        if value is None:
+            out[key] = None
+        elif (not isinstance(value, bool) and isinstance(value, int)
+              and 0 <= value <= 100):
+            out[key] = value
+
+    if ("age_min" in out and "age_max" in out
+            and out["age_min"] is not None and out["age_max"] is not None
+            and out["age_min"] > out["age_max"]):
+        out.pop("age_min", None)
+        out.pop("age_max", None)
+
+    if "language_requirement" in raw:
+        language = raw.get("language_requirement")
+        if language is None:
+            out["language_requirement"] = None
+        elif isinstance(language, str) and 2 <= len(language.strip()) <= 1000:
+            out["language_requirement"] = language.strip()
+
+    languages = raw.get("required_languages")
+    if isinstance(languages, list) and languages:
+        codes = [str(item).strip().lower() for item in languages]
+        if codes == ["all"]:
+            out["required_languages"] = ["all"]
+        elif all(code in VALID_LANGUAGE_CODES for code in codes):
+            out["required_languages"] = sorted(set(codes))
+    return out
+
+
 def _parse_verdict(text):
     """LLM'in metin yanıtından JSON kararı çıkarır (savunmacı)."""
     t = (text or "").strip()
@@ -1175,7 +1288,9 @@ def _parse_verdict(text):
     boolean_fields = (
         "kategori_uygun", "tek_firsat", "dogrudan_firsat_sayfasi",
         "son_tarih_dogrulandi", "finansman_dogrulandi",
-        "ulke_dogrulandi", "uygunluk_dogrulandi",
+        "ulke_dogrulandi", "uygunluk_dogrulandi", "uyruk_dogrulandi",
+        "yas_dogrulandi", "egitim_dogrulandi", "dil_dogrulandi",
+        "bolum_dogrulandi",
     )
     raw_evidence = v.get("kanitlar")
     if not isinstance(raw_evidence, dict):
@@ -1184,11 +1299,12 @@ def _parse_verdict(text):
         "durum": durum,
         **{field: v.get(field) is True for field in boolean_fields},
         "guven": guven,
-        "uyruk_kisiti": clean_citizenships(v.get("uyruk_kisiti")),
-        "bolum_kisiti": clean_fields(v.get("bolum_kisiti")),
+        "dogrulanmis_filtreler": clean_verified_filters(
+            v.get("dogrulanmis_filtreler")
+        ),
         "kanitlar": {
             field: str(raw_evidence.get(field) or "").strip()[:500]
-            for field in (*EVIDENCE_QUOTE_FIELDS, "uyruk", "bolum")
+            for field in EVIDENCE_QUOTE_FIELDS
         },
         "gerekce": (str(v.get("gerekce") or "").strip()[:300] or "(gerekçe yok)"),
     }
@@ -1274,6 +1390,11 @@ def judge_with_llm(sub, url, http_note, page_text, prior_verdict=None):
         f"Kaydedilen son başvuru metni: {sub.get('deadline_text') or '(yok)'}\n"
         f"Kaydedilen finansman türü: {sub.get('funding_type') or '(yok)'}\n"
         f"Kaydedilen eğitim kademesi: {', '.join(sub.get('study_level') or []) or '(yok)'}\n"
+        f"Kaydedilen uyruklar: {', '.join(sub.get('eligible_citizenships') or []) or '(yok)'}\n"
+        f"Kaydedilen yaş aralığı: {sub.get('age_min')} - {sub.get('age_max')}\n"
+        f"Kaydedilen dil şartı: {sub.get('language_requirement') or '(yok)'}\n"
+        f"Kaydedilen zorunlu dil kodları: {', '.join(sub.get('required_languages') or []) or '(yok)'}\n"
+        f"Kaydedilen bölümler: {', '.join(sub.get('target_fields') or []) or '(yok)'}\n"
         f"Submitter eligibility notu: {(sub.get('eligibility_notes') or '(yok)')[:400]}\n"
         f"Doğrudan başvuru/resmî fırsat URL'i: {url}\n"
         f"Doğrudan URL HTTP: {http_note}\n"
@@ -1330,6 +1451,40 @@ def submission_completeness_blockers(sub):
     return blockers
 
 
+STRICT_FILTER_FLAGS = {
+    "uyruk_dogrulandi": "uyruk filtresi kesin doğrulanmadı",
+    "yas_dogrulandi": "yaş filtresi kesin doğrulanmadı",
+    "egitim_dogrulandi": "eğitim kademesi kesin doğrulanmadı",
+    "dil_dogrulandi": "dil şartı kesin doğrulanmadı",
+    "bolum_dogrulandi": "bölüm filtresi kesin doğrulanmadı",
+}
+VERIFIED_FILTER_KEYS = {
+    "host_countries", "eligible_citizenships", "age_min", "age_max",
+    "study_level", "language_requirement", "required_languages", "target_fields",
+}
+
+
+def strict_filter_blockers(verdict):
+    """Beş kullanıcı filtresi + ev sahibi ülke için kapalı güvenlik kapısı."""
+    blockers = [
+        label for field, label in STRICT_FILTER_FLAGS.items()
+        if verdict.get(field) is not True
+    ]
+    filters = verdict.get("dogrulanmis_filtreler")
+    if not isinstance(filters, dict):
+        filters = {}
+    for key in sorted(VERIFIED_FILTER_KEYS - set(filters)):
+        blockers.append(f"kanıtlanmış {key} değeri yok/geçersiz")
+    return blockers
+
+
+def filter_consensus_blockers(first_verdict, second_verdict):
+    """Bağımsız iki denetim aynı filtre değerlerini bulmadan yayınlama."""
+    first = first_verdict.get("dogrulanmis_filtreler") or {}
+    second = second_verdict.get("dogrulanmis_filtreler") or {}
+    return [] if first == second else ["iki denetim filtre değerlerinde uzlaşmadı"]
+
+
 def auto_approval_blockers(sub, verdict):
     """Eksiksizlik + LLM kanıt kapısı. Boş liste dışında yayın YASAK."""
     blockers = submission_completeness_blockers(sub)
@@ -1356,6 +1511,7 @@ def auto_approval_blockers(sub, verdict):
     }
     blockers.extend(label for field, label in evidence_labels.items()
                     if verdict.get(field) is not True)
+    blockers.extend(strict_filter_blockers(verdict))
     return blockers
 
 
@@ -1376,14 +1532,6 @@ def evidence_quote_blockers(page_text, verdict):
             blockers.append(f"{label} eksik")
         elif quote not in haystack:
             blockers.append(f"{label} sayfa metninde bulunamadı")
-    for restriction, (field, label) in RESTRICTION_EVIDENCE_FIELDS.items():
-        if not verdict.get(restriction):
-            continue
-        quote = _normalize_evidence_text(evidence.get(field))
-        if len(quote) < 5:
-            blockers.append(f"{label} eksik")
-        elif quote not in haystack:
-            blockers.append(f"{label} sayfa metninde bulunamadı")
     return blockers
 
 
@@ -1396,6 +1544,7 @@ def evidence_rejection_reasons(verdict):
         "finansman_dogrulandi": "finansman bilgisi sayfayla uyuşmuyor",
         "ulke_dogrulandi": "ülke/global bilgisi sayfayla uyuşmuyor",
         "uygunluk_dogrulandi": "uygunluk koşulları sayfayla uyuşmuyor",
+        **STRICT_FILTER_FLAGS,
     }
     return [label for field, label in labels.items() if verdict.get(field) is not True]
 
@@ -1895,6 +2044,7 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
             return "tekrar"
         second_blockers = auto_approval_blockers(sub, second_verdict)
         second_blockers.extend(evidence_quote_blockers(page_text, second_verdict))
+        second_blockers.extend(filter_consensus_blockers(verdict, second_verdict))
         if second_blockers:
             reason = "İkinci denetim onaylamadı: " + "; ".join(second_blockers)
             apply_decision(sub, "reddet", reason, dry_run)

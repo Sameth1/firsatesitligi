@@ -83,15 +83,25 @@ const CATEGORY_BLURB: Record<string, string> = {
 }
 
 const STUDY_LEVEL_OPTIONS = [
+  { value: 'high_school', label: 'Lise',          icon: '🏫' },
   { value: 'bachelor', label: 'Lisans',        icon: '📘' },
   { value: 'master',   label: 'Yüksek Lisans', icon: '📗' },
   { value: 'phd',      label: 'Doktora',       icon: '🔬' },
+  { value: 'graduate', label: 'Mezun',         icon: '🎓' },
   { value: 'any',      label: 'Fark etmez',    icon: '✨' },
 ]
 
-// Popüler bölümler — kullanıcı dostu etiket + DB'de eşlenebilecek slug
-// Not: DB'de bire bir slug olmasa da sorun değil — sonuç 0 gelirse
-// handleSearch otomatik olarak bu filtreyi gevşetip tekrar sorguluyor.
+const LANGUAGE_OPTIONS = [
+  { value: 'en', label: 'İngilizce' },
+  { value: 'de', label: 'Almanca' },
+  { value: 'fr', label: 'Fransızca' },
+  { value: 'es', label: 'İspanyolca' },
+  { value: 'it', label: 'İtalyanca' },
+  { value: 'nl', label: 'Hollandaca' },
+  { value: 'tr', label: 'Türkçe' },
+]
+
+// Popüler bölümler — kullanıcı dostu etiket + DB'de birebir eşlenen slug.
 type FieldOption = { value: string; label: string; group: string }
 
 const FIELDS: FieldOption[] = [
@@ -195,7 +205,6 @@ export default function Home() {
   const [loading, setLoading] = useState(false)
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const [searchSnapshot, setSearchSnapshot] = useState<Record<string, unknown>>({})
-  const [relaxedFilters, setRelaxedFilters] = useState<string[]>([])
   const [searchError, setSearchError] = useState<string | null>(null)
 
   // Form state
@@ -205,6 +214,7 @@ export default function Home() {
   const [age, setAge] = useState('')
   const [studyLevel, setStudyLevel] = useState<string | null>(null)
   const [field, setField] = useState<string | null>(null)
+  const [language, setLanguage] = useState<string | null>(null)
 
   const formRef = useRef<HTMLElement>(null)
   const prevStepRef = useRef<Step | null>(null)
@@ -276,7 +286,7 @@ export default function Home() {
 
   // İlerleme göstergesi: kaç anlamlı alan dolduruldu?
   const filledFlags = [
-    category, country, age === '' ? null : age, studyLevel, field,
+    category, country, age === '' ? null : age, studyLevel, field, language,
   ]
   const activeFilterCount = filledFlags.filter(Boolean).length
   const progress = Math.round((activeFilterCount / filledFlags.length) * 100)
@@ -294,22 +304,8 @@ export default function Home() {
       p_study_level:   (studyLevel && studyLevel !== 'any') ? studyLevel : null,
       p_highest_edu:   null,
       p_field:         field || null,
-      p_language:      null,
+      p_language:      language,
     }
-
-    // Akıllı fallback: tam eşleşme yoksa filtreleri önem sırasına göre
-    // kademeli gevşetip tekrar sorgulayalım. Ülke ve vatandaşlık hiç
-    // gevşemez — kullanıcının gitmek istediği yer ve kimliği korunur.
-    const fallbackOrder: { key: keyof MatchParams; label: string }[] = [
-      { key: 'p_field',         label: 'Bölüm' },
-      { key: 'p_age',           label: 'Yaş' },
-      { key: 'p_study_level',   label: 'Eğitim kademesi' },
-      { key: 'p_category_slug', label: 'Kategori' },
-    ]
-
-    const params: MatchParams = { ...baseParams }
-    const relaxed: string[] = []
-    let data: Opportunity[] | null = null
 
     const run = async (p: MatchParams) => {
       try {
@@ -324,36 +320,17 @@ export default function Home() {
       }
     }
 
-    const first = await run(params)
+    const first = await run(baseParams)
     if (!first.ok) {
       setSearchError(first.error)
       setResults([])
-      setRelaxedFilters([])
       setLoading(false)
       return
     }
-    data = first.rows
 
-    for (const f of fallbackOrder) {
-      if (data && data.length > 0) break
-      if (params[f.key] == null) continue
-      ;(params as Record<string, unknown>)[f.key as string] = null
-      relaxed.push(f.label)
-      const next = await run(params)
-      if (!next.ok) {
-        setSearchError(next.error)
-        setResults([])
-        setRelaxedFilters(relaxed)
-        setLoading(false)
-        return
-      }
-      data = next.rows
-    }
-
-    setResults(data ?? [])
-    setRelaxedFilters(relaxed)
+    setResults(first.rows)
     setActiveCategory(null)
-    setSearchSnapshot({ country, category, citizenship, studyLevel, field })
+    setSearchSnapshot({ country, category, citizenship, studyLevel, field, language })
     setStep('results')
     setLoading(false)
   }
@@ -494,6 +471,20 @@ export default function Home() {
 
               <div>
                 <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-hi)', marginBottom: 10 }}>
+                  Bildiğin dil <span style={{ fontWeight: 400, color: 'var(--text-low)' }}>· opsiyonel</span>
+                </div>
+                <Picker
+                  placeholder="Dil seç"
+                  value={language}
+                  valueLabel={LANGUAGE_OPTIONS.find(item => item.value === language)?.label ?? null}
+                  options={LANGUAGE_OPTIONS}
+                  onChange={setLanguage}
+                  emptyHint="Dil bulunamadı"
+                />
+              </div>
+
+              <div>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-hi)', marginBottom: 10 }}>
                   Vatandaşlığın
                 </div>
                 <Picker
@@ -552,7 +543,7 @@ export default function Home() {
           <div style={{ fontSize: 13, color: 'var(--text-mid)', lineHeight: 1.55 }}>
             {activeFilterCount === 0
               ? 'Hiç filtre seçmedin — tüm açık fırsatları getireceğiz.'
-              : `${activeFilterCount} filtre seçili · tam eşleşme çıkmazsa otomatik gevşetiriz.`}
+              : `${activeFilterCount} filtre seçili · yalnızca tam eşleşen fırsatları getireceğiz.`}
           </div>
           <button
             onClick={handleSearch}
@@ -671,20 +662,6 @@ export default function Home() {
         </div>
 
         </div>
-
-        {/* Gevşetilen filtreler banner'ı */}
-        {relaxedFilters.length > 0 && results.length > 0 && (
-          <div className="fx-fade-in-up" style={{
-            background: 'rgba(255, 181, 71, 0.10)',
-            border: '1px solid rgba(255, 181, 71, 0.35)',
-            borderRadius: 14, padding: '13px 16px', marginBottom: 22,
-            fontSize: 12.5, color: '#FFD08A', lineHeight: 1.55,
-          }}>
-            <strong>Tam eşleşme bulamadık.</strong> Sana en yakın sonuçları
-            getirmek için şu filtreleri otomatik gevşettik:{' '}
-            <span style={{ fontWeight: 500 }}>{relaxedFilters.join(', ')}</span>.
-          </div>
-        )}
 
         {/* Cards */}
         {filtered.length === 0 ? (
