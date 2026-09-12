@@ -27,7 +27,18 @@
 
 import { useEffect, useState } from 'react'
 
-const DISMISS_KEY = 'fe-install-hint-dismissed'
+/**
+ * Anahtar SÜRÜMLÜ. Neden: şerit uzun süre Chrome'da hiç görünmüyordu
+ * (beforeinstallprompt hidrasyondan önce geliyordu ve kaçırılıyordu, bkz.
+ * layout.tsx). O dönemde depolanmış "kapatıldı" işaretleri artık anlamsız —
+ * kullanıcı çalışan bir şeridi değil, bozuk bir şeridi kapatmış. Sürümü
+ * yükseltmek herkese bir kez daha şans veriyor; yeni kapatmalar v2'ye
+ * yazıldığı için kalıcı oluyor.
+ *
+ * ESKİ ANAHTAR TEMİZLENİYOR: bırakılırsa tarayıcıda ölü bir kayıt kalır.
+ */
+const DISMISS_KEY = 'fe-install-hint-dismissed-v2'
+const LEGACY_DISMISS_KEY = 'fe-install-hint-dismissed'
 /**
  * Olay gelmezse elle tarif eden şeridi bu kadar sonra göster.
  *
@@ -65,6 +76,7 @@ export default function InstallHint() {
     let dismissed = false
     try {
       dismissed = localStorage.getItem(DISMISS_KEY) === '1'
+      localStorage.removeItem(LEGACY_DISMISS_KEY)
     } catch {
       // Depolama kapalıysa (gizli sekme, katı gizlilik ayarı) ipucu gösterilir;
       // kapatma kalıcı olmaz ama hiçbir şey kırılmaz.
