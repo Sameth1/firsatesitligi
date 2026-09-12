@@ -47,6 +47,7 @@
     "db:125": "npx supabase db query --linked -f docs/sql/125_remove_admin_passwords.sql",
     "db:126": "npx supabase db query --linked -f docs/sql/126_field_taxonomy_expansion.sql",
     "db:127": "npx supabase db query --linked -f docs/sql/127_citizenship_lists_and_religion_removal.sql",
+    "db:128": "npx supabase db query --linked -f docs/sql/128_match_unspecified_never_filters.sql",
     "db:insert-programs": "node scripts/insert_programs.js"
   },
   "dependencies": {

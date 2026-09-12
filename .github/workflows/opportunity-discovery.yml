@@ -9,8 +9,11 @@ concurrency:
 
 on:
   schedule:
-    # Her gün Türkiye saatiyle yaklaşık 06:20 (UTC 03:20)
-    - cron: '20 3 * * *'
+    # Haftada bir: Pazartesi Türkiye saatiyle 06:20 (UTC 03:20).
+    # Günlükten haftalığa çekildi — kaynaklar (nasilgitmis, DAAD) bu sıklıkta
+    # yeni içerik üretmiyor, günlük tarama aynı sayfaları tekrar tekrar
+    # indirip boşuna istek harcıyordu. Elle tetikleme her zaman açık.
+    - cron: '20 3 * * 1'
   workflow_dispatch:
     inputs:
       dry_run:

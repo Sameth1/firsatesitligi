@@ -128,6 +128,8 @@ export default function Home() {
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const [searchSnapshot, setSearchSnapshot] = useState<Record<string, unknown>>({})
   const [searchError, setSearchError] = useState<string | null>(null)
+  /** Sonuç 0 çıkınca gevşetilen filtrelerin adları — kullanıcıya söylüyoruz. */
+  const [relaxedFilters, setRelaxedFilters] = useState<string[]>([])
 
   // Form state
   const [country, setCountry] = useState<string | null>(null)
@@ -248,15 +250,54 @@ export default function Home() {
       }
     }
 
-    const first = await run(baseParams)
-    if (!first.ok) {
-      setSearchError(first.error)
+    /**
+     * SINIRLI GEVŞETME.
+     *
+     * Kayıtta bir şart YAZMIYORSA o boyut zaten elemez — bunu SQL hallediyor
+     * (bkz. 128). Buradaki gevşetme başka bir şey: kayıt şartı AÇIKÇA yazmış
+     * ama kullanıcının girdisiyle uyuşmuyorsa, sonuç boş kalmasın diye o
+     * girdiden vazgeçiyoruz.
+     *
+     * Ülke, vatandaşlık ve yaş bu listede YOK ve olmayacak. Onlar kullanıcının
+     * kim olduğu ve nereye gitmek istediği; gevşetilirse başvuramayacağı bir
+     * fırsat gösterilmiş olur. Sonuç 0 kalsa bile 0 kalır.
+     */
+    const relaxOrder: { key: keyof MatchParams; label: string }[] = [
+      { key: 'p_field',       label: 'Bölüm' },
+      { key: 'p_study_level', label: 'Eğitim kademesi' },
+      { key: 'p_language',    label: 'Dil' },
+    ]
+
+    const params: MatchParams = { ...baseParams }
+    const relaxed: string[] = []
+
+    let res = await run(params)
+    if (!res.ok) {
+      setSearchError(res.error)
       setResults([])
+      setRelaxedFilters([])
       setLoading(false)
       return
     }
 
-    setResults(first.rows)
+    for (const f of relaxOrder) {
+      if (res.rows.length > 0) break
+      if (params[f.key] == null) continue
+      ;(params as Record<string, unknown>)[f.key as string] = null
+      relaxed.push(f.label)
+      const next = await run(params)
+      if (!next.ok) {
+        setSearchError(next.error)
+        setResults([])
+        setRelaxedFilters(relaxed)
+        setLoading(false)
+        return
+      }
+      res = next
+    }
+
+    setResults(res.rows)
+    setRelaxedFilters(relaxed)
     setActiveCategory(null)
     setSearchSnapshot({ country, category, citizenship, studyLevel, field, language })
     setStep('results')
@@ -312,7 +353,8 @@ export default function Home() {
             lineHeight: 1.6, marginBottom: 24,
           }}>
             Hiçbir alan zorunlu değil — ne kadarını doldurursan eşleşme o kadar isabetli olur.
-            Sonuç çıkmazsa filtreleri biz gevşetiriz.
+            Sonuç çıkmazsa bölüm, kademe ve dil filtrelerini gevşetiriz; ülke,
+            vatandaşlık ve yaş asla gevşemez.
           </p>
 
           <ProgressMeter progress={progress} filled={activeFilterCount} total={filledFlags.length} />
@@ -527,6 +569,25 @@ export default function Home() {
             </button>
           }
         />
+
+        {/* Gevşetilen filtreler — sessizce yapılırsa kullanıcı sonuçların
+            neden istediğinden geniş olduğunu anlamaz. Ülke/vatandaşlık/yaş
+            bu listede asla görünmez; onlar gevşetilmiyor. */}
+        {relaxedFilters.length > 0 && (
+          <div
+            className="fx-fade-in-up"
+            style={{
+              margin: '0 0 18px', padding: '12px 15px', borderRadius: 13,
+              background: 'rgba(255, 181, 71, 0.10)',
+              border: '1px solid rgba(255, 181, 71, 0.32)',
+              fontSize: 13, lineHeight: 1.55, color: '#FFD79A',
+            }}
+          >
+            Tam eşleşme çıkmadı; <strong>{relaxedFilters.join(', ')}</strong>{' '}
+            {relaxedFilters.length > 1 ? 'filtrelerini' : 'filtresini'} gevşettik.
+            Ülke, vatandaşlık ve yaş aynen uygulandı.
+          </div>
+        )}
 
         {/* Step pills */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 22 }}>
