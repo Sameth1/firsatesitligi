@@ -1,25 +1,36 @@
 'use client'
 import { useState } from 'react'
-import { supabase } from '@/lib/supabase'
 
 export default function EmailCapture({ searchSnapshot }: {
   searchSnapshot?: Record<string, unknown>
 }) {
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   async function handleSubmit() {
     if (!email || !email.includes('@')) return
     setStatus('loading')
+    setErrorMsg(null)
 
-    const { error } = await supabase
-      .from('subscribers')
-      .insert({ email, search_snapshot: searchSnapshot ?? null })
-
-    if (error && error.code !== '23505') { // 23505 = duplicate key, zaten kayıtlı
+    // Kayıt artık doğrudan tabloya değil sunucu ucuna gidiyor: rate limit
+    // ancak IP bilinirse çalışır, IP'yi de yalnız sunucu güvenilir bilir
+    // (bkz. src/app/api/subscribe/route.ts ve migration 114).
+    try {
+      const res = await fetch('/api/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, search_snapshot: searchSnapshot ?? null }),
+      })
+      if (res.ok) {
+        setStatus('done')
+        return
+      }
+      const body = await res.json().catch(() => null)
+      setErrorMsg(typeof body?.error === 'string' ? body.error : null)
       setStatus('error')
-    } else {
-      setStatus('done')
+    } catch {
+      setStatus('error')
     }
   }
 
@@ -77,8 +88,8 @@ export default function EmailCapture({ searchSnapshot }: {
       </div>
 
       {status === 'error' && (
-        <div style={{ fontSize: 11.5, color: '#FFB4B4', marginTop: 8 }}>
-          Bir hata oluştu, tekrar dene.
+        <div style={{ fontSize: 11.5, color: '#FFB4B4', marginTop: 8, lineHeight: 1.5 }}>
+          {errorMsg ?? 'Bir hata oluştu, tekrar dene.'}
         </div>
       )}
     </div>

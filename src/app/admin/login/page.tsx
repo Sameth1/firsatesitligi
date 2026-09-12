@@ -67,11 +67,22 @@ export default function AdminLogin() {
       email: cleanEmail,
       options: {
         emailRedirectTo: redirectTo,
+        // Bu sayfa herkese açık. Varsayılan (shouldCreateUser: true) ile
+        // yazılan HER e-posta için auth.users'a satır açılıyor ve o adrese
+        // mail gidiyordu — hem hesap şişmesi hem mail bombası yolu.
+        // Admin hesapları zaten var; buradan yeni hesap açılmasına gerek yok.
+        shouldCreateUser: false,
       },
     })
 
     if (error) {
       setStatus('error')
+      const m = error.message.toLowerCase()
+      // shouldCreateUser:false → tanımsız adres için Supabase bunu döndürüyor.
+      if (m.includes('signups not allowed') || m.includes('user not found')) {
+        setErrorDetail('Bu e-posta ile kayıtlı bir yönetici hesabı yok.')
+        return
+      }
       setErrorDetail(
         error.message +
           (error.message.toLowerCase().includes('redirect') || error.message.includes('URI')

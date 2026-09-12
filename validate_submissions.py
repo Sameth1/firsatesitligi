@@ -60,6 +60,7 @@ import json
 import os
 import re
 import sys
+import textwrap
 import time
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
@@ -151,24 +152,29 @@ PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS
 ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY
 UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW EU XK
 """.split())
-# UI'daki bölüm listesiyle (src/app/page.tsx → FIELDS) BİREBİR aynı olmalı;
-# eşleşmeyen bir slug yazmak kaydı o bölümü seçen kullanıcıdan gizler.
-VALID_FIELDS = {
-    "computer_science", "software_engineering", "electrical_engineering",
-    "mechanical_engineering", "industrial_engineering", "civil_engineering",
-    "chemical_engineering", "environmental_engineering", "aerospace_engineering",
-    "biomedical_engineering", "medicine", "dentistry", "pharmacy", "nursing",
-    "veterinary", "psychology", "public_health", "mathematics", "physics",
-    "chemistry", "biology", "molecular_biology", "statistics", "data_science",
-    "law", "international_relations", "political_science", "public_policy",
-    "sociology", "anthropology", "history", "philosophy", "social_sciences",
-    "human_rights", "business", "economics", "finance", "marketing",
-    "management", "logistics", "education", "english_teaching", "linguistics",
-    "literature", "architecture", "urban_planning", "industrial_design",
-    "graphic_design", "fine_arts", "music", "cinema", "communication",
-    "journalism", "agriculture", "tourism", "gastronomy", "ngo", "youth_work",
-    "environmental_science",
-}
+FIELDS_TS = Path(__file__).with_name("src") / "lib" / "fields.ts"
+
+
+def load_field_slugs():
+    """Bölüm slug'larını src/lib/fields.ts'ten okur — TEK doğruluk kaynağı.
+
+    Neden dosyadan: bu liste üç yerde ayrı ayrı duruyordu (arama formu, bu
+    küme, LLM promptu) ve biri güncellenince diğerleri geride kalıyordu.
+    Geride kalan bir slug, o bölümü seçen kullanıcıdan kaydı GİZLER.
+
+    Dosya okunamazsa hata veriyoruz: sessizce boş kümeyle devam etmek,
+    ajanın bütün bölüm kısıtlarını düşürmesi demek olurdu.
+    """
+    text = FIELDS_TS.read_text(encoding="utf-8")
+    slugs = re.findall(r"value:\s*'([a-z_]+)'", text)
+    if len(slugs) < 40:
+        raise RuntimeError(f"{FIELDS_TS} okundu ama yalnız {len(slugs)} slug "
+                           "bulundu — dosya biçimi değişmiş olabilir.")
+    return sorted(set(slugs))
+
+
+FIELD_SLUGS = load_field_slugs()
+VALID_FIELDS = set(FIELD_SLUGS)
 AGGREGATOR_DOMAINS = {"youthop.com", "www.youthop.com", "nasilgitmis.com", "www.nasilgitmis.com"}
 JUNK_TARGET_DOMAINS = {
     "facebook.com", "www.facebook.com", "instagram.com", "www.instagram.com",
@@ -281,7 +287,7 @@ EK ALANLAR — kimin göreceğini belirler, bu yüzden fazladan temkinli ol:
    - "Uluslararası/yabancı öğrenciler", "X ülkesinde okuyor olmak", "X'te çalışma izni" uyruk şartı DEĞİLDİR → null.
 6) target_fields — Fırsat belli bölümlerle sınırlı mı?
    - Sınırlıysa şu slug'lardan uygun OLANLARIN TAMAMI; bir aileyi kapsıyorsa (ör. mühendislik) ailenin bütün slug'larını yaz:
-     computer_science, software_engineering, electrical_engineering, mechanical_engineering, industrial_engineering, civil_engineering, chemical_engineering, environmental_engineering, aerospace_engineering, biomedical_engineering, medicine, dentistry, pharmacy, nursing, veterinary, psychology, public_health, mathematics, physics, chemistry, biology, molecular_biology, statistics, data_science, law, international_relations, political_science, public_policy, sociology, anthropology, history, philosophy, social_sciences, human_rights, business, economics, finance, marketing, management, logistics, education, english_teaching, linguistics, literature, architecture, urban_planning, industrial_design, graphic_design, fine_arts, music, cinema, communication, journalism, agriculture, tourism, gastronomy, ngo, youth_work, environmental_science
+     {FIELD_SLUG_LINE}
    - "Bütün bölümlere açık" diyorsa, bölümden söz etmiyorsa ya da EMİN DEĞİLSEN: null.
    Bu iki alanı YANLIŞ doldurmak, uygun bir adayı sonuçlardan tamamen siler.
 
@@ -305,8 +311,29 @@ FİLTRE SÖZLEŞMESİ — OTOMATİK ONAY İÇİN BEŞİ DE KESİN OLMALI:
 - Tahmin, ülkenin resmî dilinden dil şartı çıkarma, program adından
   bölüm/kademe çıkarma veya sayfada yazmayan varsayılan YASAKTIR.
 
+DİN ŞARTI — din_sarti (platform politikası, kalite değil):
+- true: Başvurabilmek için belli bir dine/mezhebe mensup olmak ya da o dinin
+  değerlerini benimsemek gerekiyorsa (ör. "open to protestant students",
+  "Jewish doctoral candidates", "for Christians", "involved in the Church",
+  "uphold Christian social values", "Müslüman olmak").
+- false: Din yalnızca ÇALIŞMA ALANI olarak geçiyorsa (ilahiyat, din
+  sosyolojisi, İslam araştırmaları bursu) ya da hiç geçmiyorsa. Bir konuyu
+  ÇALIŞMAK ile o dine MENSUP OLMAK farklı şeylerdir; karıştırma.
+- Emin değilsen false.
+true dönersen kayıt otomatik REDDEDİLİR: platform, başvuranın dinine göre
+ayrım yapan fırsatları yayınlamaz.
+
 ÇIKTI: Yanıtını yalnızca şu alanlara sahip TEK bir JSON nesnesi olarak ver. Markdown, ``` işareti veya açıklama EKLEME:
-{"durum":"acik|kapali|belirsiz","kategori_uygun":true|false,"guven":"yuksek|orta|dusuk","tek_firsat":true|false,"dogrudan_firsat_sayfasi":true|false,"son_tarih_dogrulandi":true|false,"finansman_dogrulandi":true|false,"ulke_dogrulandi":true|false,"uygunluk_dogrulandi":true|false,"uyruk_dogrulandi":true|false,"yas_dogrulandi":true|false,"egitim_dogrulandi":true|false,"dil_dogrulandi":true|false,"bolum_dogrulandi":true|false,"dogrulanmis_filtreler":{"host_countries":["DE"],"eligible_citizenships":["all"],"age_min":18,"age_max":30,"study_level":["bachelor"],"language_requirement":"English B2","required_languages":["en"],"target_fields":["all"]},"kanitlar":{"guncellik":"<birebir alıntı>","son_tarih":"<birebir alıntı>","kategori":"<birebir alıntı>","finansman":"<birebir alıntı>","ulke":"<birebir alıntı>","uygunluk":"<birebir alıntı>","uyruk":"<birebir alıntı>","yas":"<birebir alıntı>","egitim":"<birebir alıntı>","dil":"<birebir alıntı>","bolum":"<birebir alıntı>"},"gerekce":"<kararını dayandıran kanıtı belirten Türkçe tek cümle>"}"""
+{"durum":"acik|kapali|belirsiz","kategori_uygun":true|false,"guven":"yuksek|orta|dusuk","tek_firsat":true|false,"dogrudan_firsat_sayfasi":true|false,"son_tarih_dogrulandi":true|false,"finansman_dogrulandi":true|false,"ulke_dogrulandi":true|false,"uygunluk_dogrulandi":true|false,"din_sarti":true|false,"uyruk_dogrulandi":true|false,"yas_dogrulandi":true|false,"egitim_dogrulandi":true|false,"dil_dogrulandi":true|false,"bolum_dogrulandi":true|false,"dogrulanmis_filtreler":{"host_countries":["DE"],"eligible_citizenships":["all"],"age_min":18,"age_max":30,"study_level":["bachelor"],"language_requirement":"English B2","required_languages":["en"],"target_fields":["all"]},"kanitlar":{"guncellik":"<birebir alıntı>","son_tarih":"<birebir alıntı>","kategori":"<birebir alıntı>","finansman":"<birebir alıntı>","ulke":"<birebir alıntı>","uygunluk":"<birebir alıntı>","uyruk":"<birebir alıntı>","yas":"<birebir alıntı>","egitim":"<birebir alıntı>","dil":"<birebir alıntı>","bolum":"<birebir alıntı>"},"gerekce":"<kararını dayandıran kanıtı belirten Türkçe tek cümle>"}"""
+
+
+# Prompttaki slug listesi kümeden ÜRETİLİYOR: elle yazılan bir liste
+# src/lib/fields.ts ile ayrı düşebilir ve LLM var olmayan slug üretirdi.
+SYSTEM_PROMPT = SYSTEM_PROMPT.replace(
+    "{FIELD_SLUG_LINE}",
+    textwrap.fill(", ".join(FIELD_SLUGS), width=100,
+                  initial_indent="", subsequent_indent="     "),
+)
 
 REVISION_SYSTEM_PROMPT = """Sen Fırsat Eşitliği platformunun kayıt revize ajanısın.
 Bir insan adminin revize notunu ve fırsat sayfasını okuyup yalnız kayıtta BOŞ
@@ -1300,6 +1327,7 @@ def _parse_verdict(text):
     # JSON boolean true gönderirse doğrulama başarılı sayılır (fail-closed).
     boolean_fields = (
         "kategori_uygun", "tek_firsat", "dogrudan_firsat_sayfasi",
+        "din_sarti",
         "son_tarih_dogrulandi", "finansman_dogrulandi",
         "ulke_dogrulandi", "uygunluk_dogrulandi", "uyruk_dogrulandi",
         "yas_dogrulandi", "egitim_dogrulandi", "dil_dogrulandi",
@@ -1498,6 +1526,29 @@ def filter_consensus_blockers(first_verdict, second_verdict):
     return [] if first == second else ["iki denetim filtre değerlerinde uzlaşmadı"]
 
 
+# Din şartını yakalayan kaba tarama. AMACI RED DEĞİL: modelin "din şartı yok"
+# dediği ama metinde din geçen kayıtları otomatik onaydan çıkarıp insana
+# yönlendirmek. Yanlış alarmın bedeli bir insan bakışı; kaçırmanın bedeli
+# platform politikasının ihlali.
+RELIGION_HINTS = re.compile(
+    r"(jewish|muslim|islamic|christian|protestant|catholic|orthodox|hindu|"
+    r"buddhist|church|faith|denomination|müslüman|hristiyan|yahudi|protestan|"
+    r"katolik|ortodoks|kilise|inanç|dindar|ilahiyat)",
+    re.IGNORECASE,
+)
+
+
+def religion_hint_blockers(sub, verdict):
+    """Metinde din geçiyor ama model din_sarti=false dediyse otomatik onayı kes."""
+    if verdict.get("din_sarti") is True:
+        return []                      # zaten decide() reddedecek
+    blob = " ".join(str(sub.get(k) or "") for k in
+                    ("title", "eligibility_notes", "description"))
+    if RELIGION_HINTS.search(blob):
+        return ["metinde din/inanç ifadesi geçiyor — insan bakışı gerekiyor"]
+    return []
+
+
 def auto_approval_blockers(sub, verdict):
     """Eksiksizlik + LLM kanıt kapısı. Boş liste dışında yayın YASAK."""
     blockers = submission_completeness_blockers(sub)
@@ -1525,6 +1576,7 @@ def auto_approval_blockers(sub, verdict):
     blockers.extend(label for field, label in evidence_labels.items()
                     if verdict.get(field) is not True)
     blockers.extend(strict_filter_blockers(verdict))
+    blockers.extend(religion_hint_blockers(sub, verdict))
     return blockers
 
 
@@ -1586,6 +1638,12 @@ def decide(verdict):
     """Karar dict'i -> (eylem, gerekce). eylem: reddet | onayla | belirsiz.
     Otomatik ONAY yalnızca açık + kategori-uygun + güven yüksek olduğunda;
     otomatik RED yalnızca yüksek/orta güvenli net olumsuzlarda."""
+    # Din şartı diğer bütün kriterlerin önünde: fırsat kusursuz olsa bile
+    # başvuranın dinine göre ayrım yapıyorsa yayınlanmaz. Güven seviyesine
+    # bakılmaz — bu bir kalite değil, politika kararı.
+    if verdict.get("din_sarti") is True:
+        return "reddet", ("Başvuru koşulu başvuranın dinine/inancına şart koşuyor; "
+                          "platform politikası gereği yayınlanmıyor.")
     if verdict["guven"] == "dusuk":
         return "belirsiz", verdict["gerekce"]
     if verdict["durum"] == "kapali" and verdict["guven"] in ("yuksek", "orta"):
@@ -2254,13 +2312,18 @@ def run_agent_evaluation(args):
 
 # ─── Opportunity audit (--audit-opportunities) ────────────────────────────────
 
-def fetch_unverified_opportunities(limit=None):
+def fetch_unverified_opportunities(limit=None, stale_days=30):
     """last_verified_at IS NULL olan fırsatları çeker — admin panelindeki
     "Manuel doğrulanmamış" kümesi. Service key RLS'i bypass eder."""
     params = {
-        "last_verified_at": "is.null",
-        "select": "id,title,official_url,deadline,deadline_notes,is_active",
-        "order": "id.asc",
+        # Eskiden yalnız `last_verified_at IS NULL` alınıyordu: bir kez
+        # denetlenen kayda bir daha hiç bakılmıyordu. Ölçüldü: bir kayıt
+        # Mayıs'ta "canlı" işaretlenmiş, Haziran'da son tarihi geçmiş,
+        # Eylül'de hâlâ aktifti. Artık eski doğrulamalar da kuyruğa giriyor.
+        "is_active": "is.true",
+        "or": f"(last_verified_at.is.null,last_verified_at.lt.{(datetime.now(timezone.utc) - timedelta(days=stale_days)).isoformat()})",
+        "select": "id,title,official_url,deadline,deadline_notes,is_active,last_verified_at",
+        "order": "last_verified_at.asc.nullsfirst",
     }
     res = requests.get(f"{SUPABASE_URL}/rest/v1/opportunities",
                        headers=sb_headers(), params=params, timeout=20)
@@ -2342,7 +2405,7 @@ def run_audit_opportunities(args):
     """--audit-opportunities akışı: last_verified_at boş fırsatları denetler."""
     print("Doğrulanmamış fırsatlar çekiliyor (last_verified_at IS NULL)...")
     try:
-        opps = fetch_unverified_opportunities(args.limit)
+        opps = fetch_unverified_opportunities(args.limit, getattr(args, 'stale_days', 30))
     except requests.exceptions.RequestException as e:
         print(f"Supabase'den okuma hatası: {e}", file=sys.stderr)
         sys.exit(1)
@@ -2380,6 +2443,9 @@ def main():
     parser.add_argument("--recheck", action="store_true",
                         help="Daha önce [ajan] notu almış pending kayıtları da "
                              "yeniden değerlendir")
+    parser.add_argument("--stale-days", type=int, default=30,
+                        help="Denetimi bu kadar günden eski olan fırsatlar "
+                             "tekrar kuyruğa alınır (varsayılan 30)")
     parser.add_argument("--audit-opportunities", action="store_true",
                         help="Submission yerine yayındaki fırsatları denetle: "
                              "last_verified_at boş olanların URL'i ölü ya da son "

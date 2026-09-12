@@ -754,3 +754,61 @@ class SsrfGuardTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReligionPolicyTests(unittest.TestCase):
+    """Başvuranın dinine göre ayrım yapan fırsatlar yayınlanmaz.
+
+    Bu bir kalite kuralı değil, platform politikası: fırsat her açıdan
+    kusursuz olsa bile reddedilir.
+    """
+
+    def test_din_sarti_rejects_regardless_of_confidence(self):
+        for guven in ("yuksek", "orta", "dusuk"):
+            with self.subTest(guven=guven):
+                verdict = high_confidence_verdict()
+                verdict["guven"] = guven
+                verdict["din_sarti"] = True
+                eylem, gerekce = validator.decide(verdict)
+                self.assertEqual(eylem, "reddet")
+                self.assertIn("din", gerekce.lower())
+
+    def test_clean_verdict_still_approves(self):
+        verdict = high_confidence_verdict()
+        verdict["din_sarti"] = False
+        self.assertEqual(validator.decide(verdict)[0], "onayla")
+
+    def test_religion_word_blocks_auto_approval_even_if_llm_says_no(self):
+        """Model 'şart yok' dese bile metinde din geçiyorsa insana gider."""
+        sub = complete_submission()
+        sub["eligibility_notes"] = "Open to protestant students of all disciplines."
+        verdict = high_confidence_verdict()
+        verdict["din_sarti"] = False
+        blockers = validator.auto_approval_blockers(sub, verdict)
+        self.assertTrue(any("din" in b for b in blockers), blockers)
+
+    def test_religion_as_a_field_of_study_is_not_blocked(self):
+        """İlahiyat bursu engellenmemeli: konuyu ÇALIŞMAK ≠ o dine MENSUP OLMAK."""
+        sub = complete_submission()
+        sub["eligibility_notes"] = "Lisans öğrencileri programa başvurabilir."
+        sub["title"] = "Karşılaştırmalı din sosyolojisi doktora bursu"
+        verdict = high_confidence_verdict()
+        verdict["din_sarti"] = False
+        self.assertEqual(validator.auto_approval_blockers(sub, verdict), [])
+
+
+class FieldDictionaryTests(unittest.TestCase):
+    """Bölüm sözlüğü tek kaynaktan (src/lib/fields.ts) okunuyor."""
+
+    def test_slugs_loaded_from_shared_file(self):
+        self.assertGreater(len(validator.FIELD_SLUGS), 100)
+        self.assertIn("mechatronics", validator.VALID_FIELDS)
+        self.assertIn("computer_science", validator.VALID_FIELDS)
+
+    def test_prompt_lists_every_slug(self):
+        for slug in ("mechatronics", "social_work", "archaeology"):
+            self.assertIn(slug, validator.SYSTEM_PROMPT)
+
+    def test_unknown_slug_is_dropped(self):
+        self.assertEqual(validator.clean_fields(["mechatronics", "uydurma"]),
+                         ["mechatronics"])

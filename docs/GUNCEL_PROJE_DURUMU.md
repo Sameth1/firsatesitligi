@@ -94,6 +94,34 @@ Ajan artık hem uyruk hem bölüm kısıtını sayfadan çıkarıp onaydan önce
 submission'a yazıyor; emin değilse boş bırakıyor. Admin panelinde ikisi de elle
 düzenlenebiliyor.
 
+## Güvenlik (113 / 114)
+
+Sistem baştan tarandı; bulgular ve durumları:
+
+- **SSRF (kapatıldı).** Öneri URL'ini ajan servis anahtarıyla indiriyor.
+  `assertPublicHttpUrl` yalnız birkaç IPv4 önekine bakıyordu — 169.254.169.254
+  (bulut metadata), `[::1]`, `metadata.google.internal` geçiyordu; ajanın
+  `fetch_page`'inde ise hiç koruma yoktu ve yönlendirmeleri takip ediyordu.
+  Her iki katman da kapatıldı, ajan ad çözümlemesi yapıp her yönlendirme
+  adımını süzüyor.
+- **RPC yüzeyi (daraltıldı, 113).** 14 SECURITY DEFINER fonksiyonu anon'a
+  açıktı. Dikkat: `revoke ... from anon` YETMİYOR — PostgreSQL fonksiyonlara
+  PUBLIC'e de EXECUTE verir; PUBLIC'ten alıp role açıkça vermek gerekir.
+- **Güvenlik başlıkları (eklendi).** Canlıda yalnız HSTS vardı; admin paneli
+  iframe'e alınabiliyordu.
+- **Abone formu rate limit (114).** `subscribers`'a INSERT herkese açıktı ve
+  limit yoktu. Öneri formundaki desen kuruldu: `/api/subscribe` → IP'yi sunucu
+  okur → `subscribe_email` RPC (yalnız service_role). Dakikada 3, günde 20.
+  **Anon INSERT politikası, kod canlıya çıktıktan SONRA kaldırılmalı** —
+  114'ün başındaki 114b notuna bak.
+- **Ölü revize akışı (silindi).** `/revise/[token]` sayfası, iki RPC ve
+  `submission_revision_tokens` tablosu kaldırıldı (0 satır, hiç çalışmamıştı).
+- **Açık kalan:** Supabase'de **parola ile giriş açık** ve iki admin hesabının
+  da parolası var; oysa arayüz yalnız magic link kullanıyor. Bu, admin
+  hesaplarına karşı parola deneme yolunu açık bırakıyor. Panelden ya parola
+  girişi kapatılmalı ya da hesapların parolası kaldırılmalı; ayrıca "leaked
+  password protection" açılmalı.
+
 ## İnsan redlerinden öğrenme
 
 - Her insan kararı `submission_review_events` tablosuna kalıcı snapshot olarak yazılır.

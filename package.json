@@ -37,6 +37,17 @@
     "db:115": "npx supabase db query --linked -f docs/sql/115_structured_submission_inputs.sql",
     "db:116": "npx supabase db query --linked -f docs/sql/116_drop_legacy_match_overload.sql",
     "db:117": "npx supabase db query --linked -f docs/sql/117_active_opportunity_category_guard.sql",
+    "db:118": "npx supabase db query --linked -f docs/sql/118_match_opportunities_study_level_any.sql",
+    "db:119": "npx supabase db query --linked -f docs/sql/119_strict_host_country_filter.sql",
+    "db:120": "npx supabase db query --linked -f docs/sql/120_strict_agent_filter_evidence.sql",
+    "db:121": "npx supabase db query --linked -f docs/sql/121_only_direct_application_results.sql",
+    "db:122": "npx supabase db query --linked -f docs/sql/122_guided_application_results.sql",
+    "db:123": "npx supabase db query --linked -f docs/sql/123_match_highest_edu_and_language_null.sql",
+    "db:124": "npx supabase db query --linked -f docs/sql/124_subscriber_rate_limit_and_dead_flow.sql",
+    "db:125": "npx supabase db query --linked -f docs/sql/125_remove_admin_passwords.sql",
+    "db:126": "npx supabase db query --linked -f docs/sql/126_field_taxonomy_expansion.sql",
+    "db:127": "npx supabase db query --linked -f docs/sql/127_citizenship_lists_and_religion_removal.sql",
+    "db:128": "npx supabase db query --linked -f docs/sql/128_match_unspecified_never_filters.sql",
     "db:insert-programs": "node scripts/insert_programs.js"
   },
   "dependencies": {
@@ -45,7 +56,7 @@
     "@syncfusion/ej2-base": "^33.2.3",
     "@syncfusion/ej2-react-grids": "^33.2.10",
     "gsap": "^3.15.0",
-    "next": "16.2.4",
+    "next": "^16.3.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "three": "^0.185.1"

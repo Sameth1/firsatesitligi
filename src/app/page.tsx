@@ -12,6 +12,7 @@ import { pulseScene, hexToRgb01 } from '@/components/scene/sceneBus'
 import { CATEGORY_ICON_SRC, CATEGORY_ACCENT } from '@/lib/category-assets'
 import Flag from '@/components/Flag'
 import { ALL_COUNTRIES, POPULAR_CITIZENSHIP_CODES, countryNameTr } from '@/lib/countries'
+import { FIELDS, FIELD_LABELS } from '@/lib/fields'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import RangeSlider from '@/components/form/RangeSlider'
@@ -101,89 +102,10 @@ const LANGUAGE_OPTIONS = [
   { value: 'tr', label: 'Türkçe' },
 ]
 
-// Popüler bölümler — kullanıcı dostu etiket + DB'de birebir eşlenen slug.
-type FieldOption = { value: string; label: string; group: string }
-
-const FIELDS: FieldOption[] = [
-  // — Mühendislik —
-  { value: 'computer_science',        label: 'Bilgisayar Mühendisliği',         group: 'Mühendislik' },
-  { value: 'software_engineering',    label: 'Yazılım Mühendisliği',            group: 'Mühendislik' },
-  { value: 'electrical_engineering',  label: 'Elektrik-Elektronik Mühendisliği', group: 'Mühendislik' },
-  { value: 'mechanical_engineering',  label: 'Makine Mühendisliği',             group: 'Mühendislik' },
-  { value: 'industrial_engineering',  label: 'Endüstri Mühendisliği',           group: 'Mühendislik' },
-  { value: 'civil_engineering',       label: 'İnşaat Mühendisliği',             group: 'Mühendislik' },
-  { value: 'chemical_engineering',    label: 'Kimya Mühendisliği',              group: 'Mühendislik' },
-  { value: 'environmental_engineering', label: 'Çevre Mühendisliği',            group: 'Mühendislik' },
-  { value: 'aerospace_engineering',   label: 'Uzay / Havacılık Mühendisliği',   group: 'Mühendislik' },
-  { value: 'biomedical_engineering',  label: 'Biyomedikal Mühendislik',         group: 'Mühendislik' },
-
-  // — Sağlık —
-  { value: 'medicine',                label: 'Tıp',                             group: 'Sağlık' },
-  { value: 'dentistry',               label: 'Diş Hekimliği',                   group: 'Sağlık' },
-  { value: 'pharmacy',                label: 'Eczacılık',                       group: 'Sağlık' },
-  { value: 'nursing',                 label: 'Hemşirelik',                      group: 'Sağlık' },
-  { value: 'veterinary',              label: 'Veterinerlik',                    group: 'Sağlık' },
-  { value: 'psychology',              label: 'Psikoloji',                       group: 'Sağlık' },
-  { value: 'public_health',           label: 'Halk Sağlığı',                    group: 'Sağlık' },
-
-  // — Temel Bilimler —
-  { value: 'mathematics',             label: 'Matematik',                       group: 'Temel Bilimler' },
-  { value: 'physics',                 label: 'Fizik',                           group: 'Temel Bilimler' },
-  { value: 'chemistry',               label: 'Kimya',                           group: 'Temel Bilimler' },
-  { value: 'biology',                 label: 'Biyoloji',                        group: 'Temel Bilimler' },
-  { value: 'molecular_biology',       label: 'Moleküler Biyoloji & Genetik',    group: 'Temel Bilimler' },
-  { value: 'statistics',              label: 'İstatistik',                      group: 'Temel Bilimler' },
-  { value: 'data_science',            label: 'Veri Bilimi',                     group: 'Temel Bilimler' },
-
-  // — Sosyal Bilimler & Hukuk —
-  { value: 'law',                     label: 'Hukuk',                           group: 'Sosyal Bilimler' },
-  { value: 'international_relations', label: 'Uluslararası İlişkiler',          group: 'Sosyal Bilimler' },
-  { value: 'political_science',       label: 'Siyaset Bilimi',                  group: 'Sosyal Bilimler' },
-  { value: 'public_policy',           label: 'Kamu Politikası',                 group: 'Sosyal Bilimler' },
-  { value: 'sociology',               label: 'Sosyoloji',                       group: 'Sosyal Bilimler' },
-  { value: 'anthropology',            label: 'Antropoloji',                     group: 'Sosyal Bilimler' },
-  { value: 'history',                 label: 'Tarih',                           group: 'Sosyal Bilimler' },
-  { value: 'philosophy',              label: 'Felsefe',                         group: 'Sosyal Bilimler' },
-  { value: 'social_sciences',         label: 'Sosyal Bilimler (genel)',         group: 'Sosyal Bilimler' },
-  { value: 'human_rights',            label: 'İnsan Hakları',                   group: 'Sosyal Bilimler' },
-
-  // — İşletme & Ekonomi —
-  { value: 'business',                label: 'İşletme',                         group: 'İşletme & Ekonomi' },
-  { value: 'economics',               label: 'Ekonomi / İktisat',               group: 'İşletme & Ekonomi' },
-  { value: 'finance',                 label: 'Finans',                          group: 'İşletme & Ekonomi' },
-  { value: 'marketing',               label: 'Pazarlama',                       group: 'İşletme & Ekonomi' },
-  { value: 'management',              label: 'Yönetim',                         group: 'İşletme & Ekonomi' },
-  { value: 'logistics',               label: 'Lojistik',                        group: 'İşletme & Ekonomi' },
-
-  // — Eğitim & Dil —
-  { value: 'education',               label: 'Eğitim Bilimleri',                group: 'Eğitim & Dil' },
-  { value: 'english_teaching',        label: 'İngilizce Öğretmenliği',          group: 'Eğitim & Dil' },
-  { value: 'linguistics',             label: 'Dilbilim / Mütercim-Tercümanlık', group: 'Eğitim & Dil' },
-  { value: 'literature',              label: 'Edebiyat',                        group: 'Eğitim & Dil' },
-
-  // — Tasarım, Sanat, Medya —
-  { value: 'architecture',            label: 'Mimarlık',                        group: 'Tasarım & Sanat' },
-  { value: 'urban_planning',          label: 'Şehir Planlama',                  group: 'Tasarım & Sanat' },
-  { value: 'industrial_design',       label: 'Endüstriyel Tasarım',             group: 'Tasarım & Sanat' },
-  { value: 'graphic_design',          label: 'Grafik Tasarım',                  group: 'Tasarım & Sanat' },
-  { value: 'fine_arts',               label: 'Güzel Sanatlar',                  group: 'Tasarım & Sanat' },
-  { value: 'music',                   label: 'Müzik',                           group: 'Tasarım & Sanat' },
-  { value: 'cinema',                  label: 'Sinema & TV',                     group: 'Tasarım & Sanat' },
-  { value: 'communication',           label: 'İletişim',                        group: 'Tasarım & Sanat' },
-  { value: 'journalism',              label: 'Gazetecilik',                     group: 'Tasarım & Sanat' },
-
-  // — Diğer —
-  { value: 'agriculture',             label: 'Ziraat / Tarım',                  group: 'Diğer' },
-  { value: 'tourism',                 label: 'Turizm & Otelcilik',              group: 'Diğer' },
-  { value: 'gastronomy',              label: 'Gastronomi',                      group: 'Diğer' },
-  { value: 'ngo',                     label: 'STK / Sivil Toplum',              group: 'Diğer' },
-  { value: 'youth_work',              label: 'Gençlik Çalışması',               group: 'Diğer' },
-  { value: 'environmental_science',   label: 'Çevre Bilimleri',                 group: 'Diğer' },
-]
-
-const FIELD_LOOKUP: Record<string, string> = Object.fromEntries(
-  FIELDS.map(f => [f.value, f.label])
-)
+// Bölüm sözlüğü src/lib/fields.ts'te — ajan (validate_submissions.py) da
+// aynı dosyayı okuyor, böylece form ile ajanın kabul ettiği slug kümesi
+// asla ayrı düşmüyor. 59 → 135 slug.
+const FIELD_LOOKUP = FIELD_LABELS
 
 function fieldLabel(slug: string) {
   return FIELD_LOOKUP[slug] ?? slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
@@ -206,6 +128,8 @@ export default function Home() {
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const [searchSnapshot, setSearchSnapshot] = useState<Record<string, unknown>>({})
   const [searchError, setSearchError] = useState<string | null>(null)
+  /** Sonuç 0 çıkınca gevşetilen filtrelerin adları — kullanıcıya söylüyoruz. */
+  const [relaxedFilters, setRelaxedFilters] = useState<string[]>([])
 
   // Form state
   const [country, setCountry] = useState<string | null>(null)
@@ -326,15 +250,54 @@ export default function Home() {
       }
     }
 
-    const first = await run(baseParams)
-    if (!first.ok) {
-      setSearchError(first.error)
+    /**
+     * SINIRLI GEVŞETME.
+     *
+     * Kayıtta bir şart YAZMIYORSA o boyut zaten elemez — bunu SQL hallediyor
+     * (bkz. 128). Buradaki gevşetme başka bir şey: kayıt şartı AÇIKÇA yazmış
+     * ama kullanıcının girdisiyle uyuşmuyorsa, sonuç boş kalmasın diye o
+     * girdiden vazgeçiyoruz.
+     *
+     * Ülke, vatandaşlık ve yaş bu listede YOK ve olmayacak. Onlar kullanıcının
+     * kim olduğu ve nereye gitmek istediği; gevşetilirse başvuramayacağı bir
+     * fırsat gösterilmiş olur. Sonuç 0 kalsa bile 0 kalır.
+     */
+    const relaxOrder: { key: keyof MatchParams; label: string }[] = [
+      { key: 'p_field',       label: 'Bölüm' },
+      { key: 'p_study_level', label: 'Eğitim kademesi' },
+      { key: 'p_language',    label: 'Dil' },
+    ]
+
+    const params: MatchParams = { ...baseParams }
+    const relaxed: string[] = []
+
+    let res = await run(params)
+    if (!res.ok) {
+      setSearchError(res.error)
       setResults([])
+      setRelaxedFilters([])
       setLoading(false)
       return
     }
 
-    setResults(first.rows)
+    for (const f of relaxOrder) {
+      if (res.rows.length > 0) break
+      if (params[f.key] == null) continue
+      ;(params as Record<string, unknown>)[f.key as string] = null
+      relaxed.push(f.label)
+      const next = await run(params)
+      if (!next.ok) {
+        setSearchError(next.error)
+        setResults([])
+        setRelaxedFilters(relaxed)
+        setLoading(false)
+        return
+      }
+      res = next
+    }
+
+    setResults(res.rows)
+    setRelaxedFilters(relaxed)
     setActiveCategory(null)
     setSearchSnapshot({ country, category, citizenship, studyLevel, field, language })
     setStep('results')
@@ -390,7 +353,8 @@ export default function Home() {
             lineHeight: 1.6, marginBottom: 24,
           }}>
             Hiçbir alan zorunlu değil — ne kadarını doldurursan eşleşme o kadar isabetli olur.
-            Sonuç çıkmazsa filtreleri biz gevşetiriz.
+            Sonuç çıkmazsa bölüm, kademe ve dil filtrelerini gevşetiriz; ülke,
+            vatandaşlık ve yaş asla gevşemez.
           </p>
 
           <ProgressMeter progress={progress} filled={activeFilterCount} total={filledFlags.length} />
@@ -605,6 +569,25 @@ export default function Home() {
             </button>
           }
         />
+
+        {/* Gevşetilen filtreler — sessizce yapılırsa kullanıcı sonuçların
+            neden istediğinden geniş olduğunu anlamaz. Ülke/vatandaşlık/yaş
+            bu listede asla görünmez; onlar gevşetilmiyor. */}
+        {relaxedFilters.length > 0 && (
+          <div
+            className="fx-fade-in-up"
+            style={{
+              margin: '0 0 18px', padding: '12px 15px', borderRadius: 13,
+              background: 'rgba(255, 181, 71, 0.10)',
+              border: '1px solid rgba(255, 181, 71, 0.32)',
+              fontSize: 13, lineHeight: 1.55, color: '#FFD79A',
+            }}
+          >
+            Tam eşleşme çıkmadı; <strong>{relaxedFilters.join(', ')}</strong>{' '}
+            {relaxedFilters.length > 1 ? 'filtrelerini' : 'filtresini'} gevşettik.
+            Ülke, vatandaşlık ve yaş aynen uygulandı.
+          </div>
+        )}
 
         {/* Step pills */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 22 }}>
