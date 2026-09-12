@@ -20,9 +20,17 @@
  *     FALLBACK_MS sonra tarayıcı menüsünü tarif eden bir şerit gösteriyoruz;
  *     "Ekle" düğmesi olmadan, çünkü elimizde açacak bir istem yok.
  *
- * UX kuralı 3 ("engel koyma"): bu bir modal değil, kapatılabilir bir şerit.
- * Kapatılırsa localStorage'a yazılır ve bir daha gösterilmez; zaten uygulama
- * olarak açılmış (standalone) kullanıcıya hiç görünmez.
+ * KAPATMA YOK (bilinçli tercih). Şerit kalıcı; "Kapat" düğmesi ve
+ * localStorage'daki kapatma işareti kaldırıldı. Tek tıkla sonsuza kadar
+ * kaybolması, yanlışlıkla kapatan kullanıcının uygulamayı bir daha asla
+ * kuramaması demekti.
+ *
+ * Yine de iki durumda görünmüyor ve bunlar "kapatma" değil, bağlam:
+ *   • Uygulama olarak açılmışsa (standalone) — zaten içindesin.
+ *   • Kurulum bu oturumda tamamlandıysa (`appinstalled`) — iş bitti.
+ *
+ * Şerit ekranın altına sabitlendiği için, göründüğü sürece <body>'ye alt
+ * boşluk ekliyor; yoksa sayfanın son satırını kalıcı olarak örterdi.
  */
 
 import { useEffect, useState } from 'react'
@@ -37,8 +45,6 @@ import { useEffect, useState } from 'react'
  *
  * ESKİ ANAHTAR TEMİZLENİYOR: bırakılırsa tarayıcıda ölü bir kayıt kalır.
  */
-const DISMISS_KEY = 'fe-install-hint-dismissed-v2'
-const LEGACY_DISMISS_KEY = 'fe-install-hint-dismissed'
 /**
  * Olay gelmezse elle tarif eden şeridi bu kadar sonra göster.
  *
@@ -73,15 +79,12 @@ export default function InstallHint() {
       || (window.navigator as Navigator & { standalone?: boolean }).standalone === true
     if (standalone) return
 
-    let dismissed = false
+    // Eski sürümlerin bıraktığı kapatma işaretleri artık okunmuyor; tarayıcıda
+    // ölü kayıt kalmasın diye siliniyor.
     try {
-      dismissed = localStorage.getItem(DISMISS_KEY) === '1'
-      localStorage.removeItem(LEGACY_DISMISS_KEY)
-    } catch {
-      // Depolama kapalıysa (gizli sekme, katı gizlilik ayarı) ipucu gösterilir;
-      // kapatma kalıcı olmaz ama hiçbir şey kırılmaz.
-    }
-    if (dismissed) return
+      localStorage.removeItem('fe-install-hint-dismissed')
+      localStorage.removeItem('fe-install-hint-dismissed-v2')
+    } catch { /* depolama kapalıysa geç */ }
 
     const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent)
       && !/crios|fxios/i.test(navigator.userAgent)
@@ -119,19 +122,27 @@ export default function InstallHint() {
     }
   }, [])
 
-  function dismiss() {
-    setMode(null)
-    try { localStorage.setItem(DISMISS_KEY, '1') } catch { /* depolama yoksa geç */ }
-  }
-
   async function install() {
     const deferred = window.__feInstallPrompt
     if (!deferred) return
     await deferred.prompt()
-    await deferred.userChoice
+    const { outcome } = await deferred.userChoice
     window.__feInstallPrompt = null
-    dismiss()
+    // Kullanıcı istemi reddederse şerit kalır (elle kurulum hâlâ mümkün);
+    // kabul ederse `appinstalled` olayı zaten gizleyecek.
+    if (outcome === 'accepted') setMode(null)
+    else setMode('manual')
   }
+
+  // Şerit kalıcı ve `position: fixed`. Alt boşluk eklenmezse sayfanın son
+  // satırını (sonuç ekranındaki e-posta kutusu, formun "Fırsatları göster"
+  // düğmesi) sürekli örter.
+  useEffect(() => {
+    if (!mode) return
+    const onceki = document.body.style.paddingBottom
+    document.body.style.paddingBottom = '96px'
+    return () => { document.body.style.paddingBottom = onceki }
+  }, [mode])
 
   if (!mode) return null
 
@@ -156,8 +167,7 @@ export default function InstallHint() {
         boxShadow: '0 24px 50px -24px rgba(0,0,0,0.9)',
       }}
     >
-      {/* next/image kullanılmıyor: 34px sabit, layout hesabı gerektirmiyor ve
-          bu şerit yalnız kurulmamış kullanıcılara bir kez görünüyor. */}
+      {/* next/image kullanılmıyor: 34px sabit, layout hesabı gerektirmiyor. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src="/app-icons/icon-192.png" alt="" width={34} height={34}
            style={{ borderRadius: 9, flexShrink: 0 }} />
@@ -171,8 +181,8 @@ export default function InstallHint() {
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-        {mode === 'prompt' && (
+      {mode === 'prompt' && (
+        <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
           <button
             type="button"
             onClick={install}
@@ -184,20 +194,8 @@ export default function InstallHint() {
           >
             Ekle
           </button>
-        )}
-        <button
-          type="button"
-          onClick={dismiss}
-          aria-label="İpucunu kapat"
-          style={{
-            fontSize: 12.5, fontWeight: 600, padding: '9px 14px', borderRadius: 999,
-            border: '1px solid rgba(255,255,255,0.16)', cursor: 'pointer',
-            color: '#B3ACDE', background: 'transparent',
-          }}
-        >
-          Kapat
-        </button>
-      </div>
+        </div>
+      )}
     </div>
   )
 }
