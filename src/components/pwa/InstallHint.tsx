@@ -152,11 +152,21 @@ export default function InstallHint() {
 
   if (!mode) return null
 
+  // Tarif ADIM ZİNCİRİ olarak yazılıyor: "tarayıcı menüsünden ekleyebilirsin"
+  // gibi genel bir cümle, menüyü bilmeyen kullanıcıyı yolda bırakıyor.
+  // Android'de seçenek Chrome sürümüne göre iki farklı yerde durabiliyor;
+  // ikisi de yazılı, önce gerçek cihazda doğrulanan yol.
   const aciklama = mode === 'ios'
-    ? 'Paylaş ⎋ menüsünden "Ana Ekrana Ekle" seçeneğine dokun.'
+    ? 'Paylaş ⎋ → Ana Ekrana Ekle'
     : mode === 'manual'
-      ? 'Tarayıcı menüsünden ⋮ "Uygulamayı yükle" ya da "Ana ekrana ekle" seçeneğine dokun.'
+      ? '⋮ → Paylaş → Daha fazla → Ana ekrana ekle'
       : 'Ana ekranından tek dokunuşla aç, tarayıcı aramana gerek kalmasın.'
+
+  // Bazı Chrome sürümlerinde seçenek doğrudan ⋮ menüsünde; kısa bir ikinci
+  // satır olarak veriliyor ki asıl zincir kalabalıklaşmasın.
+  const altAciklama = mode === 'manual'
+    ? 'Bazı sürümlerde doğrudan ⋮ → Uygulamayı yükle'
+    : null
 
   const kurulabilir = mode === 'prompt'
 
@@ -188,9 +198,17 @@ export default function InstallHint() {
         <div style={{ fontSize: 13.5, fontWeight: 600, color: '#F4F2FF', marginBottom: 2 }}>
           Uygulama olarak ekle
         </div>
-        <div style={{ fontSize: 12, color: '#B3ACDE', lineHeight: 1.5 }}>
+        <div style={{
+          fontSize: 12.5, color: '#D8D3FF', lineHeight: 1.5,
+          fontWeight: mode === 'prompt' ? 400 : 600,
+        }}>
           {aciklama}
         </div>
+        {altAciklama && (
+          <div style={{ fontSize: 11, color: '#8F88BE', lineHeight: 1.5, marginTop: 3 }}>
+            {altAciklama}
+          </div>
+        )}
       </div>
 
       {mode === 'prompt' && (
