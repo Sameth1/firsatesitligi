@@ -28,8 +28,17 @@
 import { useEffect, useState } from 'react'
 
 const DISMISS_KEY = 'fe-install-hint-dismissed'
-/** Olay gelmezse elle tarif eden şeridi bu kadar sonra göster. */
-const FALLBACK_MS = 12_000
+/**
+ * Olay gelmezse elle tarif eden şeridi bu kadar sonra göster.
+ *
+ * 12 saniyeydi ve pratikte "hiç gelmiyor" demekti: kullanıcı sayfayı açıp
+ * bakıyor, şerit yok, sekmeyi kapatıyor. Chrome kurulabilirlik ölçütleri
+ * karşılanıyorsa `beforeinstallprompt`'u yüklemeden sonra bir iki saniye
+ * içinde gönderiyor; o süre içinde gelmediyse bu sayfa görüntülemesinde
+ * gelmeyecek demektir. Olay yine de sonradan gelirse mod 'prompt'a yükselir
+ * ve "Ekle" düğmesi belirir.
+ */
+const FALLBACK_MS = 3_500
 
 type InstallPromptEvent = Event & {
   prompt: () => Promise<void>
