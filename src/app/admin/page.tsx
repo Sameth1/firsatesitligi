@@ -327,19 +327,6 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Visitor analytics hint */}
-        {!process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN && (
-          <div style={{
-            background: '#fff', border: '0.5px solid #e0e0e0', borderRadius: 10,
-            padding: '10px 14px', fontSize: 11, color: '#888', marginBottom: 16, lineHeight: 1.5,
-          }}>
-            Ziyaretçi/sayfa görüntüleme sayısı için <strong>Plausible Analytics</strong> entegre değil.
-            <br />
-            <code>.env.local</code> içine <code>NEXT_PUBLIC_PLAUSIBLE_DOMAIN=firsatesitligi.com</code>
-            ekleyip yeniden başlat — script otomatik yüklenir, sayım dashboard.plausible.io üzerinden takip edilir.
-          </div>
-        )}
-
         {/* Filter tabs */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
           {FILTERS.map(item => (
