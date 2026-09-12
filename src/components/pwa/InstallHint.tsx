@@ -3,29 +3,49 @@
 /**
  * "Ana ekrana ekle" ipucu.
  *
- * Neden iki ayrı yol: Chrome/Android `beforeinstallprompt` olayını verir ve
- * kendi istemini açabiliriz. Safari iOS bu olayı HİÇ vermez (Next'in PWA
- * rehberi de bunu ayrıca uyarıyor) — orada kullanıcıya Paylaş menüsünü tarif
- * etmekten başka yol yok.
+ * ÜÇ AYRI YOL, çünkü tarayıcılar aynı davranmıyor:
  *
- * UX kuralı 3 (“engel koyma”): bu bir modal değil, kapatılabilir bir şerit.
- * Kapatılırsa localStorage'a yazılır ve bir daha gösterilmez; zaten kurulu
- * olan (standalone) kullanıcıya hiç görünmez.
+ *  1. Chrome / Edge — `beforeinstallprompt` olayını verir ve kendi istemimizi
+ *     açabiliriz. AMA olay hidrasyondan ÖNCE tetikleniyor: dinleyiciyi
+ *     `useEffect` içinde bağlamak geç kalıyordu ve şerit hiç görünmüyordu.
+ *     Olayı artık layout'taki satır içi script yakalayıp
+ *     `window.__feInstallPrompt`'a koyuyor; burada ona bakıyoruz.
+ *
+ *  2. Safari iOS — bu olayı HİÇ vermez. Kullanıcıya Paylaş menüsünü tarif
+ *     etmekten başka yol yok.
+ *
+ *  3. Olay hiç gelmeyen diğer durumlar — Chrome kurulabilirlik ölçütlerini
+ *     kendi zamanlamasıyla değerlendiriyor ve olayı bazen hiç göndermiyor
+ *     (etkileşim geçmişi yetersizse, Firefox'ta hiç yok). Bu durumda
+ *     FALLBACK_MS sonra tarayıcı menüsünü tarif eden bir şerit gösteriyoruz;
+ *     "Ekle" düğmesi olmadan, çünkü elimizde açacak bir istem yok.
+ *
+ * UX kuralı 3 ("engel koyma"): bu bir modal değil, kapatılabilir bir şerit.
+ * Kapatılırsa localStorage'a yazılır ve bir daha gösterilmez; zaten uygulama
+ * olarak açılmış (standalone) kullanıcıya hiç görünmez.
  */
 
 import { useEffect, useState } from 'react'
 
 const DISMISS_KEY = 'fe-install-hint-dismissed'
+/** Olay gelmezse elle tarif eden şeridi bu kadar sonra göster. */
+const FALLBACK_MS = 12_000
 
 type InstallPromptEvent = Event & {
   prompt: () => Promise<void>
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
 }
 
+declare global {
+  interface Window {
+    __feInstallPrompt?: InstallPromptEvent | null
+  }
+}
+
+type Mode = 'prompt' | 'ios' | 'manual'
+
 export default function InstallHint() {
-  const [deferred, setDeferred] = useState<InstallPromptEvent | null>(null)
-  const [isIos, setIsIos] = useState(false)
-  const [show, setShow] = useState(false)
+  const [mode, setMode] = useState<Mode | null>(null)
 
   useEffect(() => {
     // Zaten uygulama olarak açılmışsa ipucunun anlamı yok.
@@ -42,47 +62,63 @@ export default function InstallHint() {
     }
     if (dismissed) return
 
-    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent)
+    const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent)
       && !/crios|fxios/i.test(navigator.userAgent)
-    if (ios) {
-      // queueMicrotask: effect gövdesinde senkron setState zincirleme render
-      // tetikliyor (react-hooks/set-state-in-effect). Admin ekranlarındaki
-      // mevcut desenle aynı.
-      queueMicrotask(() => { setIsIos(true); setShow(true) })
+
+    // queueMicrotask: effect gövdesinde senkron setState zincirleme render
+    // tetikliyor (react-hooks/set-state-in-effect).
+    if (isIos) {
+      queueMicrotask(() => setMode('ios'))
       return
     }
 
-    // Olay dinleyicisinden gelen setState effect gövdesinde değil, sorun yok.
-    const onPrompt = (e: Event) => {
-      e.preventDefault()               // tarayıcının kendi istemini erteler
-      setDeferred(e as InstallPromptEvent)
-      setShow(true)
+    // Hidrasyondan önce yakalanmış bir istem var mı?
+    if (window.__feInstallPrompt) {
+      queueMicrotask(() => setMode('prompt'))
+      return
     }
-    window.addEventListener('beforeinstallprompt', onPrompt)
 
-    const onInstalled = () => setShow(false)
-    window.addEventListener('appinstalled', onInstalled)
+    const onReady = () => setMode('prompt')
+    const onDone = () => setMode(null)
+    window.addEventListener('fe-install-ready', onReady)
+    window.addEventListener('fe-install-done', onDone)
+    // Satır içi script çalışmadıysa (CSP, eski deploy) doğrudan da dinle.
+    window.addEventListener('beforeinstallprompt', onReady)
+
+    // Olay hiç gelmezse elle tarif et.
+    const timer = window.setTimeout(() => {
+      setMode(current => current ?? 'manual')
+    }, FALLBACK_MS)
 
     return () => {
-      window.removeEventListener('beforeinstallprompt', onPrompt)
-      window.removeEventListener('appinstalled', onInstalled)
+      window.clearTimeout(timer)
+      window.removeEventListener('fe-install-ready', onReady)
+      window.removeEventListener('fe-install-done', onDone)
+      window.removeEventListener('beforeinstallprompt', onReady)
     }
   }, [])
 
   function dismiss() {
-    setShow(false)
+    setMode(null)
     try { localStorage.setItem(DISMISS_KEY, '1') } catch { /* depolama yoksa geç */ }
   }
 
   async function install() {
+    const deferred = window.__feInstallPrompt
     if (!deferred) return
     await deferred.prompt()
     await deferred.userChoice
-    setDeferred(null)
+    window.__feInstallPrompt = null
     dismiss()
   }
 
-  if (!show) return null
+  if (!mode) return null
+
+  const aciklama = mode === 'ios'
+    ? 'Paylaş ⎋ menüsünden "Ana Ekrana Ekle" seçeneğine dokun.'
+    : mode === 'manual'
+      ? 'Tarayıcı menüsünden ⋮ "Uygulamayı yükle" ya da "Ana ekrana ekle" seçeneğine dokun.'
+      : 'Ana ekranından tek dokunuşla aç, tarayıcı aramana gerek kalmasın.'
 
   return (
     <div
@@ -110,14 +146,12 @@ export default function InstallHint() {
           Uygulama olarak ekle
         </div>
         <div style={{ fontSize: 12, color: '#B3ACDE', lineHeight: 1.5 }}>
-          {isIos
-            ? 'Paylaş ⎋ menüsünden "Ana Ekrana Ekle" seçeneğine dokun.'
-            : 'Ana ekranından tek dokunuşla aç, tarayıcı aramana gerek kalmasın.'}
+          {aciklama}
         </div>
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-        {!isIos && deferred && (
+        {mode === 'prompt' && (
           <button
             type="button"
             onClick={install}

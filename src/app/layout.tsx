@@ -93,6 +93,34 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
+        {/*
+          beforeinstallprompt YARIŞI.
+
+          Chrome bu olayı sayfa yüklenir yüklenmez, React hidrasyonundan ÖNCE
+          tetikliyor. InstallHint dinleyicisini `useEffect` içinde bağladığı
+          için olay çoktan geçmiş oluyordu ve bir daha gelmiyordu — şerit hiç
+          görünmüyordu.
+
+          next/script + strategy="beforeInteractive" YETMİYOR: ölçüldü, App
+          Router'da bu script DOMContentLoaded'dan SONRA çalışıyor (o anda
+          `'__feInstallPrompt' in window` hâlâ false). Bu yüzden ham bir
+          <script> etiketi kullanıyoruz — HTML ayrıştırılırken, sayfanın kendi
+          scriptlerinden önce çalışır.
+        */}
+        <script
+          dangerouslySetInnerHTML={{ __html: `(function(){
+            window.__feInstallPrompt = null;
+            window.addEventListener('beforeinstallprompt', function (e) {
+              e.preventDefault();
+              window.__feInstallPrompt = e;
+              window.dispatchEvent(new Event('fe-install-ready'));
+            });
+            window.addEventListener('appinstalled', function () {
+              window.__feInstallPrompt = null;
+              window.dispatchEvent(new Event('fe-install-done'));
+            });
+          })();` }}
+        />
         <RootAuthHashRedirect />
         <ServiceWorkerRegistrar />
         <Script
