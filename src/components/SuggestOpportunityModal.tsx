@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
+import { COUNTRIES } from '@/lib/countries'
 
 const CATEGORIES = [
   { slug: 'scholarship',   label: 'Burs' },
@@ -39,10 +40,6 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
   const [categorySlug, setCategorySlug] = useState<string | null>(
     (searchSnapshot?.category as string) ?? null
   )
-
-  // Opsiyonel kimlik
-  const [nickname, setNickname] = useState('')
-  const [email, setEmail] = useState('')
 
   // Expand — opsiyonel detaylar
   const [expanded, setExpanded] = useState(false)
@@ -90,9 +87,10 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
           title: title.trim(),
           url: url.trim(),
           category_slug: categorySlug,
-          submitter_nickname: nickname.trim() || null,
-          submitter_email: email.trim() || null,
-          host_countries: hostCountry ? [hostCountry.toUpperCase()] : [],
+          // Takma ad ve e-posta artık sorulmuyor: UX kuralı 3 — işlevsel
+          // olarak şart olmayan kişisel veri istenmez. Sunucu tarafı bu
+          // alanları hâlâ kabul ediyor, biz göndermiyoruz.
+          host_countries: hostCountry ? [hostCountry] : [],
           deadline_text: deadlineText || null,
           funding_type: fundingType,
           age_min: ageMin ? parseInt(ageMin, 10) : null,
@@ -224,35 +222,6 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
               ))}
             </div>
 
-            {/* Opsiyonel kimlik bloğu */}
-            <div style={{
-              borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 14, marginBottom: 14,
-            }}>
-              <div style={{ fontSize: 11, color: 'var(--text-low)', marginBottom: 10 }}>
-                İsteğe bağlı
-              </div>
-
-              <Label text="Takma ad" />
-              <input
-                value={nickname}
-                onChange={e => setNickname(e.target.value)}
-                placeholder="@ayse (fırsatın altında görünür)"
-                style={{ ...inputStyle, marginBottom: 10 }}
-              />
-
-              <Label text="E-posta" />
-              <input
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="Geri dönüş istersen e-postanı bırak"
-                type="email"
-                style={{ ...inputStyle, marginBottom: 2 }}
-              />
-              <div style={{ fontSize: 10.5, color: 'var(--text-low)', marginBottom: 12, lineHeight: 1.5 }}>
-                Gerekirse seninle iletişime geçebilmemiz için bırakabilirsin.
-              </div>
-            </div>
-
             {/* Expand — opsiyonel detaylar */}
             <button
               type="button"
@@ -270,14 +239,23 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
               <div style={{ marginTop: 8 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
                   <div>
-                    <Label text="Ülke kodu" />
-                    <input
+                    <Label text="Ülke" />
+                    {/* Eskiden iki harfli kod isteniyordu ("DE, FR, ES...").
+                        Kullanıcı ISO kodu bilmek zorunda değil; yanlış kod
+                        girilirse kayıt o ülkeyi seçenlere hiç görünmüyordu.
+                        Artık ad seçiliyor, koda biz çeviriyoruz. */}
+                    <select
                       value={hostCountry}
                       onChange={e => setHostCountry(e.target.value)}
-                      placeholder="DE, FR, ES..."
-                      maxLength={2}
-                      style={inputStyle}
-                    />
+                      style={{ ...inputStyle, appearance: 'none', cursor: 'pointer',
+                               colorScheme: 'dark' }}
+                    >
+                      <option value="">Ülke seç…</option>
+                      <option value="*">Küresel / çevrim içi</option>
+                      {COUNTRIES.map(c => (
+                        <option key={c.code} value={c.code}>{c.nameTr}</option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <Label text="Son başvuru tarihi" />

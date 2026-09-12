@@ -27,7 +27,7 @@ const COUNTRIES: { code: string; label: string; language: string | null }[] = [
   { code: 'CH', label: 'İsviçre',     language: 'Almanca / Fransızca' },
   { code: 'IT', label: 'İtalya',      language: 'İtalyanca' },
   { code: 'ES', label: 'İspanya',     language: 'İspanyolca' },
-  { code: 'NL', label: 'Hollanda',    language: 'Hollandaca' },
+  { code: 'NL', label: 'Hollanda',    language: 'Flamenkçe' },
   { code: 'BE', label: 'Belçika',     language: 'Fransızca' },
   { code: 'AT', label: 'Avusturya',   language: 'Almanca' },
   { code: 'SE', label: 'İsveç',       language: 'İsveççe' },
@@ -98,7 +98,7 @@ const LANGUAGE_OPTIONS = [
   { value: 'fr', label: 'Fransızca' },
   { value: 'es', label: 'İspanyolca' },
   { value: 'it', label: 'İtalyanca' },
-  { value: 'nl', label: 'Hollandaca' },
+  { value: 'nl', label: 'Flamenkçe' },
   { value: 'tr', label: 'Türkçe' },
 ]
 
