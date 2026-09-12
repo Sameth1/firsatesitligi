@@ -33,7 +33,7 @@
  * boşluk ekliyor; yoksa sayfanın son satırını kalıcı olarak örterdi.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 /**
  * Anahtar SÜRÜMLÜ. Neden: şerit uzun süre Chrome'da hiç görünmüyordu
@@ -72,6 +72,10 @@ type Mode = 'prompt' | 'ios' | 'manual'
 
 export default function InstallHint() {
   const [mode, setMode] = useState<Mode | null>(null)
+  // Hem şeridin tamamı hem içindeki düğme install()'ı çağırıyor. Tıklama
+  // yukarı kabarırsa ikisi birden tetiklenir ve Chrome `prompt()` ikinci kez
+  // çağrılınca hata veriyor. Bu bayrak tek çağrıyı garanti ediyor.
+  const kuruluyor = useRef(false)
 
   useEffect(() => {
     // Zaten uygulama olarak açılmışsa ipucunun anlamı yok.
@@ -124,10 +128,12 @@ export default function InstallHint() {
 
   async function install() {
     const deferred = window.__feInstallPrompt
-    if (!deferred) return
+    if (!deferred || kuruluyor.current) return
+    kuruluyor.current = true
     await deferred.prompt()
     const { outcome } = await deferred.userChoice
     window.__feInstallPrompt = null
+    kuruluyor.current = false
     // Kullanıcı istemi reddederse şerit kalır (elle kurulum hâlâ mümkün);
     // kabul ederse `appinstalled` olayı zaten gizleyecek.
     if (outcome === 'accepted') setMode(null)
@@ -152,12 +158,18 @@ export default function InstallHint() {
       ? 'Tarayıcı menüsünden ⋮ "Uygulamayı yükle" ya da "Ana ekrana ekle" seçeneğine dokun.'
       : 'Ana ekranından tek dokunuşla aç, tarayıcı aramana gerek kalmasın.'
 
+  const kurulabilir = mode === 'prompt'
+
   return (
     <div
-      role="complementary"
+      role={kurulabilir ? undefined : 'complementary'}
       aria-label="Uygulamayı ana ekrana ekle"
+      // İstem hazırsa şeridin TAMAMI tıklanabilir: küçük ekranda 9px'lik
+      // düğmeyi ıskalamak kolay, tek dokunuşla kurulum bekleniyor.
+      onClick={kurulabilir ? install : undefined}
       style={{
         position: 'fixed', left: 12, right: 12, bottom: 12, zIndex: 60,
+        cursor: kurulabilir ? 'pointer' : 'default',
         maxWidth: 560, margin: '0 auto',
         display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
         padding: '12px 14px', borderRadius: 18,
@@ -185,7 +197,7 @@ export default function InstallHint() {
         <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
           <button
             type="button"
-            onClick={install}
+            onClick={e => { e.stopPropagation(); install() }}
             style={{
               fontSize: 12.5, fontWeight: 700, padding: '9px 18px', borderRadius: 999,
               border: 'none', cursor: 'pointer', color: '#150F35',
