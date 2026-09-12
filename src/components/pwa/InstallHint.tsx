@@ -20,12 +20,12 @@
  *     FALLBACK_MS sonra tarayıcı menüsünü tarif eden bir şerit gösteriyoruz;
  *     "Ekle" düğmesi olmadan, çünkü elimizde açacak bir istem yok.
  *
- * KAPATMA YOK (bilinçli tercih). Şerit kalıcı; "Kapat" düğmesi ve
- * localStorage'daki kapatma işareti kaldırıldı. Tek tıkla sonsuza kadar
- * kaybolması, yanlışlıkla kapatan kullanıcının uygulamayı bir daha asla
- * kuramaması demekti.
+ * KAPATMA SAYFAYA ÖZEL, KALICI DEĞİL. Sağdaki ✕ şeridi gizler ama hiçbir
+ * yere yazılmaz — sayfa yeniden açıldığında şerit geri gelir. Daha önce
+ * localStorage'a yazılıyordu ve tek tık şeridi sonsuza kadar öldürüyordu;
+ * yanlışlıkla kapatan kullanıcı uygulamayı bir daha asla kuramıyordu.
  *
- * Yine de iki durumda görünmüyor ve bunlar "kapatma" değil, bağlam:
+ * Ayrıca iki durumda hiç görünmüyor ve bunlar "kapatma" değil, bağlam:
  *   • Uygulama olarak açılmışsa (standalone) — zaten içindesin.
  *   • Kurulum bu oturumda tamamlandıysa (`appinstalled`) — iş bitti.
  *
@@ -126,6 +126,14 @@ export default function InstallHint() {
     }
   }, [])
 
+  // Yalnızca bu sayfa görüntülemesi için gizler. Bilerek hiçbir yere
+  // yazılmıyor: localStorage/sessionStorage kullanılsaydı şerit sonraki
+  // açılışlarda da gelmezdi; istenen davranış "her yeni açılışta geri gelsin".
+  function gizle(e: React.MouseEvent) {
+    e.stopPropagation()          // şeridin kendi onClick'i kurulumu başlatmasın
+    setMode(null)
+  }
+
   async function install() {
     const deferred = window.__feInstallPrompt
     if (!deferred || kuruluyor.current) return
@@ -211,8 +219,8 @@ export default function InstallHint() {
         )}
       </div>
 
-      {mode === 'prompt' && (
-        <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+        {kurulabilir && (
           <button
             type="button"
             onClick={e => { e.stopPropagation(); install() }}
@@ -224,8 +232,23 @@ export default function InstallHint() {
           >
             Ekle
           </button>
-        </div>
-      )}
+        )}
+        <button
+          type="button"
+          onClick={gizle}
+          aria-label="Şeridi kapat"
+          title="Kapat"
+          style={{
+            width: 30, height: 30, flexShrink: 0, borderRadius: 999,
+            display: 'grid', placeItems: 'center', lineHeight: 1,
+            fontSize: 15, color: '#B3ACDE', cursor: 'pointer',
+            background: 'rgba(255,255,255,0.06)',
+            border: '1px solid rgba(255,255,255,0.14)',
+          }}
+        >
+          ✕
+        </button>
+      </div>
     </div>
   )
 }
