@@ -96,7 +96,7 @@ Proje üç katmandan oluşur:
 | Konfigürasyon | `python-dotenv` | `.env` ortam değişkenleri |
 | Keşif LLM'i | Groq API (Llama 4) | Arama sorgusu üretimi, sayfa analizi |
 | Doğrulama LLM'i | NVIDIA NIM API (`nvidia/nemotron-3-super-120b-a12b`, OpenAI-uyumlu, ücretsiz tier) | Submission açık/kapalı & kategori doğrulaması |
-| Genel scraping | Jina Reader | Herhangi bir URL → temiz markdown |
+| Genel scraping | Scrapling (`Fetcher` → `StealthyFetcher`) | Herhangi bir URL → sayfa metni; bot koruması ya da JS ile gelen içerik varsa gizli tarayıcıya düşer |
 | Web arama | DuckDuckGo (`ddgs`) | API anahtarı gerektirmeyen arama |
 
 ---
@@ -112,7 +112,7 @@ Fırsatlar doğrudan yayına girmez; bir **inceleme hattından** geçer. Bu, hem
   Kullanıcı önerisi  ┐
   nasilgitmis.com    ├──►  submissions tablosu  ──►  validate_     ──►  opportunities
   Idealist           │     (status = 'pending')      submissions.py     (canlı site)
-  Genel URL (Jina)   ┘                                    │
+  Genel URL          ┘                                    │
                                                           │
                             ┌─────────────────────────────┤
                             │                             │
@@ -150,7 +150,7 @@ Standart `approve_submission()` RPC'si insan admin içindir. Agent'ın kullandı
 
 ## Otomasyon Scriptleri
 
-Tüm scriptler kök dizinde yer alır; `.env` dosyasından `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (service-role RLS'i bypass eder) okur.
+Scriptler kök dizinde (biri `scripts/` altında) yer alır; `.env` dosyasından `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (service-role RLS'i bypass eder) okur.
 
 | Script | Görev | Hedef |
 |---|---|---|
@@ -158,9 +158,12 @@ Tüm scriptler kök dizinde yer alır; `.env` dosyasından `SUPABASE_URL` + `SUP
 | `say_firsatlari.py` | Bulunan sitelerdeki tahmini fırsat sayısını sayar | `siteler_sayili.txt` |
 | `nasilgitmis_scraper.py` | nasilgitmis.com'dan Erasmus+/ESC/burs/staj fırsatlarını çeker | `submissions` (pending) |
 | `idealist_scraper.py` | idealist.org gönüllülük fırsatlarını çeker | `opportunities` |
-| `agent_reach_url_scraper.py` | Herhangi bir fırsat URL'sini Jina Reader'dan geçirip alan çıkarımı yapar | `submissions` (pending) |
+| `daad_scraper.py` | DAAD burs veritabanından Türkiye'ye açık programları çeker | `submissions` (pending) |
+| `youthop_scraper.py` | youthop.com fırsatlarını çeker | `submissions` (pending) |
+| `agent_reach_url_scraper.py` | Herhangi bir fırsat URL'sini Scrapling ile çekip alan çıkarımı yapar | `submissions` (pending) |
 | `validate_submissions.py` | İki katmanlı doğrulama ajanı (heuristik + NVIDIA NIM LLM), uygun önerileri otomatik onaylar | `submissions` → `opportunities` |
 | `link_audit_runner.py` | Aktif fırsatların `official_url`'lerine GET atıp sağlık durumunu kaydeder | `opportunities.last_url_check_*` |
+| `scripts/audit_opportunities.py` | Zamanlanmış link denetimi: ölü/kapanmış kayıtları pasifleştirir | `opportunities.is_active` |
 | `backfill_apply_links.py` | Bilgi sayfasından gerçek form/portal/e-posta/belgeyi en fazla iki adımda bulur; varsayılan salt-okunur rapor üretir | `opportunities` (yalnız `--apply`) |
 | `fix_broken_links.py` | Bozuk URL'leri aday URL'lerle değiştirir; hiçbiri çalışmazsa `is_active=false` yapar | `opportunities` |
 
@@ -176,6 +179,25 @@ Web'i otonom tarayan yapay zeka ajanı; arama sorguları üretmek, sayfaları an
 ```
 
 Tek çalıştırma örneği (5 tur, ~140 URL): 31 sayfa, ~184 tahmini fırsat tespit edildi.
+
+### Zamanlanmış İşler (GitHub Actions)
+
+Hattın tamamı `.github/workflows/` altında cron ile dönüyor; hepsi ayrıca
+`workflow_dispatch` ile elle tetiklenebiliyor. Saatler UTC — Türkiye saati +3.
+
+| Workflow | Cron (UTC) | Türkiye saati | Çalıştırdığı script | Yaptığı iş |
+|---|---|---|---|---|
+| `agent-triage.yml` | `0 */4 * * *` | her 4 saatte bir | `validate_submissions.py` | Bekleyen submission'ları `validate_submissions.py` ile doğrular, uygun olanları yayına alır |
+| `audit-opportunities.yml` | `0 3 * * *` | her gün 06:00 | `scripts/audit_opportunities.py` | Aktif fırsatların bağlantılarını yoklar, ölmüş olanları pasifleştirir |
+| `opportunity-discovery.yml` | `20 3 * * 1` | Pazartesi 06:20 | `nasilgitmis_scraper.py` + `daad_scraper.py` | Kaynak siteleri tarar, yeni fırsatları `submissions`'a pending olarak yazar |
+| `direct-application-links.yml` | `40 4 * * 0` | Pazar 07:40 | `backfill_apply_links.py` | Bilgi sayfası kayıtlarının gerçek başvuru bağlantısını bulup doldurur |
+
+Keşif haftalık: kaynaklar (nasilgitmis, DAAD) günlük yenilenmediği için daha
+sık çalıştırmak aynı URL'leri tekrar tekrar eliyor, yeni kayıt getirmiyordu.
+
+Not: `schedule` olayında `workflow_dispatch` girdileri boş gelir, dolayısıyla
+elle çalıştırmadaki varsayılanlar zamanlanmış koşuya uygulanmaz — script'lerin
+kendi varsayılanları geçerlidir.
 
 ---
 
@@ -253,16 +275,16 @@ Proje, **GEO (Generative Engine Optimization)** — web sitelerinin ChatGPT, Cla
 - GEO & SEO optimizasyonları (`llms.txt`, JSON-LD, sitemap, robots.txt)
 - Otonom fırsat keşif ajanı (`site_bulucu.py` + `say_firsatlari.py`)
 - Site-spesifik scraper'lar (`nasilgitmis_scraper.py`, `idealist_scraper.py`)
-- Genel amaçlı URL scraper'ı (`agent_reach_url_scraper.py`, Jina Reader)
+- Genel amaçlı URL scraper'ı (`agent_reach_url_scraper.py`, Scrapling)
 - Link sağlığı otomasyonu (`link_audit_runner.py`, `fix_broken_links.py`)
 - Fail-closed `agent_approve_submission` RPC'si; migration 099'un bağlı Supabase projesinde doğrulanması
 - Kaynak kanıt sayfası ile doğrudan başvuru hedefinin ayrılması (migration 100)
 - İki katmanlı doğrulama ajanı + kararlı onay/red mantığı (`validate_submissions.py`); NVIDIA NIM canlı API doğrulaması
 - `nasilgitmis_scraper.py` ile toplanan pending submission'ların doğrulama hattından geçirilmesi
+- Scraping + doğrulama hattının GitHub Actions cron'larıyla zamanlanması (triage, link denetimi, keşif, başvuru bağlantısı)
 
 ### 🗺️ Planlananlar
 
-- Scraping + doğrulama hattının zamanlanmış (cron) çalıştırılması
 - Scraper hata sayaçlarının ayrıştırılması (süresi geçmiş / ulaşılamadı / gerçek hata)
 - Kaynak site havuzunun genişletilmesi
 - Tez için GEO/SEO etki ölçümlerinin raporlanması
@@ -310,7 +332,15 @@ npm run dev
 ### Otomasyon Scriptleri (Python)
 
 ```bash
-pip install requests beautifulsoup4 python-dotenv groq ddgs
+pip install -r requirements.txt
+pip install groq ddgs
+```
+
+`agent_reach_url_scraper.py` ayrıca Scrapling istiyor. Tarayıcı indirdiği için
+ağır; yalnız o script'i çalıştıracaksan kur:
+
+```bash
+pip install "scrapling[fetchers]==0.4.8" && scrapling install
 ```
 
 Kök dizinde `.env` dosyası oluştur (bu dosya `.gitignore`'dadır — gizli kalır):
