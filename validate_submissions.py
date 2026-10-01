@@ -99,6 +99,11 @@ LLM_REASONING_EFFORT = os.getenv("LLM_REASONING_EFFORT", "none")
 # gelir; bütçe darsa content yarım/boş kalır (finish_reason='length') → parse
 # edilemez. Bu yüzden geniş tut.
 LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "3000"))
+# Bir çalıştırmanın yeni kayda BAŞLAMA süresi (dakika; 0 = sınırsız). GitHub
+# Actions işi 30 dakikada öldürülüyor; yarıda kesilen iş kırmızı görünür ve
+# o anki kaydın kararı yazılamaz. Bütçe dolunca kalan kayıtlar dokunulmadan
+# kuyrukta kalır, 4 saat sonraki çalışma devam eder.
+AGENT_TIME_BUDGET_MIN = float(os.getenv("AGENT_TIME_BUDGET_MIN", "0") or 0)
 PLATFORM_TIMEZONE = timezone(timedelta(hours=3), name="Europe/Istanbul")
 
 AGENT_MARKER = "[ajan]"       # admin_note öneki — tekrar çalıştırmada atlamak için
@@ -2916,7 +2921,13 @@ def main():
     print(f"{len(subs)} submission · {len(known_urls)} mevcut URL biliniyor · {mode}")
     print("─" * 64)
 
-    for sub in subs:
+    started = time.monotonic()
+    for index, sub in enumerate(subs):
+        elapsed_min = (time.monotonic() - started) / 60
+        if AGENT_TIME_BUDGET_MIN and elapsed_min >= AGENT_TIME_BUDGET_MIN:
+            print(f"\n⏱  Zaman bütçesi ({AGENT_TIME_BUDGET_MIN:g} dk) doldu — "
+                  f"{len(subs) - index} kayıt bir sonraki çalışmaya kaldı.")
+            break
         try:
             if sub.get("review_stage") == "agent_revision":
                 outcome = process_agent_revision(sub, args.dry_run, stats)
