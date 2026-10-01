@@ -57,6 +57,9 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          # İş 30 dakikada öldürülür; 22 dakikadan sonra yeni kayda başlanmaz,
+          # kalanlar 4 saat sonraki çalışmaya kalır (koşu kırmızıya dönmez).
+          AGENT_TIME_BUDGET_MIN: '22'
           INPUT_DRY_RUN: ${{ inputs.dry_run }}
           INPUT_RECHECK: ${{ inputs.recheck }}
           INPUT_LIMIT: ${{ inputs.limit }}

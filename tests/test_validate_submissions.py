@@ -33,7 +33,9 @@ def high_confidence_verdict():
         "guven": "yuksek",
         "tek_firsat": True,
         "dogrudan_firsat_sayfasi": True,
+        "resmi_kaynak": True,
         "son_tarih_dogrulandi": True,
+        "surekli_basvuru": False,
         "finansman_dogrulandi": True,
         "ulke_dogrulandi": True,
         "uygunluk_dogrulandi": True,
@@ -51,9 +53,17 @@ def high_confidence_verdict():
             "language_requirement": None,
             "required_languages": ["all"],
             "target_fields": ["all"],
+            "deadline": "2099-12-31",
         },
         "gerekce": "Bütün alanlar sayfada doğrulandı.",
     }
+
+
+def expected_patch(verdict):
+    """Onaydan önce submission'a yazılması beklenen alanlar."""
+    filters = dict(verdict["dogrulanmis_filtreler"])
+    deadline = filters.pop("deadline")
+    return {**filters, "deadline_text": deadline}
 
 
 def verdict_with_quotes(page_text):
@@ -131,7 +141,6 @@ class ApprovalGateTests(unittest.TestCase):
             "url": "",
             "category_slug": None,
             "host_countries": [],
-            "deadline_text": None,
             "funding_type": None,
             "eligibility_notes": "",
         }
@@ -144,6 +153,24 @@ class ApprovalGateTests(unittest.TestCase):
                         submission, high_confidence_verdict()
                     )
                 )
+
+    def test_free_text_or_missing_scraper_deadline_does_not_block(self):
+        # Son tarih scraper'dan değil, modelin kanıtladığı değerden gelir.
+        for value in (None, "", "Application deadline: 31 October 2099"):
+            with self.subTest(value=value):
+                submission = complete_submission()
+                submission["deadline_text"] = value
+                self.assertEqual(
+                    validator.auto_approval_blockers(
+                        submission, high_confidence_verdict()), [])
+
+    def test_past_iso_deadline_on_the_record_still_blocks(self):
+        submission = complete_submission()
+        submission["deadline_text"] = "2000-01-01"
+        self.assertIn(
+            "son başvuru tarihi geçmiş",
+            validator.auto_approval_blockers(submission, high_confidence_verdict()),
+        )
 
     def test_medium_confidence_blocks_approval(self):
         verdict = high_confidence_verdict()
@@ -176,13 +203,38 @@ class ApprovalGateTests(unittest.TestCase):
 
         self.assertIn("kanıta dayalı gerekçe eksik", blockers)
 
-    def test_failed_evidence_becomes_rejection_reason(self):
+    def test_verified_route_needs_a_direct_application_page(self):
         verdict = high_confidence_verdict()
         verdict["dogrudan_firsat_sayfasi"] = False
 
-        reasons = validator.evidence_rejection_reasons(verdict)
+        self.assertIn(
+            "doğrudan fırsat sayfası olduğu doğrulanmadı",
+            validator.route_blockers(complete_submission(), verdict),
+        )
 
-        self.assertIn("link doğrudan başvuru/resmî fırsat sayfası değil", reasons)
+    def test_guided_route_needs_an_official_page_not_a_direct_form(self):
+        submission = complete_submission()
+        submission.update({
+            "application_route_status": "guided",
+            "application_method": None,
+            "application_url_verified_at": None,
+            "application_url_final": None,
+        })
+        verdict = high_confidence_verdict()
+        verdict["dogrudan_firsat_sayfasi"] = False
+        self.assertEqual(validator.route_blockers(submission, verdict), [])
+
+        verdict["resmi_kaynak"] = False
+        self.assertIn(
+            "bilgi sayfasının resmî kaynak olduğu doğrulanmadı",
+            validator.route_blockers(submission, verdict),
+        )
+
+    def test_record_without_any_route_is_blocked(self):
+        submission = complete_submission()
+        submission["application_route_status"] = "unverified"
+        self.assertTrue(
+            validator.route_blockers(submission, high_confidence_verdict()))
 
     def test_aggregator_url_is_not_a_direct_link(self):
         submission = complete_submission()
@@ -223,11 +275,15 @@ class ApprovalGateTests(unittest.TestCase):
         self.assertTrue(validator.evidence_quote_blockers(page, verdict))
 
     def test_missing_quote_object_fails_closed(self):
+        # Her zaman alıntı isteyen altı alan + kısıt yazılmış tek filtre
+        # (study_level=["bachelor"]) raporlanır; kısıtsız filtreler raporlanmaz.
         blockers = validator.evidence_quote_blockers(
             "Some page text", high_confidence_verdict()
         )
 
-        self.assertEqual(len(blockers), len(validator.EVIDENCE_QUOTE_FIELDS))
+        self.assertEqual(
+            len(blockers), len(validator.ALWAYS_QUOTED_EVIDENCE) + 1, blockers)
+        self.assertIn("eğitim kademesi filtresi alıntısı eksik", blockers)
 
 
 class StrictFilterGateTests(unittest.TestCase):
@@ -326,7 +382,7 @@ class DecisionFlowTests(unittest.TestCase):
     @patch("validate_submissions.apply_decision")
     def test_incomplete_record_is_rejected_not_queued(self, apply_decision):
         submission = complete_submission()
-        submission.update({"id": "test", "deadline_text": None})
+        submission.update({"id": "test", "funding_type": None})
 
         result = validator.process(submission, True, set(), set(), {"llm_calls": 0})
 
@@ -624,7 +680,7 @@ class CitizenshipTests(unittest.TestCase):
 
         self.assertTrue(ok)
         self.assertEqual(
-            http_patch.call_args.kwargs['json'], verdict['dogrulanmis_filtreler'])
+            http_patch.call_args.kwargs['json'], expected_patch(verdict))
         http_post.assert_called_once()
 
     @patch('validate_submissions.requests.post')
@@ -653,7 +709,7 @@ class CitizenshipTests(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(
             http_patch.call_args.kwargs['json'],
-            high_confidence_verdict()['dogrulanmis_filtreler'],
+            expected_patch(high_confidence_verdict()),
         )
 
     def test_field_restriction_is_written_too(self):
@@ -668,7 +724,7 @@ class CitizenshipTests(unittest.TestCase):
             validator.approve_submission({'id': 'sub-1'}, verdict, dry_run=False)
 
             self.assertEqual(
-                http_patch.call_args.kwargs['json'], verdict['dogrulanmis_filtreler'])
+                http_patch.call_args.kwargs['json'], expected_patch(verdict))
 
     def test_unknown_field_slugs_are_dropped(self):
         # UI'da olmayan bir slug yazmak kaydı o bölümü seçenden gizlerdi.
@@ -779,7 +835,7 @@ class ReligionPolicyTests(unittest.TestCase):
         self.assertEqual(validator.decide(verdict)[0], "onayla")
 
     def test_religion_word_blocks_auto_approval_even_if_llm_says_no(self):
-        """Model 'şart yok' dese bile metinde din geçiyorsa insana gider."""
+        """Model 'şart yok' dese bile metinde din geçiyorsa kayıt reddedilir."""
         sub = complete_submission()
         sub["eligibility_notes"] = "Open to protestant students of all disciplines."
         verdict = high_confidence_verdict()
@@ -812,3 +868,407 @@ class FieldDictionaryTests(unittest.TestCase):
     def test_unknown_slug_is_dropped(self):
         self.assertEqual(validator.clean_fields(["mechatronics", "uydurma"]),
                          ["mechatronics"])
+
+
+# ─── Filtre politikası (Eylül 2026) ──────────────────────────────────────────
+# Tek ölçüt doğruluk: sayfa kısıt koyuyorsa kısıt kanıtıyla yazılır, koymuyorsa
+# kısıtsız yazılır. Uyruk ve yaşta "kısıt yok" kararı ayrıca tam sayfa
+# taramasıyla sınanır. Son tarih birebir alıntıdan deterministik doğrulanır.
+
+SILENT_PAGE = (
+    "Scholarship programme for graduates. Fully funded. Hosted in Germany. "
+    "Bachelor students may apply. Application deadline: 15 November 2099. "
+    "Applications are open now."
+)
+
+
+def silent_page_verdict():
+    """Sayfa uyruk, yaş, dil ve bölümden hiç bahsetmiyor."""
+    verdict = high_confidence_verdict()
+    verdict["dogrulanmis_filtreler"]["deadline"] = "2099-11-15"
+    verdict["kanitlar"] = {
+        "guncellik": "Applications are open now",
+        "son_tarih": "Application deadline: 15 November 2099",
+        "kategori": "Scholarship programme for graduates",
+        "finansman": "Fully funded",
+        "ulke": "Hosted in Germany",
+        "uygunluk": "Bachelor students may apply",
+        "uyruk": "",
+        "yas": "",
+        "egitim": "Bachelor students may apply",
+        "dil": "",
+        "bolum": "",
+    }
+    return verdict
+
+
+class SilentPagePolicyTests(unittest.TestCase):
+    def test_silence_is_no_restriction_and_needs_no_quote(self):
+        verdict = silent_page_verdict()
+        self.assertEqual(
+            validator.page_evidence_blockers(
+                SILENT_PAGE, SILENT_PAGE, verdict, today=date(2026, 9, 29)),
+            [],
+        )
+        self.assertEqual(validator.strict_filter_blockers(verdict), [])
+
+    def test_restriction_still_needs_a_verbatim_quote(self):
+        verdict = silent_page_verdict()
+        verdict["dogrulanmis_filtreler"]["age_min"] = 18
+        verdict["dogrulanmis_filtreler"]["age_max"] = 30
+        self.assertIn(
+            "yaş filtresi alıntısı eksik",
+            validator.evidence_quote_blockers(SILENT_PAGE, verdict),
+        )
+        verdict["kanitlar"]["yas"] = "aged 18 to 30"
+        self.assertIn(
+            "yaş filtresi alıntısı sayfa metninde bulunamadı",
+            validator.evidence_quote_blockers(SILENT_PAGE, verdict),
+        )
+
+    def test_unverified_openness_quote_is_dropped_not_stored(self):
+        verdict = silent_page_verdict()
+        verdict["kanitlar"]["uyruk"] = "Open to all nationalities"   # sayfada yok
+        self.assertEqual(validator.evidence_quote_blockers(SILENT_PAGE, verdict), [])
+        self.assertEqual(verdict["kanitlar"]["uyruk"], "")
+
+    def test_flag_false_means_ambiguous_and_blocks(self):
+        verdict = silent_page_verdict()
+        verdict["uyruk_dogrulandi"] = False
+        self.assertIn(
+            "uyruk filtresi kesin doğrulanmadı",
+            validator.strict_filter_blockers(verdict),
+        )
+
+
+class StrictSilenceScanTests(unittest.TestCase):
+    """Uyruk/yaş (ve dil sertifikası) kısıtını modelin kaçırmasına karşı ağ."""
+
+    def scan(self, page, **filters):
+        verdict = silent_page_verdict()
+        verdict["dogrulanmis_filtreler"].update(filters)
+        return validator.strict_silence_blockers(page, verdict)
+
+    def test_missed_citizenship_condition_is_caught(self):
+        for page in (
+            "Only citizens of EU member states are eligible.",
+            "Applicants must hold the nationality of a DAC country.",
+            "Başvuru için T.C. vatandaşı olmak gerekir.",
+            "Adayların Alman vatandaşı olması gerekir.",
+            "Uyruk şartı: yalnız AB ülkeleri.",
+        ):
+            with self.subTest(page=page):
+                blockers = self.scan(page)
+                self.assertTrue(any("uyruk" in b for b in blockers), blockers)
+
+    def test_missed_age_condition_is_caught(self):
+        for page in (
+            "Participants must be aged 18-30.",
+            "Applicants under the age of 35 may apply.",
+            "18-30 yaş arası gençler başvurabilir.",
+            "Yaş sınırı 30'dur.",
+        ):
+            with self.subTest(page=page):
+                blockers = self.scan(page)
+                self.assertTrue(any("yaş" in b for b in blockers), blockers)
+
+    def test_missed_language_certificate_is_caught(self):
+        blockers = self.scan("An IELTS score of 6.5 is required.")
+        self.assertTrue(any("dil" in b for b in blockers), blockers)
+
+    def test_topic_words_are_not_conditions(self):
+        # Gençlik projelerinde "vatandaşlık" konu, "yaşayan" yaş değil.
+        for page in (
+            "A training course on active citizenship and digital citizenship.",
+            "Aktif vatandaşlık temalı gençlik değişimi.",
+            "Türkiye'de yaşayan gençler için yaşam becerileri atölyesi.",
+            "Web pages and images of the programme. English | Deutsch",
+        ):
+            with self.subTest(page=page):
+                self.assertEqual(self.scan(page), [])
+
+    def test_recorded_restriction_skips_the_scan(self):
+        # Kısıt yazıldıysa tarama değil alıntı kapısı devrede.
+        self.assertEqual(
+            self.scan("Only citizens of China may apply.",
+                      eligible_citizenships=["CN"]),
+            [],
+        )
+
+    def test_verified_openness_quote_skips_the_scan(self):
+        page = SILENT_PAGE + " Open to all nationalities."
+        verdict = silent_page_verdict()
+        verdict["kanitlar"]["uyruk"] = "Open to all nationalities"
+        self.assertEqual(validator.evidence_quote_blockers(page, verdict), [])
+        self.assertEqual(validator.strict_silence_blockers(page, verdict), [])
+
+    def test_restriction_quoted_as_openness_does_not_skip_the_scan(self):
+        # Model kısıtsız yazıp kanıt olarak kısıt cümlesini verdi: çelişki.
+        page = SILENT_PAGE + " Applicants must be citizens of Germany."
+        verdict = silent_page_verdict()
+        verdict["kanitlar"]["uyruk"] = "Applicants must be citizens of Germany"
+        self.assertEqual(validator.evidence_quote_blockers(page, verdict), [])
+        self.assertTrue(validator.strict_silence_blockers(page, verdict))
+
+    def test_openness_quote_does_not_hide_another_condition(self):
+        page = (SILENT_PAGE + " Open to all nationalities. "
+                "Only nationals of EU member states receive the travel grant.")
+        verdict = silent_page_verdict()
+        verdict["kanitlar"]["uyruk"] = "Open to all nationalities"
+        self.assertTrue(validator.strict_silence_blockers(page, verdict))
+
+    def test_scan_sees_text_beyond_the_llm_truncation(self):
+        verdict = silent_page_verdict()
+        truncated = SILENT_PAGE
+        full = SILENT_PAGE + (" filler" * 5000) + " Only nationals of Norway may apply."
+        self.assertEqual(
+            validator.page_evidence_blockers(
+                truncated, truncated, verdict, today=date(2026, 9, 29)), [])
+        self.assertTrue(
+            validator.page_evidence_blockers(
+                truncated, full, verdict, today=date(2026, 9, 29)))
+
+
+class DeadlineEvidenceTests(unittest.TestCase):
+    TODAY = date(2026, 9, 29)
+
+    def verdict(self, quote, deadline, rolling=False):
+        verdict = silent_page_verdict()
+        verdict["kanitlar"]["son_tarih"] = quote
+        verdict["dogrulanmis_filtreler"]["deadline"] = deadline
+        verdict["surekli_basvuru"] = rolling
+        return verdict
+
+    def test_declared_date_must_appear_in_the_quote(self):
+        ok = self.verdict("Application deadline: 15 November 2099", "2099-11-15")
+        self.assertEqual(validator.deadline_verification_blockers(ok, self.TODAY), [])
+        wrong = self.verdict("Application deadline: 15 November 2099", "2099-11-30")
+        self.assertTrue(validator.deadline_verification_blockers(wrong, self.TODAY))
+
+    def test_month_only_is_not_a_deadline(self):
+        verdict = self.verdict("Deadline: November 2099", "2099-11-30")
+        self.assertTrue(validator.deadline_verification_blockers(verdict, self.TODAY))
+
+    def test_past_deadline_blocks(self):
+        verdict = self.verdict("Deadline: 1 March 2026", "2026-03-01")
+        self.assertIn(
+            "son tarih geçmiş (2026-03-01)",
+            validator.deadline_verification_blockers(verdict, self.TODAY),
+        )
+
+    def test_rolling_needs_an_explicit_rolling_quote(self):
+        for quote in (
+            "Applications are accepted on a rolling basis.",
+            "Applications may be submitted at any time.",
+            "There is no deadline to apply.",
+            "Başvurular yıl boyunca sürekli alınır.",
+        ):
+            with self.subTest(quote=quote):
+                verdict = self.verdict(quote, None, rolling=True)
+                self.assertEqual(
+                    validator.deadline_verification_blockers(verdict, self.TODAY), [])
+        for quote in (
+            "The deadline varies by university.",
+            "Please see the university website for deadlines.",
+        ):
+            with self.subTest(quote=quote):
+                verdict = self.verdict(quote, None, rolling=True)
+                self.assertTrue(
+                    validator.deadline_verification_blockers(verdict, self.TODAY))
+
+    def test_rolling_and_a_date_together_is_contradictory(self):
+        verdict = self.verdict("rolling basis", "2099-01-01", rolling=True)
+        self.assertTrue(validator.deadline_verification_blockers(verdict, self.TODAY))
+
+    def test_no_date_and_no_rolling_blocks(self):
+        verdict = self.verdict("See website", None, rolling=False)
+        self.assertTrue(validator.deadline_verification_blockers(verdict, self.TODAY))
+
+    def test_missing_deadline_key_blocks(self):
+        verdict = silent_page_verdict()
+        verdict["dogrulanmis_filtreler"].pop("deadline")
+        self.assertIn(
+            "kanıtlanmış deadline değeri yok/geçersiz",
+            validator.strict_filter_blockers(verdict),
+        )
+
+    def test_extract_dates_reads_every_supported_format(self):
+        text = ("15.11.2099 / 15 Kasım 2099 / November 15th, 2099 / "
+                "the 15th of November 2099 / 2099-11-15 / 1 December 2099")
+        self.assertEqual(
+            validator.extract_dates(text), [date(2099, 11, 15), date(2099, 12, 1)])
+        self.assertEqual(validator.extract_dates("November 2099"), [])
+
+    def test_free_text_scraper_deadline_is_not_trusted_without_llm(self):
+        self.assertIsNone(validator.strict_iso_date("15 January 2020; 15 January 2099"))
+        self.assertEqual(validator.strict_iso_date(" 2099-01-15 "), date(2099, 1, 15))
+
+    def test_date_consistency_uses_the_verified_deadline(self):
+        # deadline_text'teki ilk tarih geçmiş ama kanıtlanmış tarih gelecekte:
+        # model "açık" dediğinde tutarsızlık sayılmamalı.
+        submission = complete_submission()
+        submission["deadline_text"] = "15 January 2020; for the next intake 15 January 2099"
+        verdict = self.verdict("next intake 15 January 2099", "2099-01-15")
+        self.assertEqual(
+            validator.verdict_date_consistency_blockers(
+                submission, verdict, today=self.TODAY), [])
+
+    def test_parsed_verdict_keeps_iso_or_null_deadline(self):
+        for raw, expected in (("2099-11-15", "2099-11-15"), (None, None)):
+            with self.subTest(raw=raw):
+                verdict = high_confidence_verdict()
+                verdict["dogrulanmis_filtreler"]["deadline"] = raw
+                parsed = validator._parse_verdict(json.dumps(verdict))
+                self.assertEqual(parsed["dogrulanmis_filtreler"]["deadline"], expected)
+        verdict = high_confidence_verdict()
+        verdict["dogrulanmis_filtreler"]["deadline"] = "15 Nov 2099"
+        parsed = validator._parse_verdict(json.dumps(verdict))
+        self.assertNotIn("deadline", parsed["dogrulanmis_filtreler"])
+
+    def test_both_passes_must_agree_on_rolling(self):
+        first = self.verdict("rolling basis", None, rolling=True)
+        second = self.verdict("rolling basis", None, rolling=False)
+        self.assertIn(
+            "iki denetim sürekli başvuru konusunda uzlaşmadı",
+            validator.filter_consensus_blockers(first, second),
+        )
+
+
+class QuoteMatchingTests(unittest.TestCase):
+    def test_typographic_differences_do_not_fail_a_real_quote(self):
+        page = "Applicants must be under 30 \u2013 see \u201cEligibility\u201d.\u00a0It\u2019s free."
+        haystack = validator._normalize_evidence_text(page)
+        self.assertTrue(validator._quote_in_page(
+            'Applicants must be under 30 - see "Eligibility". It\'s free.', haystack))
+
+    def test_ellipsis_parts_must_appear_in_order(self):
+        haystack = validator._normalize_evidence_text(
+            "Applications are open. The programme lasts ten months. Deadline 1 May 2099.")
+        self.assertTrue(validator._quote_in_page(
+            "Applications are open... Deadline 1 May 2099", haystack))
+        self.assertFalse(validator._quote_in_page(
+            "Deadline 1 May 2099... Applications are open", haystack))
+        self.assertFalse(validator._quote_in_page(
+            "Applications are open... fully funded", haystack))
+
+
+class DecisionOutcomeTests(unittest.TestCase):
+    def test_listing_page_is_rejected(self):
+        verdict = high_confidence_verdict()
+        verdict["tek_firsat"] = False
+        self.assertEqual(validator.decide(verdict)[0], "reddet")
+
+    @patch("validate_submissions.judge_with_llm")
+    @patch("validate_submissions.fetch_page")
+    @patch("validate_submissions.apply_decision")
+    def test_unverifiable_field_goes_to_a_human_not_to_rejection(
+        self, apply_decision, fetch_page, judge_with_llm
+    ):
+        fetch_page.return_value = (
+            200, "https://example.org/program/apply",
+            f"<html><body><p>{SILENT_PAGE}</p></body></html>", None)
+        verdict = silent_page_verdict()
+        verdict["finansman_dogrulandi"] = False
+        judge_with_llm.return_value = verdict
+        submission = complete_submission()
+        submission.update({"id": "t", "source_url": submission["url"]})
+
+        result = validator.process(submission, True, set(), set(), {"llm_calls": 0})
+
+        self.assertEqual(result, "belirsiz")
+        self.assertEqual(apply_decision.call_args.args[1], "belirsiz")
+
+    @patch("validate_submissions.judge_with_llm")
+    @patch("validate_submissions.fetch_page")
+    @patch("validate_submissions.apply_decision")
+    def test_missed_age_limit_on_the_page_goes_to_a_human(
+        self, apply_decision, fetch_page, judge_with_llm
+    ):
+        page = SILENT_PAGE + " Participants must be aged 18-30."
+        fetch_page.return_value = (
+            200, "https://example.org/program/apply",
+            f"<html><body><p>{page}</p></body></html>", None)
+        judge_with_llm.return_value = silent_page_verdict()   # yaşı kaçırdı
+        submission = complete_submission()
+        submission.update({"id": "t", "source_url": submission["url"]})
+
+        result = validator.process(submission, True, set(), set(), {"llm_calls": 0})
+
+        self.assertEqual(result, "belirsiz")
+        self.assertIn("aged", apply_decision.call_args.args[2])
+
+    @patch("validate_submissions.judge_with_llm")
+    @patch("validate_submissions.fetch_page")
+    @patch("validate_submissions.apply_decision")
+    def test_silent_page_with_verified_fields_is_approved(
+        self, apply_decision, fetch_page, judge_with_llm
+    ):
+        fetch_page.return_value = (
+            200, "https://example.org/program/apply",
+            f"<html><body><p>{SILENT_PAGE}</p></body></html>", None)
+        judge_with_llm.side_effect = [silent_page_verdict(), silent_page_verdict()]
+        submission = complete_submission()
+        submission.update({"id": "t", "source_url": submission["url"]})
+
+        result = validator.process(submission, True, set(), set(), {"llm_calls": 0})
+
+        self.assertEqual(result, "onaylandi")
+        self.assertEqual(judge_with_llm.call_count, 2)
+
+
+class GuidedRouteTests(unittest.TestCase):
+    def test_official_detail_page_can_be_guided(self):
+        submission = {
+            "details_url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=57135739",
+            "source_url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=57135739",
+            "url": "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=57135739",
+        }
+        self.assertEqual(validator.guided_info_url(submission), submission["details_url"])
+
+    def test_aggregator_or_generic_page_is_never_guided(self):
+        for submission in (
+            {"url": "https://www.nasilgitmis.com/firsat", "source_url": "https://nasilgitmis.com/firsat"},
+            {"url": "https://www.youthop.com/post"},
+            {"url": "https://example.org/"},
+            {"url": "https://instagram.com/p/abc"},
+        ):
+            with self.subTest(submission=submission):
+                self.assertIsNone(validator.guided_info_url(submission))
+
+    @patch("validate_submissions.resolve_application_route")
+    def test_missing_direct_form_falls_back_to_official_page(self, resolve):
+        resolve.return_value.verified = False
+        resolve.return_value.application_url = None
+        resolve.return_value.reason = "form bulunamadı"
+        detail = "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail=1"
+        submission = {"id": "t", "url": detail, "source_url": detail, "details_url": detail,
+                      "application_route_status": "unverified"}
+
+        ok, note = validator.verify_and_store_application_route(submission, dry_run=True)
+
+        self.assertTrue(ok, note)
+        self.assertEqual(submission["application_route_status"], "guided")
+        self.assertEqual(submission["url"], detail)
+        self.assertIsNone(submission["application_url_final"])
+
+    @patch("validate_submissions.resolve_application_route")
+    def test_aggregator_without_direct_form_is_still_rejected(self, resolve):
+        resolve.return_value.verified = False
+        resolve.return_value.application_url = None
+        resolve.return_value.reason = "form bulunamadı"
+        submission = {"id": "t", "url": "https://nasilgitmis.com/x",
+                      "source_url": "https://nasilgitmis.com/x",
+                      "application_route_status": "unverified"}
+
+        ok, _ = validator.verify_and_store_application_route(submission, dry_run=True)
+
+        self.assertFalse(ok)
+
+
+class PromptContractTests(unittest.TestCase):
+    def test_prompt_treats_silence_as_no_restriction(self):
+        self.assertIn("Bahsetmemek kısıt yok demektir", validator.SYSTEM_PROMPT)
+        self.assertNotIn("kısıt yok demek\n  DEĞİLDİR", validator.SYSTEM_PROMPT)
+        self.assertIn("ÖZELLİKLE UYRUK VE YAŞ", validator.SYSTEM_PROMPT)
+        self.assertIn('"deadline"', validator.SYSTEM_PROMPT)
+        self.assertIn('"resmi_kaynak"', validator.SYSTEM_PROMPT)

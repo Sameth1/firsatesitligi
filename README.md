@@ -110,8 +110,9 @@ Fırsatlar doğrudan yayına girmez; bir **inceleme hattından** geçer. Bu, hem
   ─────────                      ────────                       ─────
 
   Kullanıcı önerisi  ┐
-  nasilgitmis.com    ├──►  submissions tablosu  ──►  validate_     ──►  opportunities
-  Idealist           │     (status = 'pending')      submissions.py     (canlı site)
+  nasilgitmis.com    │
+  DAAD               ├──►  submissions tablosu  ──►  validate_     ──►  opportunities
+  SALTO-YOUTH        │     (status = 'pending')      submissions.py     (canlı site)
   Genel URL          ┘                                    │
                                                           │
                             ┌─────────────────────────────┤
@@ -123,28 +124,35 @@ Fırsatlar doğrudan yayına girmez; bir **inceleme hattından** geçer. Bu, hem
                        • ölü bağlantı (404/410)        • güven: yüksek/orta/düşük
                             │                             │
                             ▼                             ▼
-                       otomatik RED              açık+uygun+güvenli → OTOMATİK ONAY
-                                                 kapalı/kategori-dışı → RED
-                                                 belirsiz → insan incelemesi
+                       otomatik RED              iki turda kanıtlandı → OTOMATİK ONAY
+                                                 kapalı/uygunsuz/liste/din → RED
+                                                 doğrulanamayan alan → insan incelemesi
 ```
 
 ### Karar mantığı (`validate_submissions.py`)
 
-1. **Katman 1 — Heuristikler (ücretsiz, LLM'siz).** Kopya URL, süresi geçmiş `deadline_text` veya 404/410 dönen bağlantı → otomatik **RED**. Bu kararlar LLM kotası harcamaz.
-2. **Katman 2 — NVIDIA NIM LLM (yalnızca eksiksiz kayıtlar).** Eksik alan, eski tarih veya kaynak/derleme sayfasına giden link LLM kotası harcanmadan reddedilir. Kalan kayıt için model durum/kategori/güvenin yanında tek fırsat, doğrudan fırsat sayfası, son tarih, finansman, ülke ve uygunluk kanıtlarını ayrı ayrı doğrular. Her olumlu alan için sayfadan birebir alıntı vermek zorundadır; kod alıntının gerçekten sayfa metninde bulunduğunu kontrol eder.
-3. **Karar:**
-   - `kapalı` + güven yüksek/orta → **RED**
-   - `kategori_uygun=false` + güven yüksek → **RED**
-   - yalnız iki ayrı denetimde `açık` + `kategori_uygun` + güven **yüksek** + bütün zorunlu alanlar ve altı birebir kanıt doğrulanmış → **OTOMATİK ONAY**
-   - eksik/yanlış alan, eski tarih, kaynak yazı linki veya doğrulanamayan kanıt → **RED**
-   - **belirsiz** yalnız tarih güncel, hedef doğrudan ve bütün kayıt alanları doğrulanmışken açık/kapalı kararında gerçek çelişki kalırsa kullanılır
-   - ağ/LLM hatası insan kuyruğuna gitmez; `agent_queue` içinde otomatik yeniden denenir
+**Tek ölçüt doğruluk.** Ajan bir kaydı, kullanıcıya gösterilecek her bilginin sayfaya göre doğru olduğunu kanıtlayabildiğinde yayınlar.
 
-Yanlış reddetmeyi önlemek için olumsuz kararlar yalnızca açık kanıt varken verilir; tereddütte karar insana bırakılır. Otomatik onay yapılan kayıtlarda `reviewed_by` alanı `NULL` bırakılır — "insan değil otomasyon onayladı" denetim sinyali.
+1. **Katman 1 — Heuristikler (ücretsiz, LLM'siz).** Kopya URL, kesin ISO olup geçmiş son tarih veya 404/410 dönen bağlantı → otomatik **RED**. Serbest metin son tarihe göre LLM'siz karar verilmez (ilk tarih yanlış olabilir).
+2. **Başvuru rotası.** Bilgi sayfasından gerçek form/portal/e-posta en fazla iki adımda aranır (`verified`). Bulunamazsa kurumun kendi program sayfası kullanılabilir (`guided`, kartta "Koşullar ve Başvuru"); derleme sitesi, blog, sosyal medya ve ana sayfalar asla `guided` olamaz.
+3. **Katman 2 — NVIDIA NIM LLM, iki bağımsız tur.** Model durum, kategori, tek fırsat, rota, son tarih, finansman, ülke ve uygunluğu sayfadan birebir alıntıyla doğrular; kod her alıntının sayfa metninde gerçekten geçtiğini denetler (tırnak/tire/boşluk farkları normalize edilir).
+4. **Kullanıcı filtreleri** (uyruk, yaş, eğitim kademesi, dil, bölüm):
+   - Sayfa bir **kısıt** koyuyorsa değer + birebir alıntı zorunlu.
+   - Sayfa bahsetmiyorsa **kısıt yoktur**; kısıtsız değer yazılır, alıntı gerekmez.
+   - **Uyruk ve yaşta** (ve dil sertifikasında) bu "kısıt yok" kararı ayrıca sayfanın *tamamında* koşul ifadesi taramasıyla sınanır ("nationals of", "aged 18-30", "IELTS"…). Model kısıtı kaçırdıysa kayıt yayınlanmaz, insana kalır. Gerçek sayfalarda ölçüldü: taramanın yakaladığı ifadelerin büyük çoğunluğu gerçek şartlardı.
+   - Erasmus+/ESC etkinliklerinde "participants from <ülkeler>" ikamet şartıdır; Türkiye listede değilse fırsat platforma uygun sayılmaz.
+5. **Son tarih:** model tarihi `YYYY-MM-DD` olarak beyan eder; aynı tarih alıntıda gün-ay-yıl olarak geçmeli. Yalnız ay/yıl veya "üniversiteye göre değişir" kabul edilmez. Sayfa açıkça "rolling basis / no deadline" diyorsa ve iki tur uzlaşırsa son tarih boş kalır (kartta "Sürekli açık").
+6. **Karar:**
+   - din şartı/ifadesi, `kapalı`, platforma uygun değil, tek fırsat değil (liste sayfası) → **RED**
+   - iki turda bütün kanıtlar doğrulandı ve filtre değerlerinde uzlaşıldı → **OTOMATİK ONAY**
+   - bir alan doğrulanamadı, iki tur uzlaşmadı veya tarama şüphe buldu → **insan incelemesi** (red kalıcıdır; scraper'lar reddedilen URL'yi bir daha eklemez, bu yüzden şüphe redde değil insana gider)
+   - ağ/LLM hatası `agent_queue` içinde otomatik yeniden denenir
+
+Otomatik onay yapılan kayıtlarda `reviewed_by` alanı `NULL` bırakılır — "insan değil otomasyon onayladı" denetim sinyali.
 
 ### `agent_approve_submission` RPC'si
 
-Standart `approve_submission()` RPC'si insan admin içindir. Agent'ın kullandığı RPC'nin temel kapısı migration 099'dadır; migration 105 ikinci olumlu denetimi ve her iki turdaki kanıt alıntılarını ayrıca zorunlu kılar. Çağırma yetkisi yalnız `service_role`'dadır. Eksik bilgiyi varsayımla doldurmaz; hata verip kaydı pending bırakır.
+Standart `approve_submission()` RPC'si insan admin içindir. Agent'ın kullandığı RPC'nin temel kapısı migration 099'dadır; migration 105 ikinci olumlu denetimi zorunlu kılar. Migration 129 yukarıdaki sözleşmeyi veritabanında da uygular: yayın kanıtları için alıntı her zaman, kullanıcı filtreleri için yalnız kısıt yazıldığında zorunlu; `guided` rota için `resmi_kaynak`, boş son tarih için iki turda `surekli_basvuru` gerekir ve kayıtlı son tarih kanıtlanan tarihle aynı olmalıdır. Çağırma yetkisi yalnız `service_role`'dadır. Eksik bilgiyi varsayımla doldurmaz; hata verip kaydı pending bırakır.
 
 ---
 
@@ -159,6 +167,7 @@ Scriptler kök dizinde (biri `scripts/` altında) yer alır; `.env` dosyasından
 | `nasilgitmis_scraper.py` | nasilgitmis.com'dan Erasmus+/ESC/burs/staj fırsatlarını çeker | `submissions` (pending) |
 | `idealist_scraper.py` | idealist.org gönüllülük fırsatlarını çeker | `opportunities` |
 | `daad_scraper.py` | DAAD burs veritabanından Türkiye'ye açık programları çeker | `submissions` (pending) |
+| `salto_scraper.py` | SALTO-YOUTH Avrupa Eğitim Takvimi'nden Türkiye'den katılıma açık, yurt dışında yapılan Erasmus+/ESC eğitim ve seminerlerini çeker | `submissions` (pending) |
 | `youthop_scraper.py` | youthop.com fırsatlarını çeker | `submissions` (pending) |
 | `agent_reach_url_scraper.py` | Herhangi bir fırsat URL'sini Scrapling ile çekip alan çıkarımı yapar | `submissions` (pending) |
 | `validate_submissions.py` | İki katmanlı doğrulama ajanı (heuristik + NVIDIA NIM LLM), uygun önerileri otomatik onaylar | `submissions` → `opportunities` |
@@ -189,11 +198,14 @@ Hattın tamamı `.github/workflows/` altında cron ile dönüyor; hepsi ayrıca
 |---|---|---|---|---|
 | `agent-triage.yml` | `0 */4 * * *` | her 4 saatte bir | `validate_submissions.py` | Bekleyen submission'ları `validate_submissions.py` ile doğrular, uygun olanları yayına alır |
 | `audit-opportunities.yml` | `0 3 * * *` | her gün 06:00 | `scripts/audit_opportunities.py` | Aktif fırsatların bağlantılarını yoklar, ölmüş olanları pasifleştirir |
-| `opportunity-discovery.yml` | `20 3 * * 1` | Pazartesi 06:20 | `nasilgitmis_scraper.py` + `daad_scraper.py` | Kaynak siteleri tarar, yeni fırsatları `submissions`'a pending olarak yazar |
+| `opportunity-discovery.yml` | `20 3 * * 1` | Pazartesi 06:20 | `nasilgitmis_scraper.py` + `daad_scraper.py` + `salto_scraper.py` | Kaynak siteleri tarar, yeni fırsatları `submissions`'a pending olarak yazar; her kaynak bağımsız çalışır |
 | `direct-application-links.yml` | `40 4 * * 0` | Pazar 07:40 | `backfill_apply_links.py` | Bilgi sayfası kayıtlarının gerçek başvuru bağlantısını bulup doldurur |
 
-Keşif haftalık: kaynaklar (nasilgitmis, DAAD) günlük yenilenmediği için daha
-sık çalıştırmak aynı URL'leri tekrar tekrar eliyor, yeni kayıt getirmiyordu.
+Keşif haftalık: kaynaklar günlük yenilenmediği için daha sık çalıştırmak aynı
+URL'leri tekrar tekrar eliyor, yeni kayıt getirmiyordu. Her kaynak bağımsız
+çalışır; biri çökerse diğerleri yine taranır ve koşu sonunda kırmızıya döner.
+Bir kaynağa geçici olarak erişilemezse (ör. DAAD güvenlik duvarının 403'ü)
+koşu düşmez, özetinde `::warning::` görünür.
 
 Not: `schedule` olayında `workflow_dispatch` girdileri boş gelir, dolayısıyla
 elle çalıştırmadaki varsayılanlar zamanlanmış koşuya uygulanmaz — script'lerin
@@ -336,8 +348,9 @@ pip install -r requirements.txt
 pip install groq ddgs
 ```
 
-`agent_reach_url_scraper.py` ayrıca Scrapling istiyor. Tarayıcı indirdiği için
-ağır; yalnız o script'i çalıştıracaksan kur:
+`agent_reach_url_scraper.py` ve `daad_scraper.py` ayrıca Scrapling istiyor
+(DAAD engellerse gerçek tarayıcı parmak iziyle yeniden dener). Tarayıcı
+indirdiği için ağır; yalnız bu script'leri çalıştıracaksan kur:
 
 ```bash
 pip install "scrapling[fetchers]==0.4.8" && scrapling install

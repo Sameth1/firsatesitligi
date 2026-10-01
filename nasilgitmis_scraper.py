@@ -32,7 +32,7 @@ from scrapling.fetchers import Fetcher, StealthyFetcher
 # Ortak başvuru-linki çıkarımı (reach.extract_apply_link). reach import sırasında
 # load_dotenv + stdout reconfigure çalıştırır; yan etkisi yok, run() yalnız __main__'de.
 import agent_reach_url_scraper as reach
-from discovery_gate import candidate_blockers
+from discovery_gate import KNOWN_URL_COLUMNS, candidate_blockers
 
 # Windows konsolu (cp1254) emoji/Türkçe karakterde UnicodeEncodeError verir;
 # çıktıyı UTF-8'e sabitle.
@@ -124,7 +124,7 @@ def url_exists(url):
     """URL zaten yayında (opportunities.official_url) ya da öneri olarak
     bekliyor (submissions.url) mu? İkisinden birinde varsa kopya say —
     aynı fırsatı tekrar pending'e eklemeyelim."""
-    for table, col in (("opportunities", "official_url"), ("submissions", "url")):
+    for table, col in KNOWN_URL_COLUMNS:
         res = requests.get(
             f"{SUPABASE_URL}/rest/v1/{table}",
             headers=sb_headers(),

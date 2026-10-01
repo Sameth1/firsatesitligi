@@ -14,7 +14,12 @@ study_level/description). deadline detay sayfasında olmadığından deadlines.j
 alınır (serbest metin; çoğu DAAD programında deadline programa/üniversiteye göre
 değişken).
 
-NOT: DAAD, datacenter IP'lerini (droplet) bloklar → bu spider LOKAL çalıştırılmalı.
+NOT: DAAD'ın güvenlik duvarı datacenter IP'lerini ZAMAN ZAMAN blokluyor.
+GitHub runner'ında 14 ve 21 Eylül koşuları düz `requests` ile 403 aldı, 28 Eylül
+aynı kodla geçti. Bu yüzden veri dosyaları sırayla düz istek → Scrapling
+Fetcher (gerçek tarayıcı TLS parmak izi) → StealthyFetcher (gizli tarayıcı)
+ile deneniyor; hepsi başarısızsa kaynak "erişilemedi" uyarısıyla atlanıyor,
+haftalık keşfin geri kalanı çalışmaya devam ediyor.
 
 Kullanım:
   python daad_scraper.py --dry-run --limit 5
@@ -33,9 +38,10 @@ import argparse
 
 import requests
 from dotenv import load_dotenv
+from scrapling.fetchers import Fetcher, StealthyFetcher
 
 import agent_reach_url_scraper as reach
-from discovery_gate import candidate_blockers
+from discovery_gate import KNOWN_URL_COLUMNS, candidate_blockers
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -49,7 +55,14 @@ DATA = BASE + "/bundles/daadstipendiendatenbanklsh/data/a/js/"
 SCHOLARSHIPS_JS = DATA + "scholarships.js"
 DEADLINES_JS = DATA + "deadlines.js"
 DETAIL_BASE = BASE + "/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail="
-HTTP_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+HTTP_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/140.0 Safari/537.36"),
+    "Accept": "application/javascript, text/javascript, */*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9,de;q=0.8",
+    "Referer": BASE + "/deutschland/stipendium/datenbank/en/21148-scholarship-database/",
+}
+DATA_RETRY_DELAYS = (0, 5)          # düz istek: hemen, sonra 5 sn sonra
 CRAWL_DELAY = 1.0
 INTENTION_INTERNSHIP = 4   # intentions.js: 4 = Internship
 
@@ -63,7 +76,7 @@ def sb_headers():
 def url_exists(url):
     """URL zaten yayında (opportunities.official_url) ya da pending/işlenmiş
     (submissions.url) mı? STATUS filtresi yok → tekrar scrape/validate etmez."""
-    for table, col in (("opportunities", "official_url"), ("submissions", "url")):
+    for table, col in KNOWN_URL_COLUMNS:
         res = requests.get(f"{SUPABASE_URL}/rest/v1/{table}", headers=sb_headers(),
                            params={col: f"eq.{url}", "select": "id", "limit": 1}, timeout=15)
         if res.ok and res.json():
@@ -87,10 +100,51 @@ def _parse_taffy(js_text):
     return json.loads(js_text[start:end])
 
 
+class DaadUnavailable(RuntimeError):
+    """Veri dosyası hiçbir yolla alınamadı — kaynak arızası, kod hatası değil."""
+
+
+def _fetch_data_text(url):
+    """TAFFY veri dosyasının ham metnini getirir; engellenirse sıradakine düşer.
+
+    Her deneme yalnız içinde `TAFFY(` geçen bir yanıtı kabul eder: güvenlik
+    duvarı 200 ile bir HTML engel sayfası da döndürebiliyor."""
+    attempts = []
+    for delay in DATA_RETRY_DELAYS:
+        if delay:
+            time.sleep(delay)
+        try:
+            r = requests.get(url, headers=HTTP_HEADERS, timeout=30)
+            if r.ok and "TAFFY(" in r.text:
+                return r.text
+            attempts.append(f"requests HTTP {r.status_code}")
+        except requests.RequestException as exc:
+            attempts.append(f"requests {type(exc).__name__}")
+
+    try:
+        page = Fetcher.get(url, timeout=30, stealthy_headers=True)
+        text = page.body.decode(page.encoding or "utf-8", errors="replace")
+        if page.status == 200 and "TAFFY(" in text:
+            return text
+        attempts.append(f"Fetcher HTTP {page.status}")
+    except Exception as exc:                      # scrapling çok çeşitli hata atar
+        attempts.append(f"Fetcher {type(exc).__name__}")
+
+    try:
+        # Tarayıcı bir .js adresini <pre> içinde düz metin olarak gösterir.
+        page = StealthyFetcher.fetch(url, headless=True, timeout=60_000)
+        text = page.css("pre::text").get() or ""
+        if page.status == 200 and "TAFFY(" in text:
+            return text
+        attempts.append(f"StealthyFetcher HTTP {page.status}")
+    except Exception as exc:
+        attempts.append(f"StealthyFetcher {type(exc).__name__}")
+
+    raise DaadUnavailable(f"{url.rsplit('/', 1)[-1]} alınamadı: " + ", ".join(attempts))
+
+
 def fetch_taffy(url):
-    r = requests.get(url, headers=HTTP_HEADERS, timeout=30)
-    r.raise_for_status()
-    return _parse_taffy(r.text)
+    return _parse_taffy(_fetch_data_text(url))
 
 
 def build_deadline_map():
@@ -125,6 +179,9 @@ def _intention_ids(sch):
 _DAAD_NOISE_RES = [
     re.compile(r"(?:to ensure that only[^.]*?,\s*)?please select your status and "
                r"your country[^.]*?\.", re.I),
+    # Metin 600 karakterde kesilince cümle noktaya ulaşmıyor ve yukarıdaki
+    # kalıp tutmuyordu ("… please s…"); yarım kalan yönergeyi sonuna kadar at.
+    re.compile(r"\s*to ensure that only scholarship programmes.*$", re.I | re.S),
     re.compile(r'^\s*[“"]?application requirements[”"]?\)\.\s*', re.I),
 ]
 
@@ -159,7 +216,11 @@ def build_record(sch, base, detail_url, category, deadline_text):
         "age_min":              base.get("age_min"),
         "age_max":              base.get("age_max"),
         "study_level":          base.get("study_level"),
-        "language_requirement": "İngilizce / Almanca (programa göre)",
+        # Dil şartı tahmin edilmez: ajan sayfadan kanıtla belirler. Eskiden
+        # buraya sabit "İngilizce / Almanca (programa göre)" yazılıyordu; bu
+        # hem yanlış olabiliyordu hem de modele kaydedilmiş bir değer gibi
+        # görünüp kararını etkiliyordu.
+        "language_requirement": None,
         "eligibility_notes":    _clean_eligibility(base.get("eligibility_notes")),
         "description":          base.get("description"),
         "funding_type":         base.get("funding_type") or "stipend",  # DAAD = aylık ödenek
@@ -227,8 +288,14 @@ def run(dry_run, limit):
         return
 
     print("scholarships.js + deadlines.js çekiliyor...")
-    scholarships = fetch_taffy(SCHOLARSHIPS_JS)
-    deadline_map = build_deadline_map()
+    try:
+        scholarships = fetch_taffy(SCHOLARSHIPS_JS)
+        deadline_map = build_deadline_map()
+    except DaadUnavailable as exc:
+        # Kaynak geçici olarak kapalı: bu haftanın diğer kaynaklarını düşürme.
+        # GitHub Actions ::warning:: satırı koşu özetinde görünür kalır.
+        print(f"::warning title=DAAD erişilemedi::{exc}")
+        return
     print(f"  {len(scholarships)} burs · {len(deadline_map)} deadline kaydı (dolu)\n" + "─" * 60)
 
     stats = {"processed": 0, "previewed": 0, "added": 0, "skipped": 0, "errors": 0}
