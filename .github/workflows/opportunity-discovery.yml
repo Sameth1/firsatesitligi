@@ -28,7 +28,7 @@ on:
         default: all
         required: true
       limit:
-        description: 'nasilgitmis için en fazla yeni detay (1-100)'
+        description: 'nasilgitmis için en fazla yeni detay; kuru çalıştırmada her kaynağın örneklemi (1-100)'
         type: string
         default: '30'
         required: false
@@ -79,8 +79,12 @@ jobs:
           fi
 
           ARGS=()
+          SAMPLE=()
           if [ "$INPUT_DRY_RUN" = "true" ]; then
             ARGS+=(--dry-run)
+            # Kuru çalıştırma kopya elemesi yapmaz, her ilanı açar; DAAD'ın 151
+            # sayfası 45 dakikayı aşabiliyor. Önizleme için örneklem yeter.
+            SAMPLE=(--limit "$LIMIT")
           fi
 
           # Her kaynak BAĞIMSIZ çalışır: biri çökerse diğerleri yine taranır,
@@ -93,10 +97,10 @@ jobs:
               || failed+=(nasilgitmis)
           fi
           if [[ "$SOURCE" == "all" || "$SOURCE" == "daad" ]]; then
-            python daad_scraper.py "${ARGS[@]}" || failed+=(daad)
+            python daad_scraper.py "${ARGS[@]}" "${SAMPLE[@]}" || failed+=(daad)
           fi
           if [[ "$SOURCE" == "all" || "$SOURCE" == "salto" ]]; then
-            python salto_scraper.py "${ARGS[@]}" || failed+=(salto)
+            python salto_scraper.py "${ARGS[@]}" "${SAMPLE[@]}" || failed+=(salto)
           fi
 
           if (( ${#failed[@]} )); then

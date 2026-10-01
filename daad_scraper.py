@@ -179,6 +179,9 @@ def _intention_ids(sch):
 _DAAD_NOISE_RES = [
     re.compile(r"(?:to ensure that only[^.]*?,\s*)?please select your status and "
                r"your country[^.]*?\.", re.I),
+    # Metin 600 karakterde kesilince cümle noktaya ulaşmıyor ve yukarıdaki
+    # kalıp tutmuyordu ("… please s…"); yarım kalan yönergeyi sonuna kadar at.
+    re.compile(r"\s*to ensure that only scholarship programmes.*$", re.I | re.S),
     re.compile(r'^\s*[“"]?application requirements[”"]?\)\.\s*', re.I),
 ]
 
