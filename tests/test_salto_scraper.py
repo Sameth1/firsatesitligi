@@ -49,6 +49,31 @@ class FakeRoute:
                 "application_url_final": None, "application_url_evidence": None}
 
 
+class FakeVerifiedRoute:
+    FORM = "https://docs.google.com/forms/d/e/abc/viewform"
+
+    def submission_fields(self):
+        return {"url": self.FORM, "details_url": URL, "application_route_status": "verified",
+                "application_method": "online_form", "application_url_check_status": 200,
+                "application_url_final": self.FORM, "application_url_evidence": "Apply"}
+
+
+class VerifiedRouteTests(unittest.TestCase):
+    @patch("salto_scraper.resolve_application_route", return_value=FakeVerifiedRoute())
+    def test_verified_route_carries_its_verification_time(self, _route):
+        # DB kısıtı: verified rota doğrulama zamanı olmadan eklenemez.
+        record, _ = salto.parse_training(page(), URL)
+        self.assertEqual(record["application_route_status"], "verified")
+        self.assertTrue(record["application_url_verified_at"])
+        self.assertEqual(record["url"], FakeVerifiedRoute.FORM)
+        self.assertEqual(record["details_url"], URL)
+
+    @patch("salto_scraper.resolve_application_route", return_value=FakeRoute())
+    def test_unverified_route_has_no_verification_time(self, _route):
+        record, _ = salto.parse_training(page(), URL)
+        self.assertNotIn("application_url_verified_at", record)
+
+
 @patch("salto_scraper.resolve_application_route", return_value=FakeRoute())
 class ParseTrainingTests(unittest.TestCase):
     def test_complete_training_becomes_a_submission(self, _route):
