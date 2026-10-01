@@ -210,3 +210,33 @@ class ApplicationRouteTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ClosedFormResolverTests(unittest.TestCase):
+    def test_closed_form_detection(self):
+        from application_links import is_closed_form
+        self.assertTrue(is_closed_form("https://docs.google.com/forms/d/e/abc/closedform"))
+        self.assertTrue(is_closed_form(
+            "https://docs.google.com/forms/d/e/abc/viewform",
+            "<html><body>This form is no longer accepting responses</body></html>"))
+        self.assertTrue(is_closed_form(
+            "https://docs.google.com/forms/d/e/abc/viewform",
+            "<p>Bu form artık yanıt kabul etmiyor</p>"))
+        self.assertFalse(is_closed_form(
+            "https://docs.google.com/forms/d/e/abc/viewform", "<form>Name</form>"))
+        # Form sağlayıcısı olmayan sayfada "closed" sözcüğü kapanış kanıtı değil.
+        self.assertFalse(is_closed_form(
+            "https://example.org/program", "Applications are closed on Sundays"))
+
+    def test_closed_google_form_is_not_a_verified_route(self):
+        from application_links import CLOSED_FORM_REASON, FetchResult, resolve_application_route
+        page = '<a href="https://docs.google.com/forms/d/e/abc/viewform">Başvuru formu</a>'
+
+        def fetcher(url):
+            return FetchResult(200, "https://docs.google.com/forms/d/e/abc/closedform",
+                               "<p>This form is no longer accepting responses</p>")
+
+        route = resolve_application_route("https://nasilgitmis.com/post", source_html=page,
+                                          fetcher=fetcher)
+        self.assertFalse(route.verified)
+        self.assertEqual(route.reason, CLOSED_FORM_REASON)

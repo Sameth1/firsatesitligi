@@ -67,6 +67,17 @@ _ACTION_PATH_RE = re.compile(
 _GENERIC_AUTH_RE = re.compile(r"/(?:login|log-in|sign-in|signin|register|signup|sign-up)/?$", re.I)
 _SEARCH_PATH_RE = re.compile(r"/(?:search|find|programme?-search|scholarship-database)/?$", re.I)
 _SOFT_404_RE = re.compile(r"\b(?:404|page\s+not\s+found|seite\s+nicht\s+gefunden)\b", re.I)
+# Kapanmış form bir başvuru hedefi değil, KAPANMIŞ fırsat kanıtıdır. Google
+# Forms yanıt almayı durdurunca .../closedform adresine yönlendirip 200 dönüyor;
+# Typeform ve Microsoft Forms da 200 ile "kapandı" sayfası gösteriyor. Eskiden
+# bunlar "doğrulanmış başvuru" sayılıyordu (Ekim 2026: iki nasilgitmis ilanı).
+_CLOSED_FORM_RE = re.compile(
+    r"no\s+longer\s+accepting\s+responses|(?:is\s+not|isn't)\s+accepting\s+responses"
+    r"|artık\s+yanıt\s+kabul\s+etmiyor|yanıt\s+kabul\s+etmiyor"
+    r"|this\s+(?:typeform|form)\s+is\s+(?:now\s+)?closed|form\s+is\s+closed",
+    re.I,
+)
+CLOSED_FORM_REASON = "başvuru formu kapanmış (artık yanıt kabul etmiyor)"
 _ACTION_FRAGMENT_RE = re.compile(
     r"^(?:apply|application|application-form|apply-now|form|basvuru|başvuru)(?:[-_].*)?$",
     re.I,
@@ -306,8 +317,18 @@ def extract_candidates(page_html: str, page_url: str) -> tuple[list[Candidate], 
     return ordered, real_form
 
 
+def is_closed_form(url: str, body: str | None = None) -> bool:
+    """Form sağlayıcısının "artık yanıt kabul etmiyor" sayfası mı?"""
+    path = (urlsplit(url or "").path or "").rstrip("/").casefold()
+    if path.endswith("/closedform"):
+        return True
+    return bool(body) and _is_form_provider(url) and bool(_CLOSED_FORM_RE.search(body[:50000]))
+
+
 def _healthy_target(result: FetchResult) -> bool:
     if result.status is None or not 200 <= result.status < 400:
+        return False
+    if is_closed_form(result.final_url, result.body):
         return False
     if result.body:
         soup = BeautifulSoup(result.body, "html.parser")
@@ -338,6 +359,7 @@ def resolve_application_route(
     queue: list[tuple[str, str, int]] = [(first.final_url or start_url, first.body, 0)]
     visited = set()
     best_unverified: tuple[Candidate, FetchResult] | None = None
+    closed_form_url: str | None = None
 
     while queue:
         page_url, page_html, depth = queue.pop(0)
@@ -346,6 +368,10 @@ def resolve_application_route(
             continue
         visited.add(normalized)
         candidates, real_form = extract_candidates(page_html, page_url)
+        if is_closed_form(page_url, page_html):
+            return ApplicationRoute(None, details_url, "online_form", False, 200, page_url,
+                                    None, CLOSED_FORM_REASON,
+                                    details_status_code=details_status_code)
         if _is_form_provider(page_url):
             return ApplicationRoute(page_url, details_url, "online_form", True, 200,
                                     page_url, "Bilinen form sağlayıcısı URL'i",
@@ -395,6 +421,9 @@ def resolve_application_route(
                                         details_status_code=details_status_code)
             if candidate.method == "online_form" and _is_form_provider(candidate.url):
                 target = fetcher(candidate.url)
+                if is_closed_form(target.final_url or candidate.url, target.body):
+                    closed_form_url = target.final_url or candidate.url
+                    continue
                 if _healthy_target(target):
                     return ApplicationRoute(
                         target.final_url, details_url, "online_form", True,
@@ -426,6 +455,10 @@ def resolve_application_route(
             if best_unverified is None or candidate.score > best_unverified[0].score:
                 best_unverified = (candidate, target)
 
+    if closed_form_url:
+        return ApplicationRoute(None, details_url, "online_form", False, 200, closed_form_url,
+                                None, CLOSED_FORM_REASON,
+                                details_status_code=details_status_code)
     if best_unverified:
         candidate, target = best_unverified
         return ApplicationRoute(None, details_url, candidate.method, False, target.status,
