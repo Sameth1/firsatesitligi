@@ -72,7 +72,9 @@ import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
-from application_links import is_safe_guided_url, resolve_application_route
+from application_links import (
+    CLOSED_FORM_REASON, is_closed_form, is_safe_guided_url, resolve_application_route,
+)
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -1545,7 +1547,13 @@ def judge_with_llm(sub, url, http_note, page_text, prior_verdict=None):
     result = request_llm_json(SYSTEM_PROMPT, user_text)
     if result is None:
         return None
-    return _parse_verdict(json.dumps(result, ensure_ascii=False))
+    verdict = _parse_verdict(json.dumps(result, ensure_ascii=False))
+    if verdict is None:
+        # JSON geldi ama sözleşmeye uymuyor (ör. geçersiz "durum"). Nedeni
+        # görünmezse "LLM hatası" satırı teşhis edilemiyor.
+        print(f"  ! LLM kararı sözleşmeye uymuyor: durum={result.get('durum')!r} "
+              f"anahtarlar={sorted(result)[:12]}")
+    return verdict
 
 
 def submission_completeness_blockers(sub):
@@ -2347,6 +2355,15 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
         print(f"  SÜRESİ GEÇMİŞ ({dl}) → REDDET")
         return "sure_gecti"
 
+    # Heuristik 3 — başvuru formu kapanmış (LLM'siz). Google Forms yanıt almayı
+    # durdurunca .../closedform'a yönleniyor; bu, fırsatın kapandığının kesin
+    # kanıtı. Scraper eskiden bunu "doğrulanmış rota" diye yazabiliyordu ve
+    # 24 saatlik rota önbelleği yeniden denetimi atlatıyordu.
+    if is_closed_form(url) or is_closed_form(sub.get("application_url_final") or ""):
+        apply_decision(sub, "reddet", f"Başvuru formu kapanmış: {url}", dry_run)
+        print("  BAŞVURU FORMU KAPANMIŞ → REDDET")
+        return "sure_gecti"
+
     # Bilgi/koşul sayfasından gerçek form/portal/e-posta/belgeye en fazla iki
     # adımda ulaş. Bu kapı LLM'den önce çalışır; kullanıcıyı yeniden link
     # aramaya mecbur bırakan kayıt otomatik yayına giremez.
@@ -2357,10 +2374,18 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
         print("  Başvuru rotası kaydedilemedi → TEKRAR DENE")
         return "tekrar"
     if not route_ok:
-        reason = f"Doğrudan başvuru adımı yok: {route_note}"
-        apply_decision(sub, "reddet", reason, dry_run)
-        print(f"  {reason} → REDDET")
-        return "llm_red"
+        if route_note == CLOSED_FORM_REASON:
+            apply_decision(sub, "reddet", f"Fırsat kapanmış: {route_note}", dry_run)
+            print(f"  {route_note} → REDDET")
+            return "sure_gecti"
+        # Form doğrulanamadı ve resmî program sayfası da yok (yalnız derleme
+        # yazısı var). Bu kesin bir olumsuzluk değil — bağlantı bot korumasına
+        # takılmış ya da giriş istiyor olabilir. Red kalıcı olduğu için insana.
+        reason = (f"Doğrudan başvuru adımı ya da resmî program sayfası doğrulanamadı: "
+                  f"{route_note} — bağlantıyı insan kontrol etmeli")
+        apply_decision(sub, "belirsiz", reason, dry_run)
+        print(f"  {reason} → BELİRSİZ (insana)")
+        return "belirsiz"
 
     url = sub["url"]
     norm = _norm_url(url)

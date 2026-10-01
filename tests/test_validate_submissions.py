@@ -1272,3 +1272,58 @@ class PromptContractTests(unittest.TestCase):
         self.assertIn("ÖZELLİKLE UYRUK VE YAŞ", validator.SYSTEM_PROMPT)
         self.assertIn('"deadline"', validator.SYSTEM_PROMPT)
         self.assertIn('"resmi_kaynak"', validator.SYSTEM_PROMPT)
+
+
+class ClosedFormTests(unittest.TestCase):
+    @patch("validate_submissions.apply_decision")
+    def test_closed_google_form_is_rejected_as_closed(self, apply_decision):
+        submission = complete_submission()
+        closed = "https://docs.google.com/forms/d/e/1FAIpQLSer5Za/closedform"
+        submission.update({"id": "t", "url": closed, "application_url_final": closed})
+
+        result = validator.process(submission, True, set(), set(), {"llm_calls": 0})
+
+        self.assertEqual(result, "sure_gecti")
+        self.assertEqual(apply_decision.call_args.args[1], "reddet")
+        self.assertIn("kapanmış", apply_decision.call_args.args[2])
+
+    @patch("validate_submissions.resolve_application_route")
+    @patch("validate_submissions.apply_decision")
+    def test_unverifiable_route_without_official_page_goes_to_a_human(
+        self, apply_decision, resolve
+    ):
+        resolve.return_value.verified = False
+        resolve.return_value.application_url = None
+        resolve.return_value.reason = "aday başvuru hedefi teknik olarak doğrulanamadı"
+        submission = complete_submission()
+        submission.update({
+            "id": "t", "url": "https://nasilgitmis.com/x",
+            "source_url": "https://nasilgitmis.com/x", "details_url": None,
+            "application_route_status": "unverified",
+            "application_url_verified_at": None, "application_url_final": None,
+        })
+
+        result = validator.process(submission, True, set(), set(), {"llm_calls": 0})
+
+        self.assertEqual(result, "belirsiz")
+        self.assertEqual(apply_decision.call_args.args[1], "belirsiz")
+
+    @patch("validate_submissions.resolve_application_route")
+    @patch("validate_submissions.apply_decision")
+    def test_resolver_closed_form_reason_rejects(self, apply_decision, resolve):
+        from application_links import CLOSED_FORM_REASON
+        resolve.return_value.verified = False
+        resolve.return_value.application_url = None
+        resolve.return_value.reason = CLOSED_FORM_REASON
+        submission = complete_submission()
+        submission.update({
+            "id": "t", "url": "https://nasilgitmis.com/x",
+            "source_url": "https://nasilgitmis.com/x", "details_url": None,
+            "application_route_status": "unverified",
+            "application_url_verified_at": None, "application_url_final": None,
+        })
+
+        result = validator.process(submission, True, set(), set(), {"llm_calls": 0})
+
+        self.assertEqual(result, "sure_gecti")
+        self.assertEqual(apply_decision.call_args.args[1], "reddet")
