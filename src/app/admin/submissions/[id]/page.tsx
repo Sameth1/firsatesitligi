@@ -43,7 +43,7 @@ interface Submission {
   url: string
   source_url: string | null
   details_url: string | null
-  application_route_status: 'verified' | 'unverified' | 'missing'
+  application_route_status: 'verified' | 'guided' | 'unverified' | 'missing'
   application_method: 'online_form' | 'portal' | 'email' | 'document' | null
   category_slug: string | null
   host_countries: string[]
@@ -170,7 +170,11 @@ export default function SubmissionDetailPage({
         title,
         url,
         details_url: detailsUrl || url,
-        application_route_status: isVerified ? 'verified' : 'unverified',
+        // Ajanın bulduğu resmî program sayfası (guided) admin düzenlemesinde
+        // kaybolmasın; yalnız admin formu açıkça doğrularsa 'verified' olur.
+        application_route_status: isVerified
+          ? 'verified'
+          : (sub?.application_route_status === 'guided' ? 'guided' : 'unverified'),
         application_method: isVerified ? (applicationMethod || 'portal') : null,
         application_url_verified_at: isVerified ? new Date().toISOString() : null,
         application_url_final: isVerified ? url : null,

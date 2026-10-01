@@ -21,7 +21,7 @@ interface Submission {
   created_at: string
   submission_origin: 'human' | 'agent'
   review_stage: string
-  application_route_status?: 'verified' | 'unverified' | 'missing'
+  application_route_status?: 'verified' | 'guided' | 'unverified' | 'missing'
 }
 
 interface Stats {
@@ -150,7 +150,12 @@ export default function AdminPage() {
   }
 
   async function handleApprove(sub: Submission) {
-    if (sub.application_route_status !== 'verified') {
+    // 'guided': ajan doğrudan form bulamadı ama kurumun resmî program
+    // sayfasını buldu. Bu kayıt olduğu gibi onaylanabilir — sitede
+    // "Koşullar ve Başvuru" olarak görünür. Onu "doğrulanmış form"a çevirmek
+    // bilgi sayfasını başvuru formu gibi göstermek olurdu.
+    if (sub.application_route_status !== 'verified'
+        && sub.application_route_status !== 'guided') {
       setVerifyApproveSub(sub)
       return
     }

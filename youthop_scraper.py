@@ -40,7 +40,7 @@ from dotenv import load_dotenv
 # slug→funding_type fallback'i için. İkisi de import sırasında load_dotenv +
 # stdout reconfigure çalıştırır; yan etkisi yok.
 import agent_reach_url_scraper as reach
-from discovery_gate import candidate_blockers
+from discovery_gate import KNOWN_URL_COLUMNS, candidate_blockers
 import nasilgitmis_scraper as ng
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -100,7 +100,7 @@ def url_exists(url):
     (yayında) ve submissions.url. submissions sorgusunda STATUS FİLTRESİ YOK —
     pending/approved/rejected fark etmez. Böylece haftalık re-run, daha önce
     reddedilmiş URL'leri de yeniden scrape/validate etmez (idempotent crawl)."""
-    for table, col in (("opportunities", "official_url"), ("submissions", "url")):
+    for table, col in KNOWN_URL_COLUMNS:
         res = requests.get(
             f"{SUPABASE_URL}/rest/v1/{table}",
             headers=sb_headers(),

@@ -62,6 +62,7 @@ import re
 import sys
 import textwrap
 import time
+import unicodedata
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -116,6 +117,9 @@ LEGACY_HUMAN_REJECTION_REASONS = {
 TARGET_PAGE_CHAR_LIMIT = 5000
 SOURCE_PAGE_CHAR_LIMIT = 9000
 PAGE_CHAR_LIMIT = TARGET_PAGE_CHAR_LIMIT + SOURCE_PAGE_CHAR_LIMIT
+# Katı alan (uyruk/yaş/dil) taraması için: modele giden metin kırpılıyor,
+# tarama ise sayfanın tamamına bakmalı. Üst sınır yalnız patolojik sayfalar için.
+FULL_SCAN_CHAR_LIMIT = 400_000
 VALID_FUNDING_TYPES = {"full", "partial", "free", "stipend"}
 VALID_CATEGORY_SLUGS = {
     "scholarship", "volunteering", "youth_project",
@@ -264,50 +268,47 @@ GÜNCELLİK KURALI: "Apply now", "Applications are invited" veya çalışan bir 
 4) Yayın güvenlik doğrulamaları — Her alan yalnız sayfadaki açık kanıtla true olabilir:
    - tek_firsat: Sayfa yalnız TEK fırsatı anlatıyor.
    - dogrudan_firsat_sayfasi: URL kullanıcıyı yeniden başvuru yeri aratmadan doğrudan form, başvuru portalı, başvuru e-postası veya başvuru belgesine götürüyor. Yalnız bilgi/koşul sayfası true OLAMAZ.
-   - son_tarih_dogrulandi: Submission'daki son tarih sayfadaki tarihle aynı, tam olarak gün-ay-yıl içeriyor ve BUGÜNDEN ÖNCE değil.
+   - resmi_kaynak: Bilgi sayfası fırsatı sunan ya da yöneten kurumun KENDİ sayfası (üniversite, vakıf, DAAD, AB portalı, bakanlık, programı yürüten kuruluş). Blog, haber, forum, derleme/listeleme sitesi false.
+   - son_tarih_dogrulandi: Son tarih aşağıdaki SON TARİH KURALI'na göre kesin belirlendiyse true.
    - finansman_dogrulandi: Submission'daki finansman türü (full/partial/free/stipend) sayfadaki açık bilgiyle uyuşuyor. Bilgi yoksa false; tahmin etme.
-   - ulke_dogrulandi: Submission'daki ev sahibi ülke veya gerçekten global olduğu sayfada doğrulanıyor.
+   - ulke_dogrulandi: Fırsatın gerçekleştiği ülke(ler) ya da gerçekten global/çevrim içi olduğu sayfada açıkça yazıyor ve dogrulanmis_filtreler.host_countries buna eşit.
    - uygunluk_dogrulandi: Submission'daki uygunluk notu sayfadaki başvuru koşullarıyla uyuşuyor ve boş/genel bir metin değil.
 
-Bu doğrulamaların herhangi birinde kanıt yoksa veya kayıtla çelişiyorsa false ver. Herhangi bir false kayıt eksik/yanlış sayılarak otomatik reddedilir. `belirsiz` yalnız bütün bu alanlar true iken açık/kapalı kararında gerçek bir çelişki kalırsa kullanılabilir.
+Bu doğrulamaların herhangi birinde kanıt yoksa veya kayıtla çelişiyorsa false ver. false olan kayıt yayınlanmaz.
+
+SON TARİH KURALI — son tarih kullanıcıya gösterilir ve sonuçlardan eleme için kullanılır:
+- Sayfa Türkiye'den başvuracak biri için geçerli TEK bir son başvuru tarihini gün-ay-yıl olarak veriyorsa: dogrulanmis_filtreler.deadline = "YYYY-MM-DD", surekli_basvuru=false, kanitlar.son_tarih = tarihi gün-ay-yıl olarak içeren birebir alıntı. Tarih BUGÜNDEN önceyse durum="kapali".
+- Sayfa sabit bir son tarih olmadığını AÇIKÇA söylüyorsa ("applications are accepted on a rolling basis", "may be submitted at any time", "year-round", "there is no deadline", "sürekli başvuru alınır"): deadline=null, surekli_basvuru=true, kanitlar.son_tarih = bu ifadenin birebir alıntısı.
+- Yalnız ay/yıl varsa, gruplara göre farklı tarihler var ve Türkiye'ninki belli değilse, tarih "üniversiteye/programa göre değişir" deniyorsa ya da hiç tarih yoksa: son_tarih_dogrulandi=false. Tahmin etme, ayın son gününü varsayma.
+- "Kaydedilen son başvuru metni" scraper'ın tahminidir; ona değil sayfaya güven.
 
 5) Kanıt alıntıları — `kanitlar` içindeki her değeri SAYFA METNİNDEN
-BİREBİR, kısa bir alıntı olarak kopyala. Uydurma, özet veya yorum yazma.
-Güncellik, son tarih, kategori, finansman, ülke ve uygunluk için ayrı alıntı
-bulamıyorsan ilgili doğrulama alanı false olmalıdır. Uyruk, yaş, eğitim,
-dil ve bölüm filtrelerinin her biri için ayrı, birebir alıntı ver; alıntı
-yoksa ilgili *_dogrulandi alanı false olmalıdır.
+BİREBİR, kısa bir alıntı olarak kopyala. Uydurma, özet, çeviri veya yorum
+yazma; "..." ile kısaltma yapma. Güncellik, son tarih, kategori, finansman,
+ülke ve uygunluk için alıntı ZORUNLU; bulamıyorsan ilgili doğrulama alanı
+false olmalıdır. Uyruk, yaş, eğitim, dil ve bölüm için alıntı yalnız sayfa
+bir KISIT koyduğunda zorunludur (bkz. FİLTRE SÖZLEŞMESİ).
 
-KRİTİK: Eksik zorunlu bilgi de kayıt hatasıdır. "kapali", kategori_uygun=false veya yayın doğrulamalarından herhangi birinin false olması submission'ın OTOMATİK REDDEDİLMESİNE yol açar. Kanıt görmeden true üretme. "belirsiz" yalnız bütün yayın doğrulamaları true olduğu halde genel karar güveni orta/düşük kaldığında kullanılabilir.
+KRİTİK: Kanıt görmeden true üretme. "kapali", kategori_uygun=false veya tek_firsat=false kaydı reddettirir; diğer doğrulamalardan birinin false olması kaydı yayından alıkoyar ve insana bırakır. "belirsiz" yalnız bütün yayın doğrulamaları true olduğu halde genel karar güveni orta/düşük kaldığında kullanılabilir.
 
-EK ALANLAR — kimin göreceğini belirler, bu yüzden fazladan temkinli ol:
-5) eligible_citizenships — Sayfa başvuranın UYRUĞUNA şart koyuyor mu?
-   - Koyuyorsa uygun ülkelerin ISO 3166-1 alfa-2 kod dizisi (ör. yalnız Çin vatandaşları için ["CN"]); bir ülke grubu ise o grubun bütün kodlarını say.
-   - Uyruktan hiç söz etmiyorsa, "her uyruktan" diyorsa ya da EMİN DEĞİLSEN: null.
-   - "Uluslararası/yabancı öğrenciler", "X ülkesinde okuyor olmak", "X'te çalışma izni" uyruk şartı DEĞİLDİR → null.
-6) target_fields — Fırsat belli bölümlerle sınırlı mı?
-   - Sınırlıysa şu slug'lardan uygun OLANLARIN TAMAMI; bir aileyi kapsıyorsa (ör. mühendislik) ailenin bütün slug'larını yaz:
+FİLTRE SÖZLEŞMESİ — TEK ÖLÇÜT DOĞRULUK. Her filtre sayfanın söylediğini birebir yansıtmalı:
+- Sayfa bir KISIT koyuyorsa (ör. "only EU citizens", "aged 18-30", "open to master's students", "IELTS 6.5", "engineering students only"): kısıtı değer olarak yaz, ilgili *_dogrulandi=true ve kanitlar'a kısıtı içeren birebir alıntıyı koy. Alıntısız kısıt yazma.
+- Sayfa o konuda HİÇBİR KISIT koymuyorsa — ister hiç bahsetmesin ister açıkça "all nationalities", "no age limit" desin — kısıtsız değeri yaz ve ilgili *_dogrulandi=true: eligible_citizenships ["all"], age_min ve age_max null, study_level ["any"], target_fields ["all"], required_languages ["all"] ile language_requirement null. Açık bir "herkese açık" cümlesi varsa kanitlar'a onu koy; yoksa ilgili kanıt "" (boş) kalsın. Bahsetmemek kısıt yok demektir; bunu hata sayma.
+- Sayfanın ifadesi belirsiz ya da kendi içinde çelişkiliyse ilgili *_dogrulandi=false.
+- ÖZELLİKLE UYRUK VE YAŞ: Bu ikisini kaçırmak, başvuramayacak birine fırsatı gösterir. Sayfanın TAMAMINI tara: "citizens of", "nationals of", "nationality", "passport", "uyruk", "vatandaşı olmak", "aged", "years old", "under 30", "yaş sınırı" gibi her ifadeyi değerlendir. Bir tane uyruk/yaş koşulu bile varsa kısıtsız yazma.
+- Uyruk: yalnız VATANDAŞLIK şartını yaz. Uygun ülkeleri ISO 3166-1 alfa-2 koduyla say; bir ülke grubuysa grubun bütün kodlarını yaz. "Uluslararası/yabancı öğrenciler", "X ülkesinde okuyor olmak", "X'te çalışma izni" uyruk şartı DEĞİLDİR.
+- Bölüm: sınırlıysa şu slug'lardan uygun OLANLARIN TAMAMI; bir aileyi kapsıyorsa (ör. mühendislik) ailenin bütün slug'larını yaz:
      {FIELD_SLUG_LINE}
-   - "Bütün bölümlere açık" diyorsa, bölümden söz etmiyorsa ya da EMİN DEĞİLSEN: null.
-   Bu iki alanı YANLIŞ doldurmak, uygun bir adayı sonuçlardan tamamen siler.
-
-FİLTRE SÖZLEŞMESİ — OTOMATİK ONAY İÇİN BEŞİ DE KESİN OLMALI:
-- uyruk_dogrulandi, yas_dogrulandi, egitim_dogrulandi,
-  dil_dogrulandi ve bolum_dogrulandi yalnız ilgili filtre sayfada açıkça
-  yazıyorsa true olabilir.
-- Bir kısıt YOKSA da bunu gösteren "all nationalities", "any field",
-  "no age limit", "all study levels", "no language requirement" gibi açık
-  bir alıntı gerekir. Sayfanın sadece hiç bahsetmemesi kısıt yok demek
-  DEĞİLDİR; bu durumda ilgili *_dogrulandi=false olmalıdır.
-- dogrulanmis_filtreler yalnız sayfada kanıtlanan son değerleri taşır:
+- dogrulanmis_filtreler şu değerleri taşır:
   host_countries ISO ülke kodları veya global için ["*"];
-  eligible_citizenships ISO kodları veya açıkça herkese açıksa ["all"];
-  age_min/age_max tam sayı veya açıkça yaş sınırı yoksa ikisi de null;
-  study_level high_school|bachelor|master|phd|graduate veya tümü için ["any"];
-  target_fields izin verilen slug'lar veya açıkça her bölümse ["all"];
-  language_requirement sayfadaki kesin şartın kısa metni veya açıkça
-  dil şartı yoksa null; required_languages ISO 639-1 küçük harf kodları
-  (English=en, German=de, Turkish=tr gibi) veya dil şartı yoksa ["all"].
+  eligible_citizenships ISO kodları veya kısıt yoksa ["all"];
+  age_min/age_max tam sayı veya kısıt yoksa ikisi de null;
+  study_level high_school|bachelor|master|phd|graduate veya kısıt yoksa ["any"];
+  target_fields izin verilen slug'lar veya kısıt yoksa ["all"];
+  language_requirement sayfadaki kesin şartın kısa metni veya kısıt yoksa null;
+  required_languages ISO 639-1 küçük harf kodları (English=en, German=de,
+  Turkish=tr gibi) veya kısıt yoksa ["all"];
+  deadline "YYYY-MM-DD" ya da SON TARİH KURALI'na göre sürekli başvuruda null.
 - Tahmin, ülkenin resmî dilinden dil şartı çıkarma, program adından
   bölüm/kademe çıkarma veya sayfada yazmayan varsayılan YASAKTIR.
 
@@ -324,7 +325,7 @@ true dönersen kayıt otomatik REDDEDİLİR: platform, başvuranın dinine göre
 ayrım yapan fırsatları yayınlamaz.
 
 ÇIKTI: Yanıtını yalnızca şu alanlara sahip TEK bir JSON nesnesi olarak ver. Markdown, ``` işareti veya açıklama EKLEME:
-{"durum":"acik|kapali|belirsiz","kategori_uygun":true|false,"guven":"yuksek|orta|dusuk","tek_firsat":true|false,"dogrudan_firsat_sayfasi":true|false,"son_tarih_dogrulandi":true|false,"finansman_dogrulandi":true|false,"ulke_dogrulandi":true|false,"uygunluk_dogrulandi":true|false,"din_sarti":true|false,"uyruk_dogrulandi":true|false,"yas_dogrulandi":true|false,"egitim_dogrulandi":true|false,"dil_dogrulandi":true|false,"bolum_dogrulandi":true|false,"dogrulanmis_filtreler":{"host_countries":["DE"],"eligible_citizenships":["all"],"age_min":18,"age_max":30,"study_level":["bachelor"],"language_requirement":"English B2","required_languages":["en"],"target_fields":["all"]},"kanitlar":{"guncellik":"<birebir alıntı>","son_tarih":"<birebir alıntı>","kategori":"<birebir alıntı>","finansman":"<birebir alıntı>","ulke":"<birebir alıntı>","uygunluk":"<birebir alıntı>","uyruk":"<birebir alıntı>","yas":"<birebir alıntı>","egitim":"<birebir alıntı>","dil":"<birebir alıntı>","bolum":"<birebir alıntı>"},"gerekce":"<kararını dayandıran kanıtı belirten Türkçe tek cümle>"}"""
+{"durum":"acik|kapali|belirsiz","kategori_uygun":true|false,"guven":"yuksek|orta|dusuk","tek_firsat":true|false,"dogrudan_firsat_sayfasi":true|false,"resmi_kaynak":true|false,"son_tarih_dogrulandi":true|false,"surekli_basvuru":true|false,"finansman_dogrulandi":true|false,"ulke_dogrulandi":true|false,"uygunluk_dogrulandi":true|false,"din_sarti":true|false,"uyruk_dogrulandi":true|false,"yas_dogrulandi":true|false,"egitim_dogrulandi":true|false,"dil_dogrulandi":true|false,"bolum_dogrulandi":true|false,"dogrulanmis_filtreler":{"host_countries":["DE"],"eligible_citizenships":["all"],"age_min":18,"age_max":30,"study_level":["bachelor"],"language_requirement":"English B2","required_languages":["en"],"target_fields":["all"],"deadline":"2027-01-15"},"kanitlar":{"guncellik":"<birebir alıntı>","son_tarih":"<birebir alıntı>","kategori":"<birebir alıntı>","finansman":"<birebir alıntı>","ulke":"<birebir alıntı>","uygunluk":"<birebir alıntı>","uyruk":"<birebir alıntı>","yas":"<birebir alıntı>","egitim":"<birebir alıntı ya da kısıt yoksa boş>","dil":"<birebir alıntı>","bolum":"<birebir alıntı ya da kısıt yoksa boş>"},"gerekce":"<kararını dayandıran kanıtı belirten Türkçe tek cümle>"}"""
 
 
 # Prompttaki slug listesi kümeden ÜRETİLİYOR: elle yazılan bir liste
@@ -913,10 +914,14 @@ def approve_submission(sub, verdict, dry_run):
         return True, "(dry-run — RPC çağrılmadı)"
 
     # Scraper tahminine güvenme: iki LLM turunun kanıtladığı kanonik filtre
-    # değerlerinin TAMAMI RPC'den önce submission'a yazılır.
-    on_patch = verdict.get("dogrulanmis_filtreler") or {}
-    if set(on_patch) != VERIFIED_FILTER_KEYS:
+    # değerlerinin TAMAMI ve son tarih RPC'den önce submission'a yazılır.
+    # Son tarih null ise (yalnız kanıtlanmış sürekli başvuru) deadline_text
+    # boşaltılır; RPC boş metni NULL son tarih olarak işler.
+    verified = verdict.get("dogrulanmis_filtreler") or {}
+    if set(verified) != REQUIRED_VERDICT_FILTER_KEYS:
         return False, "kanıtlanmış filtre seti eksik"
+    on_patch = {key: verified[key] for key in VERIFIED_FILTER_KEYS}
+    on_patch["deadline_text"] = verified["deadline"]
     if on_patch:
         try:
             requests.patch(
@@ -1055,6 +1060,64 @@ def parse_deadline(text):
         return None
     try:
         return date(y, mo, d)
+    except ValueError:
+        return None
+
+
+_DATE_PATTERNS = (
+    ("iso", re.compile(r"(\d{4})-(\d{1,2})-(\d{1,2})")),
+    ("dot", re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{4})")),
+    ("day_month", re.compile(
+        r"(\d{1,2})(?:st|nd|rd|th)?\.?\s+(?:of\s+)?([a-zçğıöşü]+),?\s+(\d{4})")),
+    ("month_day", re.compile(r"([a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})")),
+)
+
+
+def extract_dates(text):
+    """Metindeki TAM (gün-ay-yıl) tarihlerin hepsini döndürür.
+
+    parse_deadline yalnız İLK eşleşmeyi verir; bir alıntıda birden çok tarih
+    olabilir ("Opening 1 October 2026, deadline 15 November 2026"). Ajanın
+    beyan ettiği tarihin alıntıda GERÇEKTEN geçtiğini doğrulamak için hepsi
+    gerekiyor. Yalnız ay/yıl ("November 2026") kasıtlı olarak tarih sayılmaz."""
+    if not text:
+        return []
+    t = str(text).lower()
+    found = []
+    for kind, pattern in _DATE_PATTERNS:
+        for m in pattern.finditer(t):
+            try:
+                if kind == "iso":
+                    y, mo, d = (int(g) for g in m.groups())
+                elif kind == "dot":
+                    d, mo, y = (int(g) for g in m.groups())
+                elif kind == "day_month":
+                    month = TR_AYLAR.get(m.group(2)) or EN_AYLAR.get(m.group(2))
+                    if not month:
+                        continue
+                    d, mo, y = int(m.group(1)), month, int(m.group(3))
+                else:
+                    month = EN_AYLAR.get(m.group(1))
+                    if not month:
+                        continue
+                    mo, d, y = month, int(m.group(2)), int(m.group(3))
+                value = date(y, mo, d)
+            except ValueError:
+                continue
+            if value not in found:
+                found.append(value)
+    return found
+
+
+def strict_iso_date(text):
+    """Yalnız tam ISO 'YYYY-MM-DD' metni tarih sayar; serbest metin → None.
+
+    Scraper'ların deadline_text'i serbest metin olabilir ("Deadline 15 January
+    2026; for the 2027 intake 15 January 2027"). parse_deadline ilk tarihi
+    alıp geçmiş sanar ve açık bir fırsatı reddettirirdi. LLM'siz kararlar
+    yalnız kesin ISO tarihe dayanır; gerisini ajan sayfadan kanıtla belirler."""
+    try:
+        return date.fromisoformat(str(text or "").strip())
     except ValueError:
         return None
 
@@ -1305,6 +1368,18 @@ def clean_verified_filters(raw):
             out["required_languages"] = ["all"]
         elif all(code in VALID_LANGUAGE_CODES for code in codes):
             out["required_languages"] = sorted(set(codes))
+
+    # Son tarih: kanonik ISO ya da (yalnız sürekli başvuruda) null. Anahtar
+    # hiç yoksa alan düşer ve onay kapısı "kanıtlanmış deadline yok" der.
+    if "deadline" in raw:
+        deadline = raw.get("deadline")
+        if deadline is None:
+            out["deadline"] = None
+        elif isinstance(deadline, str):
+            try:
+                out["deadline"] = date.fromisoformat(deadline.strip()).isoformat()
+            except ValueError:
+                pass
     return out
 
 
@@ -1327,7 +1402,7 @@ def _parse_verdict(text):
     # JSON boolean true gönderirse doğrulama başarılı sayılır (fail-closed).
     boolean_fields = (
         "kategori_uygun", "tek_firsat", "dogrudan_firsat_sayfasi",
-        "din_sarti",
+        "resmi_kaynak", "surekli_basvuru", "din_sarti",
         "son_tarih_dogrulandi", "finansman_dogrulandi",
         "ulke_dogrulandi", "uygunluk_dogrulandi", "uyruk_dogrulandi",
         "yas_dogrulandi", "egitim_dogrulandi", "dil_dogrulandi",
@@ -1462,6 +1537,9 @@ def submission_completeness_blockers(sub):
     """LLM'den bağımsız, yayın öncesi zorunlu veri kapısı.
 
     Bu alanlardan biri eksik/bozuksa kayıt yayınlanamaz ve otomatik reddedilir.
+    Son tarih burada ARANMAZ: ajan onu sayfadan birebir alıntıyla çıkarıyor ve
+    deadline_verification_blockers doğruluyor. Yalnız kesin ISO olup geçmiş
+    bir tarih burada kaydı durdurur.
     """
     blockers = []
     title = (sub.get("title") or "").strip()
@@ -1480,10 +1558,8 @@ def submission_completeness_blockers(sub):
     countries = sub.get("host_countries") or []
     if not countries or any(not str(c).strip() for c in countries):
         blockers.append("ev sahibi ülke/global bilgisi eksik")
-    deadline = parse_deadline(sub.get("deadline_text"))
-    if deadline is None:
-        blockers.append("tam ve işlenebilir son başvuru tarihi eksik")
-    elif deadline < platform_today():
+    deadline = strict_iso_date(sub.get("deadline_text"))
+    if deadline is not None and deadline < platform_today():
         blockers.append("son başvuru tarihi geçmiş")
     if sub.get("funding_type") not in VALID_FUNDING_TYPES:
         blockers.append("finansman türü eksik veya geçersiz")
@@ -1499,14 +1575,88 @@ STRICT_FILTER_FLAGS = {
     "dil_dogrulandi": "dil şartı kesin doğrulanmadı",
     "bolum_dogrulandi": "bölüm filtresi kesin doğrulanmadı",
 }
+# DB tetikleyicisinin (enforce_agent_two_pass_evidence) aradığı sekiz kolon.
+# Onayda submission'a birebir bu değerler yazılır.
 VERIFIED_FILTER_KEYS = {
     "host_countries", "eligible_citizenships", "age_min", "age_max",
     "study_level", "language_requirement", "required_languages", "target_fields",
 }
+# Kolon olmayan ama iki turun uzlaşması gereken değer: kanıtlanmış son tarih.
+REQUIRED_VERDICT_FILTER_KEYS = VERIFIED_FILTER_KEYS | {"deadline"}
+
+# Filtre kanıtı → "kısıt yok" değerini tanıyan test. Kısıt YOKSA sayfa
+# genellikle bundan hiç bahsetmez; o durumda alıntı zorunlu değil.
+UNRESTRICTED_FILTER_TESTS = {
+    "uyruk": lambda f: f.get("eligible_citizenships") == ["all"],
+    "yas": lambda f: f.get("age_min") is None and f.get("age_max") is None,
+    "egitim": lambda f: f.get("study_level") == ["any"],
+    "dil": lambda f: (f.get("required_languages") == ["all"]
+                      and f.get("language_requirement") is None),
+    "bolum": lambda f: f.get("target_fields") == ["all"],
+}
+ALWAYS_QUOTED_EVIDENCE = (
+    "guncellik", "son_tarih", "kategori", "finansman", "ulke", "uygunluk",
+)
+
+# "Sayfa bahsetmiyor → kısıt yok" okuması, katı alanlarda ek bir güvenlik
+# ağıyla korunuyor. Model "kısıt yok" dese bile TAM sayfa metninde (modelin
+# gördüğü kırpılmış metin değil) bu ifadelerden biri geçiyorsa kayıt insana
+# bırakılır. Yanlış alarmın bedeli bir insan bakışı; kaçırmanın bedeli,
+# başvuramayacak birine fırsatı göstermek.
+#
+# İfadeler bilerek DAR: "citizenship" tek başına gençlik projelerinde konu
+# olarak ("active citizenship", "aktif vatandaşlık") çok geçiyor; "yaşam",
+# "yaşayan" yaş değil. Yalnız koşul bildiren kalıplar aranıyor.
+STRICT_SILENCE_CUES = {
+    "uyruk": re.compile(
+        r"\b(?:nationalit(?:y|ies)|citizens?\s+of|citizenship\s+(?:of|requirement)"
+        r"|nationals\s+of|passport\s+holders?|uyru(?:k|ğu|ğunda|klu)\w*"
+        r"|t\.?\s?c\.?\s+vatandaş\w*|vatandaşı\s+ol\w+)",
+        re.IGNORECASE,
+    ),
+    "yas": re.compile(
+        r"\b(?:age\s+limit|age\s+(?:of|between|range|requirement)|aged|ages\s+\d"
+        r"|years\s+old|years\s+of\s+age|under\s+the\s+age|maximum\s+age|minimum\s+age"
+        r"|born\s+(?:on\s+or\s+)?(?:after|before)|yaş(?:ı|ında|ındaki|ları|larında"
+        r"|\s+sınırı|\s+aralığı|\s+şartı)?\b|doğumlu)",
+        re.IGNORECASE,
+    ),
+    "dil": re.compile(
+        r"\b(?:ielts|toefl|cefr|duolingo\s+english|language\s+(?:skills|requirements?"
+        r"|proficiency|certificate)|proficien(?:t|cy)\s+in|good\s+command\s+of"
+        r"|fluent\s+in|knowledge\s+of\s+(?:english|german|french|spanish|italian"
+        r"|dutch|japanese|korean|chinese)|dil\s+(?:şartı|yeterliliği|belgesi|seviyesi)"
+        r"|yökdil)\b",
+        re.IGNORECASE,
+    ),
+}
+STRICT_SILENCE_LABELS = {
+    "uyruk": "uyruk",
+    "yas": "yaş",
+    "dil": "dil",
+}
+
+# "Sürekli başvuru" yalnız sayfa bunu AÇIKÇA söylüyorsa kabul. Kart null
+# son tarihi "Sürekli açık" olarak gösteriyor; "üniversiteye göre değişir"
+# bu değildir ve yayınlanmaz.
+ROLLING_DEADLINE_RE = re.compile(
+    r"(?:rolling\s+(?:basis|admissions?|applications?)|on\s+a\s+rolling"
+    r"|(?:at\s+)?any\s*time|all\s+year|year[-\s]round|throughout\s+the\s+year"
+    r"|no\s+(?:application\s+)?deadline|there\s+is\s+no\s+deadline|open\s+until\s+filled"
+    r"|ongoing\s+basis|continuous(?:ly)?\s+(?:basis|open)|sürekli\s+(?:başvuru|açık)"
+    r"|yıl\s+boyunca|herhangi\s+bir\s+zamanda"
+    r"|son\s+başvuru\s+tarihi\s+(?:yoktur|bulunmamaktadır))",
+    re.IGNORECASE,
+)
 
 
 def strict_filter_blockers(verdict):
-    """Beş kullanıcı filtresi + ev sahibi ülke için kapalı güvenlik kapısı."""
+    """Beş kullanıcı filtresi + ev sahibi ülke + son tarih için kapalı kapı.
+
+    `*_dogrulandi=true` artık "kayıttaki değer sayfaya göre DOĞRU" demek:
+    sayfa kısıt koyuyorsa kısıt kanıtıyla yazılmış, koymuyorsa kısıtsız.
+    Yalnız belirsiz/çelişkili sayfa false üretir.
+    """
     blockers = [
         label for field, label in STRICT_FILTER_FLAGS.items()
         if verdict.get(field) is not True
@@ -1514,7 +1664,7 @@ def strict_filter_blockers(verdict):
     filters = verdict.get("dogrulanmis_filtreler")
     if not isinstance(filters, dict):
         filters = {}
-    for key in sorted(VERIFIED_FILTER_KEYS - set(filters)):
+    for key in sorted(REQUIRED_VERDICT_FILTER_KEYS - set(filters)):
         blockers.append(f"kanıtlanmış {key} değeri yok/geçersiz")
     return blockers
 
@@ -1523,13 +1673,17 @@ def filter_consensus_blockers(first_verdict, second_verdict):
     """Bağımsız iki denetim aynı filtre değerlerini bulmadan yayınlama."""
     first = first_verdict.get("dogrulanmis_filtreler") or {}
     second = second_verdict.get("dogrulanmis_filtreler") or {}
-    return [] if first == second else ["iki denetim filtre değerlerinde uzlaşmadı"]
+    blockers = [] if first == second else ["iki denetim filtre değerlerinde uzlaşmadı"]
+    if (first_verdict.get("surekli_basvuru") is True) != (
+            second_verdict.get("surekli_basvuru") is True):
+        blockers.append("iki denetim sürekli başvuru konusunda uzlaşmadı")
+    return blockers
 
 
-# Din şartını yakalayan kaba tarama. AMACI RED DEĞİL: modelin "din şartı yok"
-# dediği ama metinde din geçen kayıtları otomatik onaydan çıkarıp insana
-# yönlendirmek. Yanlış alarmın bedeli bir insan bakışı; kaçırmanın bedeli
-# platform politikasının ihlali.
+# Din şartını yakalayan kaba tarama. Kullanıcı kararı (Eylül 2026): kayıtta
+# din/mezhep ifadesi geçiyorsa model "şart yok" dese bile kayıt REDDEDİLİR —
+# "yahudi, müslüman vs. diye bir ibare varsa doğrudan reddedelim." Bu yüzden
+# auto_approval_blockers içinde ve process() bu listeyi redde çeviriyor.
 RELIGION_HINTS = re.compile(
     r"(jewish|muslim|islamic|christian|protestant|catholic|orthodox|hindu|"
     r"buddhist|church|faith|denomination|müslüman|hristiyan|yahudi|protestan|"
@@ -1539,23 +1693,48 @@ RELIGION_HINTS = re.compile(
 
 
 def religion_hint_blockers(sub, verdict):
-    """Metinde din geçiyor ama model din_sarti=false dediyse otomatik onayı kes."""
+    """Metinde din geçiyor ama model din_sarti=false dediyse onayı kes."""
     if verdict.get("din_sarti") is True:
         return []                      # zaten decide() reddedecek
     blob = " ".join(str(sub.get(k) or "") for k in
                     ("title", "eligibility_notes", "description"))
     if RELIGION_HINTS.search(blob):
-        return ["metinde din/inanç ifadesi geçiyor — insan bakışı gerekiyor"]
+        return ["metinde din/inanç ifadesi geçiyor"]
     return []
+
+
+def route_blockers(sub, verdict):
+    """Başvuru rotası kapısı: doğrudan form ya da kurumun resmî sayfası.
+
+    verified — kullanıcı formu/portalı doğrudan açar; model de hedefin
+    gerçekten başvuru sayfası olduğunu doğrulamalı.
+    guided — form iki adımda bulunamadı; kurumun kendi program sayfası
+    "Koşullar ve Başvuru" olarak gösterilir. Model sayfanın resmî kaynak
+    olduğunu doğrulamalı; derleme/blog sayfası asla guided olamaz
+    (verify_and_store_application_route bunu zaten deterministik eliyor).
+    """
+    route = sub.get("application_route_status")
+    if route == "verified":
+        blockers = []
+        if not sub.get("application_url_verified_at") or not sub.get("application_url_final"):
+            blockers.append("başvuru linki teknik doğrulama kaydı eksik")
+        if verdict.get("dogrudan_firsat_sayfasi") is not True:
+            blockers.append("doğrudan fırsat sayfası olduğu doğrulanmadı")
+        return blockers
+    if route == "guided":
+        blockers = []
+        if not (sub.get("details_url") or sub.get("url")):
+            blockers.append("resmî bilgi sayfası adresi yok")
+        if verdict.get("resmi_kaynak") is not True:
+            blockers.append("bilgi sayfasının resmî kaynak olduğu doğrulanmadı")
+        return blockers
+    return ["doğrudan başvuru adımı ya da resmî program sayfası yok"]
 
 
 def auto_approval_blockers(sub, verdict):
     """Eksiksizlik + LLM kanıt kapısı. Boş liste dışında yayın YASAK."""
     blockers = submission_completeness_blockers(sub)
-    if sub.get("application_route_status") != "verified":
-        blockers.append("doğrudan başvuru adımı doğrulanmadı")
-    if not sub.get("application_url_verified_at") or not sub.get("application_url_final"):
-        blockers.append("başvuru linki teknik doğrulama kaydı eksik")
+    blockers.extend(route_blockers(sub, verdict))
     if verdict.get("durum") != "acik":
         blockers.append("fırsatın açık olduğu kesin değil")
     if verdict.get("guven") != "yuksek":
@@ -1567,7 +1746,6 @@ def auto_approval_blockers(sub, verdict):
         blockers.append("kanıta dayalı gerekçe eksik")
     evidence_labels = {
         "tek_firsat": "tek bir fırsat olduğu doğrulanmadı",
-        "dogrudan_firsat_sayfasi": "doğrudan fırsat sayfası olduğu doğrulanmadı",
         "son_tarih_dogrulandi": "son tarih sayfadan doğrulanmadı",
         "finansman_dogrulandi": "finansman sayfadan doğrulanmadı",
         "ulke_dogrulandi": "ülke/global bilgisi sayfadan doğrulanmadı",
@@ -1580,44 +1758,160 @@ def auto_approval_blockers(sub, verdict):
     return blockers
 
 
+_EVIDENCE_TRANSLATION = str.maketrans({
+    "‘": "'", "’": "'", "‚": "'", "‛": "'",
+    "“": '"', "”": '"', "„": '"', "«": '"', "»": '"',
+    "‐": "-", "‑": "-", "‒": "-", "–": "-", "—": "-",
+    " ": " ", " ": " ", " ": " ", "​": "",
+})
+
+
 def _normalize_evidence_text(value):
-    return " ".join(html.unescape(str(value or "")).casefold().split())
+    """Alıntı karşılaştırması için tipografik farkları siler.
+
+    Model alıntıyı doğru kopyalayıp ’ yerine ', – yerine - yazınca kanıt
+    "sayfada yok" sayılıyordu. Harf, rakam ve sözcük sırası korunur; yalnız
+    tırnak/tire/boşluk biçimi ve Unicode uyumluluk formu eşitlenir.
+    """
+    text = html.unescape(str(value or "")).translate(_EVIDENCE_TRANSLATION)
+    text = unicodedata.normalize("NFKC", text)
+    return " ".join(text.casefold().split())
+
+
+def _quote_in_page(quote, haystack):
+    """Alıntı normalize sayfa metninde BİREBİR var mı?
+
+    Model uzun cümleyi "..." ile kısaltabiliyor; o durumda her parça (en az 5
+    karakter) sayfada AYNI SIRAYLA bulunmalı. Parça atlamak anlam değiştirmez
+    ama parça uydurmak yakalanır.
+    """
+    q = _normalize_evidence_text(quote).strip(" \"'")
+    if len(q) < 5:
+        return False
+    if q in haystack:
+        return True
+    parts = [part.strip(" \"'") for part in q.split("...")]
+    parts = [part for part in parts if part]
+    if len(parts) < 2 or any(len(part) < 5 for part in parts):
+        return False
+    position = 0
+    for part in parts:
+        index = haystack.find(part, position)
+        if index < 0:
+            return False
+        position = index + len(part)
+    return True
 
 
 def evidence_quote_blockers(page_text, verdict):
-    """Model alıntılarının gerçekten verilen sayfa metninde olduğunu kanıtlar."""
+    """Model alıntılarının gerçekten verilen sayfa metninde olduğunu kanıtlar.
+
+    Güncellik, son tarih, kategori, finansman, ülke ve uygunluk alıntısı her
+    zaman zorunlu. Beş kullanıcı filtresinde alıntı yalnız bir KISIT
+    yazıldığında zorunlu: kısıtsız değer sayfanın sessizliğinden gelir ve
+    alıntılanacak bir cümle yoktur. Kısıtsız değer için verilmiş ama sayfada
+    bulunamayan alıntı sessizce boşaltılır — DB'ye doğrulanmamış metin gitmez.
+    """
     haystack = _normalize_evidence_text(page_text)
     evidence = verdict.get("kanitlar")
     if not isinstance(evidence, dict):
         evidence = {}
+        verdict["kanitlar"] = evidence
+    filters = verdict.get("dogrulanmis_filtreler")
+    if not isinstance(filters, dict):
+        filters = {}
     blockers = []
     for field, label in EVIDENCE_QUOTE_FIELDS.items():
-        quote = _normalize_evidence_text(evidence.get(field))
-        if len(quote) < 5:
-            blockers.append(f"{label} eksik")
-        elif quote not in haystack:
-            blockers.append(f"{label} sayfa metninde bulunamadı")
+        quote = evidence.get(field)
+        found = _quote_in_page(quote, haystack)
+        if field in ALWAYS_QUOTED_EVIDENCE or not UNRESTRICTED_FILTER_TESTS[field](filters):
+            if len(_normalize_evidence_text(quote)) < 5:
+                blockers.append(f"{label} eksik")
+            elif not found:
+                blockers.append(f"{label} sayfa metninde bulunamadı")
+        elif quote and not found:
+            evidence[field] = ""
     return blockers
 
 
-def evidence_rejection_reasons(verdict):
-    """Sayfada yanlışlığı doğrulanan alanlar pending'e değil redde gider."""
-    labels = {
-        "tek_firsat": "sayfa tek bir fırsat değil",
-        "dogrudan_firsat_sayfasi": "link doğrudan başvuru/resmî fırsat sayfası değil",
-        "son_tarih_dogrulandi": "kayıtlı güncel son tarih sayfayla uyuşmuyor",
-        "finansman_dogrulandi": "finansman bilgisi sayfayla uyuşmuyor",
-        "ulke_dogrulandi": "ülke/global bilgisi sayfayla uyuşmuyor",
-        "uygunluk_dogrulandi": "uygunluk koşulları sayfayla uyuşmuyor",
-        **STRICT_FILTER_FLAGS,
-    }
-    return [label for field, label in labels.items() if verdict.get(field) is not True]
+def strict_silence_blockers(scan_text, verdict):
+    """Katı alanda "kısıt yok" kararını tam sayfa taramasıyla sınar.
+
+    Model kısıtsız değer yazdıysa ve bunu doğrulanmış bir "herkese açık"
+    alıntısıyla desteklemediyse, TAM sayfa metninde koşul bildiren bir ifade
+    geçmemeli. Geçiyorsa model onu kaçırmış olabilir → yayınlama.
+    """
+    filters = verdict.get("dogrulanmis_filtreler")
+    if not isinstance(filters, dict):
+        return []
+    evidence = verdict.get("kanitlar") or {}
+    blockers = []
+    for field, cue in STRICT_SILENCE_CUES.items():
+        if not UNRESTRICTED_FILTER_TESTS[field](filters):
+            continue                     # kısıt yazılmış; alıntı kapısı denetler
+        if evidence.get(field):
+            continue                     # doğrulanmış açık "herkese açık" alıntısı
+        match = cue.search(scan_text or "")
+        if match:
+            blockers.append(
+                f"model {STRICT_SILENCE_LABELS[field]} kısıtı bulmadı ama sayfada "
+                f"'{match.group(0).strip()}' geçiyor"
+            )
+    return blockers
+
+
+def deadline_verification_blockers(verdict, today=None):
+    """Kanıtlanmış son tarihi alıntının kendisiyle deterministik karşılaştırır.
+
+    Model tarihi "YYYY-MM-DD" olarak beyan ediyor; aynı tarih son_tarih
+    alıntısında gün-ay-yıl olarak geçmeli (alıntının sayfada olduğunu
+    evidence_quote_blockers ayrıca doğruluyor). Sürekli başvuru yalnız alıntı
+    bunu açıkça söylüyorsa geçerli.
+    """
+    today = today or platform_today()
+    filters = verdict.get("dogrulanmis_filtreler")
+    if not isinstance(filters, dict) or "deadline" not in filters:
+        return ["kanıtlanmış son tarih değeri yok"]
+    quote = (verdict.get("kanitlar") or {}).get("son_tarih") or ""
+    deadline = filters.get("deadline")
+    if verdict.get("surekli_basvuru") is True:
+        blockers = []
+        if deadline is not None:
+            blockers.append("hem sürekli başvuru hem sabit son tarih beyan edildi")
+        if not ROLLING_DEADLINE_RE.search(_normalize_evidence_text(quote)):
+            blockers.append("sürekli başvuru alıntısı sabit son tarih olmadığını söylemiyor")
+        return blockers
+    if deadline is None:
+        return ["son tarih yok ve sürekli başvuru da kanıtlanmadı"]
+    parsed = date.fromisoformat(deadline)
+    blockers = []
+    if parsed < today:
+        blockers.append(f"son tarih geçmiş ({deadline})")
+    if parsed not in extract_dates(quote):
+        blockers.append(f"son tarih alıntısında {deadline} tarihi geçmiyor")
+    return blockers
+
+
+def page_evidence_blockers(page_text, scan_text, verdict, today=None):
+    """Sayfa metnine bağlı bütün deterministik kapılar tek yerde."""
+    blockers = evidence_quote_blockers(page_text, verdict)
+    blockers.extend(deadline_verification_blockers(verdict, today=today))
+    blockers.extend(strict_silence_blockers(scan_text, verdict))
+    return blockers
+
+
+def _verdict_deadline(sub, verdict):
+    """Kararın dayandığı son tarih: önce modelin kanıtladığı, yoksa kesin ISO."""
+    filters = verdict.get("dogrulanmis_filtreler") or {}
+    if filters.get("deadline"):
+        return date.fromisoformat(filters["deadline"])
+    return strict_iso_date(sub.get("deadline_text"))
 
 
 def verdict_date_consistency_blockers(sub, verdict, today=None):
     """LLM'in takvim hesabı yapısal son tarihle çelişirse karar verme."""
     today = today or platform_today()
-    deadline = parse_deadline(sub.get("deadline_text"))
+    deadline = _verdict_deadline(sub, verdict)
     if deadline is None:
         return []
     if deadline < today and verdict.get("durum") != "kapali":
@@ -1636,8 +1930,12 @@ def verdict_date_consistency_blockers(sub, verdict, today=None):
 
 def decide(verdict):
     """Karar dict'i -> (eylem, gerekce). eylem: reddet | onayla | belirsiz.
-    Otomatik ONAY yalnızca açık + kategori-uygun + güven yüksek olduğunda;
-    otomatik RED yalnızca yüksek/orta güvenli net olumsuzlarda."""
+
+    RED yalnız fırsatın yayınlanamayacağı KESİN olduğunda: din şartı, kapanmış,
+    platforma uygun değil ya da tek fırsat değil (liste/derleme sayfası).
+    Bir alanın doğrulanamaması red değil; kayıt insana bırakılır (belirsiz),
+    çünkü red kalıcıdır — scraper'lar reddedilen URL'yi bir daha eklemez.
+    """
     # Din şartı diğer bütün kriterlerin önünde: fırsat kusursuz olsa bile
     # başvuranın dinine göre ayrım yapıyorsa yayınlanmaz. Güven seviyesine
     # bakılmaz — bu bir kalite değil, politika kararı.
@@ -1650,6 +1948,8 @@ def decide(verdict):
         return "reddet", verdict["gerekce"]
     if not verdict["kategori_uygun"] and verdict["guven"] == "yuksek":
         return "reddet", verdict["gerekce"]
+    if verdict.get("tek_firsat") is not True and verdict["guven"] == "yuksek":
+        return "reddet", f"{verdict['gerekce']} — sayfa tek bir fırsat değil"
     if (verdict["durum"] == "acik" and verdict["kategori_uygun"]
             and verdict["guven"] == "yuksek"):
         return "onayla", verdict["gerekce"]
@@ -1907,14 +2207,29 @@ def verify_and_store_application_route(sub, dry_run):
         return False, "başvuru rotasını arayacak geçerli bilgi/kaynak URL'i yok"
 
     route = resolve_application_route(start_url, max_hops=2)
-    if not route.verified or not route.application_url:
-        return False, route.reason
-
-    patch = {
-        **route.submission_fields(),
-        "application_route_status": "verified",
-        "application_url_verified_at": datetime.now(timezone.utc).isoformat(),
-    }
+    if route.verified and route.application_url:
+        patch = {
+            **route.submission_fields(),
+            "application_route_status": "verified",
+            "application_url_verified_at": datetime.now(timezone.utc).isoformat(),
+        }
+    else:
+        info_url = guided_info_url(sub)
+        if not info_url:
+            return False, route.reason
+        # Form iki adımda bulunamadı ama kurumun kendi program sayfası var.
+        # Kart onu "Koşullar ve Başvuru" olarak gösteriyor (match_opportunities
+        # 'guided' seviyesi). Sayfanın resmî olduğunu model ayrıca doğrulamalı.
+        patch = {
+            "url": info_url,
+            "details_url": info_url,
+            "application_route_status": "guided",
+            "application_method": None,
+            "application_url_verified_at": None,
+            "application_url_check_status": None,
+            "application_url_final": None,
+            "application_url_evidence": None,
+        }
     sub.update(patch)
     if not dry_run:
         response = requests.patch(
@@ -1925,7 +2240,29 @@ def verify_and_store_application_route(sub, dry_run):
             timeout=20,
         )
         response.raise_for_status()
+    if patch["application_route_status"] == "guided":
+        return True, f"doğrudan form yok ({route.reason}); resmî program sayfası kullanılacak"
     return True, route.reason
+
+
+def guided_info_url(sub):
+    """'guided' rota için kullanılabilecek resmî bilgi sayfası (yoksa None).
+
+    Derleme/kaynak siteleri (nasilgitmis, youthop), sosyal medya ve genel
+    ana/giriş sayfaları asla resmî program sayfası sayılmaz. Sıra: ayrı
+    tutulan detay sayfası, kaynak sayfa, kayıtlı URL.
+    """
+    for key in ("details_url", "source_url", "url"):
+        candidate = (sub.get(key) or "").strip()
+        if not re.match(r"^https?://[^\s]+$", candidate, flags=re.IGNORECASE):
+            continue
+        if _url_host(candidate) in AGGREGATOR_DOMAINS:
+            continue
+        if direct_link_blockers({"url": candidate, "source_url": ""}):
+            continue
+        return candidate
+    return None
+
 
 def process(sub, dry_run, known_urls, seen_urls, stats):
     """Tek submission — heuristikler, gerekirse LLM. Tally etiketi döndürür."""
@@ -1952,8 +2289,9 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
         return "kopya"
     seen_urls.add(norm)
 
-    # Heuristik 2 — kayıtlı son başvuru tarihi geçmiş (LLM'siz)
-    dl = parse_deadline(sub.get("deadline_text"))
+    # Heuristik 2 — kayıtlı son başvuru tarihi geçmiş (LLM'siz). Yalnız kesin
+    # ISO tarih: serbest metindeki ilk tarih yanlış olabilir (bkz. strict_iso_date).
+    dl = strict_iso_date(sub.get("deadline_text"))
     if dl is not None and dl < platform_today():
         apply_decision(sub, "reddet",
                        f"Son başvuru tarihi geçmiş: {dl.isoformat()}", dry_run)
@@ -1989,7 +2327,10 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
                        "Kopya: aynı çözülen başvuru URL'i bu partide mevcut", dry_run)
         print("  Çözülen başvuru URL'i partide tekrar → REDDET")
         return "kopya"
-    print(f"  Doğrudan başvuru doğrulandı: {url}")
+    if sub.get("application_route_status") == "guided":
+        print(f"  Doğrudan form yok; resmî program sayfası: {url}")
+    else:
+        print(f"  Doğrudan başvuru doğrulandı: {url}")
 
     # Yayın kapısı 1 — eksik kayıt için LLM çağrısı bile yapma. Agent bu
     # alanları kendi tahminiyle doldurmaz; doğrudan reddeder.
@@ -2015,6 +2356,7 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
         status, final_url, html, err = fetch_page(url)
     source_url = ((sub.get("details_url") or sub.get("source_url") or "").strip())
     source_text = ""
+    source_html = ""
     if source_url and _norm_url(source_url) != norm:
         source_status, _source_final, source_html, _source_err = fetch_page(source_url)
         if source_status == 200 and source_html:
@@ -2069,6 +2411,12 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
     if source_text:
         page_text = (f"DOĞRUDAN HEDEF SAYFA:\n{target_text or '(metin yok / bot koruması)'}\n\n"
                      f"KAYNAK KANIT SAYFASI:\n{source_text}")
+    # Katı alan taraması modelin gördüğü KIRPILMIŞ metne değil, sayfanın
+    # tamamına bakar: kısıt kırpılan kısımdaysa model onu hiç görmemiştir.
+    scan_text = "\n".join(filter(None, (
+        page_to_text(html, FULL_SCAN_CHAR_LIMIT) if status == 200 and html else "",
+        page_to_text(source_html, FULL_SCAN_CHAR_LIMIT) if source_text else "",
+    )))
     if len(page_text) < 80:
         apply_decision(sub, "reddet",
                        "Sayfada kaydı doğrulayacak yeterli bilgi yok", dry_run)
@@ -2100,20 +2448,6 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
     print(f"  LLM: durum={verdict['durum']} "
           f"kategori_uygun={verdict['kategori_uygun']} guven={verdict['guven']}")
 
-    evidence_errors = evidence_rejection_reasons(verdict)
-    if evidence_errors:
-        reason = f"{verdict['gerekce']} — " + "; ".join(evidence_errors)
-        apply_decision(sub, "reddet", reason, dry_run)
-        print(f"  → REDDET — {reason}")
-        return "llm_red"
-
-    quote_errors = evidence_quote_blockers(page_text, verdict)
-    if quote_errors:
-        reason = "Kanıt doğrulaması başarısız: " + "; ".join(quote_errors)
-        apply_decision(sub, "reddet", reason, dry_run)
-        print(f"  → REDDET — {reason}")
-        return "llm_red"
-
     # Kaynak sayfa hedefi doğrulasa bile agent hedefi HTTP 200 ile açamadıysa
     # yayınlama. Bu, gerçek teknik belirsizliktir ve admin kuyruğuna girebilir.
     if status != 200:
@@ -2126,14 +2460,23 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
     eylem, gerekce = decide(verdict)
 
     if eylem == "onayla":
-        # Yayın kapısı 2 — modelin tüm kanıt doğrulamaları açıkça true değilse
-        # otomatik onay yok. Eksik/orta güvenli kayıt admin kuyruğunda kalır.
+        # Yayın kapısı 2 — modelin kanıt doğrulamaları, alıntılar, son tarih
+        # ve katı alan taraması. Bir şey DOĞRULANAMADIYSA kayıt reddedilmez,
+        # insana bırakılır: red kalıcıdır ve doğru bir fırsatı kaybettirir.
+        # Din ifadesi istisna — kullanıcı kararıyla doğrudan red.
+        religion = religion_hint_blockers(sub, verdict)
+        if religion:
+            reason = "Din/inanç ifadesi geçen kayıt yayınlanmıyor: " + "; ".join(religion)
+            apply_decision(sub, "reddet", reason, dry_run)
+            print(f"  → REDDET — {reason}")
+            return "llm_red"
         blockers = auto_approval_blockers(sub, verdict)
+        blockers.extend(page_evidence_blockers(page_text, scan_text, verdict))
         if blockers:
             guarded_reason = "Otomatik yayın kapısı: " + "; ".join(blockers)
-            apply_decision(sub, "reddet", guarded_reason, dry_run)
-            print(f"  → REDDET — {guarded_reason}")
-            return "llm_red"
+            apply_decision(sub, "belirsiz", guarded_reason, dry_run)
+            print(f"  → BELİRSİZ (insana) — {guarded_reason}")
+            return "belirsiz"
 
         print("  İlk denetim olumlu → bağımsız ikinci LLM denetimi...")
         stats["llm_calls"] += 1
@@ -2145,14 +2488,20 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
             apply_decision(sub, "tekrar", "ikinci LLM denetimi alınamadı", dry_run)
             print("  İkinci denetim hatası → AGENT KUYRUĞUNDA TEKRAR DENE")
             return "tekrar"
-        second_blockers = auto_approval_blockers(sub, second_verdict)
-        second_blockers.extend(evidence_quote_blockers(page_text, second_verdict))
-        second_blockers.extend(filter_consensus_blockers(verdict, second_verdict))
-        if second_blockers:
-            reason = "İkinci denetim onaylamadı: " + "; ".join(second_blockers)
+        second_eylem, second_gerekce = decide(second_verdict)
+        if second_eylem == "reddet":
+            reason = f"İkinci denetim reddetti: {second_gerekce}"
             apply_decision(sub, "reddet", reason, dry_run)
             print(f"  → REDDET — {reason}")
             return "llm_red"
+        second_blockers = auto_approval_blockers(sub, second_verdict)
+        second_blockers.extend(page_evidence_blockers(page_text, scan_text, second_verdict))
+        second_blockers.extend(filter_consensus_blockers(verdict, second_verdict))
+        if second_blockers:
+            reason = "İkinci denetim onaylamadı: " + "; ".join(second_blockers)
+            apply_decision(sub, "belirsiz", reason, dry_run)
+            print(f"  → BELİRSİZ (insana) — {reason}")
+            return "belirsiz"
         verdict["second_pass"] = second_verdict
         sub["_agent_eval_validation"] = verdict
 

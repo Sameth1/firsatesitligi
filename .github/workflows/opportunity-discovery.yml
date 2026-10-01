@@ -73,25 +73,32 @@ jobs:
             exit 2
           fi
 
+          if [[ "$SOURCE" != "all" && "$SOURCE" != "nasilgitmis" && "$SOURCE" != "daad" ]]; then
+            echo "Geçersiz kaynak: $SOURCE" >&2
+            exit 2
+          fi
+
           ARGS=()
           if [ "$INPUT_DRY_RUN" = "true" ]; then
             ARGS+=(--dry-run)
           fi
 
-          case "$SOURCE" in
-            all|nasilgitmis)
-              python nasilgitmis_scraper.py "${ARGS[@]}" --max-pages 2 --limit "$LIMIT"
-              ;;
-          esac
-          case "$SOURCE" in
-            all|daad)
-              python daad_scraper.py "${ARGS[@]}"
-              ;;
-          esac
+          # Her kaynak BAĞIMSIZ çalışır: biri çökerse diğerleri yine taranır,
+          # koşu en sonda kırmızıya döner. (14 ve 21 Eylül'de DAAD'ın 403'ü
+          # adımı öldürüyordu.) Geçici erişim sorunu çökme sayılmaz; scraper
+          # ::warning:: yazıp temiz çıkar.
+          failed=()
+          if [[ "$SOURCE" == "all" || "$SOURCE" == "nasilgitmis" ]]; then
+            python nasilgitmis_scraper.py "${ARGS[@]}" --max-pages 2 --limit "$LIMIT" \
+              || failed+=(nasilgitmis)
+          fi
+          if [[ "$SOURCE" == "all" || "$SOURCE" == "daad" ]]; then
+            python daad_scraper.py "${ARGS[@]}" || failed+=(daad)
+          fi
 
-          if [[ "$SOURCE" != "all" && "$SOURCE" != "nasilgitmis" && "$SOURCE" != "daad" ]]; then
-            echo "Geçersiz kaynak: $SOURCE" >&2
-            exit 2
+          if (( ${#failed[@]} )); then
+            echo "::error title=Keşif kaynağı çöktü::${failed[*]}"
+            exit 1
           fi
 
       # Youth Opportunities bu ortamda tekrarlayan timeout verdi. Kaynak
