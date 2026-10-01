@@ -10,9 +10,9 @@ concurrency:
 on:
   schedule:
     # Haftada bir: Pazartesi Türkiye saatiyle 06:20 (UTC 03:20).
-    # Günlükten haftalığa çekildi — kaynaklar (nasilgitmis, DAAD) bu sıklıkta
-    # yeni içerik üretmiyor, günlük tarama aynı sayfaları tekrar tekrar
-    # indirip boşuna istek harcıyordu. Elle tetikleme her zaman açık.
+    # Günlükten haftalığa çekildi — kaynaklar (nasilgitmis, DAAD, SALTO) bu
+    # sıklıkta yeni içerik üretmiyor, günlük tarama aynı sayfaları tekrar
+    # tekrar indirip boşuna istek harcıyordu. Elle tetikleme her zaman açık.
     - cron: '20 3 * * 1'
   workflow_dispatch:
     inputs:
@@ -22,9 +22,9 @@ on:
         default: true
         required: false
       source:
-        description: 'Kaynak: all, nasilgitmis veya daad'
+        description: 'Kaynak: all, nasilgitmis, daad veya salto'
         type: choice
-        options: [all, nasilgitmis, daad]
+        options: [all, nasilgitmis, daad, salto]
         default: all
         required: true
       limit:
@@ -73,7 +73,7 @@ jobs:
             exit 2
           fi
 
-          if [[ "$SOURCE" != "all" && "$SOURCE" != "nasilgitmis" && "$SOURCE" != "daad" ]]; then
+          if [[ ! "$SOURCE" =~ ^(all|nasilgitmis|daad|salto)$ ]]; then
             echo "Geçersiz kaynak: $SOURCE" >&2
             exit 2
           fi
@@ -94,6 +94,9 @@ jobs:
           fi
           if [[ "$SOURCE" == "all" || "$SOURCE" == "daad" ]]; then
             python daad_scraper.py "${ARGS[@]}" || failed+=(daad)
+          fi
+          if [[ "$SOURCE" == "all" || "$SOURCE" == "salto" ]]; then
+            python salto_scraper.py "${ARGS[@]}" || failed+=(salto)
           fi
 
           if (( ${#failed[@]} )); then

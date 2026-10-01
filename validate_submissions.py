@@ -72,7 +72,7 @@ import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
-from application_links import resolve_application_route
+from application_links import is_safe_guided_url, resolve_application_route
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -297,6 +297,7 @@ FİLTRE SÖZLEŞMESİ — TEK ÖLÇÜT DOĞRULUK. Her filtre sayfanın söyledi�
 - Sayfanın ifadesi belirsiz ya da kendi içinde çelişkiliyse ilgili *_dogrulandi=false.
 - ÖZELLİKLE UYRUK VE YAŞ: Bu ikisini kaçırmak, başvuramayacak birine fırsatı gösterir. Sayfanın TAMAMINI tara: "citizens of", "nationals of", "nationality", "passport", "uyruk", "vatandaşı olmak", "aged", "years old", "under 30", "yaş sınırı" gibi her ifadeyi değerlendir. Bir tane uyruk/yaş koşulu bile varsa kısıtsız yazma.
 - Uyruk: yalnız VATANDAŞLIK şartını yaz. Uygun ülkeleri ISO 3166-1 alfa-2 koduyla say; bir ülke grubuysa grubun bütün kodlarını yaz. "Uluslararası/yabancı öğrenciler", "X ülkesinde okuyor olmak", "X'te çalışma izni" uyruk şartı DEĞİLDİR.
+- Erasmus+ / Avrupa Dayanışma Programı etkinliklerinde "participants from <ülkeler>" ya da "X'ten N katılımcı" ifadesi İKAMET / gönderen kuruluş şartıdır, uyruk değildir. Türkiye (Turkey/Türkiye) bu listedeyse eligible_citizenships ["all"]; listede yoksa fırsat Türkiye'deki gençlere açık değildir → kategori_uygun=false.
 - Bölüm: sınırlıysa şu slug'lardan uygun OLANLARIN TAMAMI; bir aileyi kapsıyorsa (ör. mühendislik) ailenin bütün slug'larını yaz:
      {FIELD_SLUG_LINE}
 - dogrulanmis_filtreler şu değerleri taşır:
@@ -1217,6 +1218,15 @@ def page_to_text(html, limit=PAGE_CHAR_LIMIT):
                 "aside", "noscript", "form", "iframe"):
         for el in soup.select(sel):
             el.decompose()
+    # Bilgi ipuçları metne katılır. SALTO katılımcı ülkelerini yalnız ipucunda
+    # listeliyor ("Erasmus+ Youth Programme countries" → "Austria, …, Türkiye");
+    # model ve alıntı denetimi bunu görmezse ülke kapsamı doğrulanamaz. Logo
+    # gibi süs görsellerinin kısa başlıkları gürültü olmasın diye yalnız liste
+    # (virgüllü) taşıyan img başlıkları ve kısaltma açılımları alınıyor.
+    for el in soup.select("img[title], abbr[title]"):
+        title = (el.get("title") or "").strip()
+        if el.name == "abbr" or "," in title:
+            el.replace_with(f"{el.get_text(' ', strip=True)} ({title})")
     lines = [ln.strip() for ln in soup.get_text("\n").splitlines() if ln.strip()]
     return "\n".join(lines)[:limit]
 
@@ -1775,7 +1785,12 @@ def _normalize_evidence_text(value):
     """
     text = html.unescape(str(value or "")).translate(_EVIDENCE_TRANSLATION)
     text = unicodedata.normalize("NFKC", text)
-    return " ".join(text.casefold().split())
+    text = " ".join(text.casefold().split())
+    # Satır sonları boşluğa döndüğünde "deadline\n: 29 September" sayfada
+    # "deadline : 29" olur, model "deadline: 29" kopyalar. Noktalama öncesi
+    # ve parantez içi boşluklar iki tarafta da silinir.
+    text = re.sub(r"\s+([:;,.!?)\]])", r"\1", text)
+    return re.sub(r"([(\[])\s+", r"\1", text)
 
 
 def _quote_in_page(quote, haystack):
@@ -2248,13 +2263,15 @@ def verify_and_store_application_route(sub, dry_run):
 def guided_info_url(sub):
     """'guided' rota için kullanılabilecek resmî bilgi sayfası (yoksa None).
 
-    Derleme/kaynak siteleri (nasilgitmis, youthop), sosyal medya ve genel
-    ana/giriş sayfaları asla resmî program sayfası sayılmaz. Sıra: ayrı
-    tutulan detay sayfası, kaynak sayfa, kayıtlı URL.
+    Ölçüt application_links.is_safe_guided_url ile aynı (backfill de onu
+    kullanıyor): derleme siteleri, sosyal medya, form sağlayıcıları, ana/giriş/
+    arama sayfaları asla resmî program sayfası sayılmaz. Üstüne bu modülün
+    derleme ve link kuralları da uygulanır. Sıra: ayrı tutulan detay sayfası,
+    kaynak sayfa, kayıtlı URL.
     """
     for key in ("details_url", "source_url", "url"):
         candidate = (sub.get(key) or "").strip()
-        if not re.match(r"^https?://[^\s]+$", candidate, flags=re.IGNORECASE):
+        if not is_safe_guided_url(candidate):
             continue
         if _url_host(candidate) in AGGREGATOR_DOMAINS:
             continue
@@ -2405,7 +2422,11 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
             return "tekrar"
 
     # KATMAN 2 — hedef sayfa + ayrı kaynak kanıtı birlikte değerlendirilir.
-    target_text = (page_to_text(html, TARGET_PAGE_CHAR_LIMIT)
+    # Ayrı kaynak sayfa yoksa (resmî program sayfası hem hedef hem kanıt)
+    # bütün bütçe hedefe verilir: DAAD/SALTO detay sayfalarında son tarih ve
+    # katılımcı ülkeleri 5.000 karakterin ötesinde kalıyordu.
+    target_limit = TARGET_PAGE_CHAR_LIMIT if source_text else PAGE_CHAR_LIMIT
+    target_text = (page_to_text(html, target_limit)
                    if status == 200 and html else "")
     page_text = target_text
     if source_text:
