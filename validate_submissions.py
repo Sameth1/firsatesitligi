@@ -1645,6 +1645,28 @@ STRICT_SILENCE_CUES = {
         re.IGNORECASE,
     ),
 }
+# Açık "kısıt yok" cümleleri. Bir kanıt alıntısı taramayı ancak gerçekten bunu
+# söylüyorsa yumuşatır: model kısıtsız değer yazıp kanıt olarak "Applicants
+# must be citizens of Germany" gibi bir cümle verirse tarama atlanmamalı.
+OPENNESS_RE = {
+    "uyruk": re.compile(
+        r"\b(?:all|any|every)\s+(?:nationalit|countries|citizenship)|regardless\s+of\s+"
+        r"(?:nationality|citizenship)|(?:independent|irrespective)\s+of\s+nationality"
+        r"|no\s+(?:nationality|citizenship)\s+(?:restriction|requirement)"
+        r"|tüm\s+uyruk|her\s+uyruktan|uyruk\s+(?:şartı|sınırı)\s+(?:yok|aranmaz)",
+        re.IGNORECASE,
+    ),
+    "yas": re.compile(
+        r"\bno\s+(?:upper\s+)?age\s+(?:limit|restriction|requirement)|regardless\s+of\s+age"
+        r"|irrespective\s+of\s+age|all\s+ages|yaş\s+sınırı\s+(?:yok|bulunmamaktadır)"
+        r"|her\s+yaştan",
+        re.IGNORECASE,
+    ),
+    "dil": re.compile(
+        r"\bno\s+language\s+(?:requirement|certificate|test)|dil\s+şartı\s+(?:yok|aranmaz)",
+        re.IGNORECASE,
+    ),
+}
 STRICT_SILENCE_LABELS = {
     "uyruk": "uyruk",
     "yas": "yaş",
@@ -1869,9 +1891,14 @@ def strict_silence_blockers(scan_text, verdict):
     for field, cue in STRICT_SILENCE_CUES.items():
         if not UNRESTRICTED_FILTER_TESTS[field](filters):
             continue                     # kısıt yazılmış; alıntı kapısı denetler
-        if evidence.get(field):
-            continue                     # doğrulanmış açık "herkese açık" alıntısı
-        match = cue.search(scan_text or "")
+        text = scan_text or ""
+        quote = evidence.get(field) or ""
+        if quote and OPENNESS_RE[field].search(quote):
+            # Doğrulanmış "herkese açık" cümlesi kendisi koşul kalıbı taşır
+            # ("all nationalities"); onu çıkarıp sayfanın GERİ KALANINI tara.
+            text = _normalize_evidence_text(text).replace(
+                _normalize_evidence_text(quote).strip(" \"'"), " ")
+        match = cue.search(text)
         if match:
             blockers.append(
                 f"model {STRICT_SILENCE_LABELS[field]} kısıtı bulmadı ama sayfada "

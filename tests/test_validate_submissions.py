@@ -1002,6 +1002,21 @@ class StrictSilenceScanTests(unittest.TestCase):
         self.assertEqual(validator.evidence_quote_blockers(page, verdict), [])
         self.assertEqual(validator.strict_silence_blockers(page, verdict), [])
 
+    def test_restriction_quoted_as_openness_does_not_skip_the_scan(self):
+        # Model kısıtsız yazıp kanıt olarak kısıt cümlesini verdi: çelişki.
+        page = SILENT_PAGE + " Applicants must be citizens of Germany."
+        verdict = silent_page_verdict()
+        verdict["kanitlar"]["uyruk"] = "Applicants must be citizens of Germany"
+        self.assertEqual(validator.evidence_quote_blockers(page, verdict), [])
+        self.assertTrue(validator.strict_silence_blockers(page, verdict))
+
+    def test_openness_quote_does_not_hide_another_condition(self):
+        page = (SILENT_PAGE + " Open to all nationalities. "
+                "Only nationals of EU member states receive the travel grant.")
+        verdict = silent_page_verdict()
+        verdict["kanitlar"]["uyruk"] = "Open to all nationalities"
+        self.assertTrue(validator.strict_silence_blockers(page, verdict))
+
     def test_scan_sees_text_beyond_the_llm_truncation(self):
         verdict = silent_page_verdict()
         truncated = SILENT_PAGE
