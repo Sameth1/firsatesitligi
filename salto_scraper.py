@@ -42,7 +42,7 @@ import os
 import re
 import sys
 import time
-from datetime import date
+from datetime import date, datetime, timezone
 
 import requests
 from bs4 import BeautifulSoup
@@ -294,6 +294,11 @@ def parse_training(html, url):
         "submission_origin": "agent",
         "review_stage": "agent_queue",
     }
+    # Form bulunduysa doğrulama zamanı da yazılmalı: submissions tablosundaki
+    # submissions_verified_route_complete_check 'verified' rotada bu alanı
+    # zorunlu tutuyor. İlk canlı koşuda 28 ilan bu yüzden eklenemedi.
+    if route.submission_fields().get("application_route_status") == "verified":
+        record["application_url_verified_at"] = datetime.now(timezone.utc).isoformat()
     return record, ""
 
 # ─── Çalıştırma ──────────────────────────────────────────────────────────────

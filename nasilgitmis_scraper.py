@@ -397,15 +397,21 @@ def clean_content(page, title: str) -> str:
     return "\n".join(clean_lines)
 
 
+# Bu çalıştırmada son tarihi geçmiş diye atlanan yazılar (özet sayımı için).
+EXPIRED_SEEN = []
+
+
 def parse_post(url, category_slug):
     """Bir yazıyı parse edip opportunity dict'i döndür."""
     page = fetch_page(url)
     if page is None:
+        print(f"    ❌ sayfa alınamadı: {url}")
         return None
 
     # Başlık
     title = page.css("h1.entry-title::text").get() or page.css("h1::text").get()
     if not title or not title.strip():
+        print(f"    ❌ başlık bulunamadı: {url}")
         return None
     title = normalize_title(title)
 
@@ -422,7 +428,11 @@ def parse_post(url, category_slug):
     # için fromisoformat burada hata vermez.
     deadline = find_deadline(content)
     if deadline and date.fromisoformat(deadline) < date.today():
-        return None  # geçmiş fırsat — ekleme
+        # Geçmiş fırsat — eklenmez. Bu bir hata değil; özette ayrı sayılıyor
+        # (eskiden "Hata: 24" görünüyordu, çoğu yalnız süresi geçmiş yazıydı).
+        print(f"    ↷ süresi geçmiş ({deadline}): {title[:55]}")
+        EXPIRED_SEEN.append(url)
+        return None
 
     # Yaş aralığı
     age_min, age_max = extract_age_range(content)
@@ -508,10 +518,12 @@ def scrape_category(cat_url, category_slug, max_pages=5, dry_run=False, budget=N
             if budget is not None:
                 budget["remaining"] -= 1
 
+            expired_before = len(EXPIRED_SEEN)
             record = parse_post(link, category_slug)
 
             if not record:
-                errors += 1
+                if len(EXPIRED_SEEN) == expired_before:
+                    errors += 1          # gerçek hata; süresi geçmiş ayrı sayılıyor
                 continue
 
             if not record.get("category_slug"):
@@ -573,7 +585,8 @@ def run(dry_run=False, max_pages=3, limit=None):
     print("\n" + "─" * 40)
     print(f"✅ Eklendi  : {total_added} pending submission")
     print(f"⏭  Atlandı  : {total_skipped} (opportunities/submissions'ta zaten vardı)")
-    print(f"❌ Hata     : {total_errors}")
+    print(f"↷  Süresi geçmiş: {len(EXPIRED_SEEN)}")
+    print(f"❌ Hata/kapı: {total_errors}")
     print("─" * 40)
     print("Bitti!")
 
