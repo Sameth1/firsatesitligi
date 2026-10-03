@@ -1408,3 +1408,42 @@ class ModelFallbackTests(unittest.TestCase):
 
     def test_retired_model_is_not_the_default(self):
         self.assertNotIn("nvidia/nemotron-3-super-120b-a12b", validator.LLM_MODELS)
+
+
+class TokenQuoteMatchingTests(unittest.TestCase):
+    """Ekim 2026: gerçek alıntılar başlık, ":" ve madde işaretleri yüzünden
+    "sayfada yok" sayılıyordu. Sözcük düzeyinde eşleşme bunları kurtarmalı,
+    uydurma sözcükleri ise yakalamalı."""
+
+    PAGE = ("Profile of participants\n✔ The call is open for youth leaders and youth "
+            "workers who fit the following criteria:\n- representatives of youth work "
+            "organisations\nThis project is financed by the Hellenic National Agency "
+            "of Erasmus+/ Youth and European Solidarity Corps.")
+
+    def match(self, quote):
+        return validator._quote_in_page(quote, validator._normalize_evidence_text(self.PAGE))
+
+    def test_heading_colon_and_bullet_do_not_break_a_real_quote(self):
+        self.assertTrue(self.match(
+            "Profile of participants: The call is open for youth leaders and youth workers"))
+        self.assertTrue(self.match(
+            "financed by the Hellenic National Agency of Erasmus+/Youth and European "
+            "Solidarity Corps"))
+
+    def test_invented_words_are_still_caught(self):
+        self.assertFalse(self.match(
+            "This project is financed by the National Agencies of the Erasmus+ Youth in Action Programme"))
+        self.assertFalse(self.match("The call is open for youth leaders and teachers who"))
+
+    def test_short_quotes_must_be_contiguous(self):
+        self.assertTrue(self.match("youth leaders and youth workers"))
+        self.assertFalse(self.match("youth leaders youth workers"))
+
+    def test_tooltip_list_goes_to_the_end_not_mid_sentence(self):
+        html = ('<p>for 25 participants</p><p>from Erasmus+ Youth Programme countries '
+                '<img title="Austria, Belgium, Türkiye"/> and recommended for</p><p>Youth workers</p>')
+        text = validator.page_to_text(html)
+        self.assertTrue(validator._quote_in_page(
+            "for 25 participants from Erasmus+ Youth Programme countries and recommended for Youth workers",
+            validator._normalize_evidence_text(text)))
+        self.assertTrue(text.rstrip().endswith("Ek bilgi (ipucu): Austria, Belgium, Türkiye"))

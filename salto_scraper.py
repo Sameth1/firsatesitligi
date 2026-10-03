@@ -262,9 +262,16 @@ def parse_training(html, url):
                            travel, re.IGNORECASE)
     funding_type = "full" if (covered and no_fee and reimbursed) else "partial"
 
+    # Uygunluk notu sayfadaki cümlenin sözcükleriyle AYNI sırada kurulur
+    # ("This Training Course is for 25 participants from … and recommended
+    # for …"). Ajan bu notu sayfayla karşılaştırıyor ve model alıntıyı bazen
+    # buradan kopyalıyor; "Training Course: …" gibi uydurma bir biçim kanıt
+    # kapısına takılıyordu.
+    sentence = f"This {activity} is {count} {groups}".strip()
+    if recommended:
+        sentence += f" and recommended for {recommended}"
     eligibility = " ".join(filter(None, (
-        f"{activity}: {count} {groups}".strip() + ".",
-        f"Recommended for: {recommended}." if recommended else "",
+        sentence + ".",
         f"Working language(s): {language}." if language else "",
         profile[:600],
     )))

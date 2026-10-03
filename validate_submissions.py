@@ -1246,11 +1246,20 @@ def page_to_text(html, limit=PAGE_CHAR_LIMIT):
     # model ve alıntı denetimi bunu görmezse ülke kapsamı doğrulanamaz. Logo
     # gibi süs görsellerinin kısa başlıkları gürültü olmasın diye yalnız liste
     # (virgüllü) taşıyan img başlıkları ve kısaltma açılımları alınıyor.
+    # Liste ipuçları cümlenin ORTASINA değil sayfa sonuna eklenir: aradaki
+    # 40 ülkelik liste "for 25 participants from Erasmus+ Youth Programme
+    # countries and recommended for…" cümlesini bölüp alıntı eşleşmesini
+    # bozuyordu. Kısaltma açılımları kısa olduğu için yerinde kalır.
+    tooltips = []
     for el in soup.select("img[title], abbr[title]"):
         title = (el.get("title") or "").strip()
-        if el.name == "abbr" or "," in title:
+        if el.name == "abbr":
             el.replace_with(f"{el.get_text(' ', strip=True)} ({title})")
+        elif "," in title:
+            tooltips.append(title)
+            el.replace_with(" ")
     lines = [ln.strip() for ln in soup.get_text("\n").splitlines() if ln.strip()]
+    lines.extend(f"Ek bilgi (ipucu): {title}" for title in dict.fromkeys(tooltips))
     return "\n".join(lines)[:limit]
 
 
@@ -1903,15 +1912,82 @@ def _quote_in_page(quote, haystack):
         return True
     parts = [part.strip(" \"'") for part in q.split("...")]
     parts = [part for part in parts if part]
-    if len(parts) < 2 or any(len(part) < 5 for part in parts):
-        return False
+    if len(parts) >= 2 and all(len(part) >= 5 for part in parts):
+        position = 0
+        for part in parts:
+            index = haystack.find(part, position)
+            if index < 0:
+                break
+            position = index + len(part)
+        else:
+            return True
+    return _tokens_in_page(parts or [q], _evidence_tokens(haystack))
+
+
+_TOKEN_RE = re.compile(r"\w+", re.UNICODE)
+# Uzun alıntıda araya giren kısa başlık/madde işaretine tolerans: tek boşluk
+# en fazla bu kadar sözcük, toplam fazlalık alıntının dörtte biri (en az 3).
+QUOTE_MAX_GAP_TOKENS = 6
+QUOTE_MIN_TOKENS_FOR_GAPS = 6
+
+
+def _evidence_tokens(text):
+    return _TOKEN_RE.findall(text or "")
+
+
+def _tokens_in_page(parts, page_tokens):
+    """Sözcük düzeyinde, sırası korunmuş eşleşme (son çare).
+
+    Satır sonu, "✔"/"-" madde işaretleri ve "Profile of participants" gibi bir
+    başlığın ardına modelin koyduğu ":" karakter düzeyinde eşleşmeyi bozuyordu
+    (Ekim 2026: SALTO kayıtlarının çoğu bu yüzden insana kaldı). Noktalama ve
+    simgeler yok sayılır; sözcükler sayfada AYNI SIRAYLA ve birbirine yakın
+    geçmelidir. Kısa alıntılar (< 6 sözcük) bitişik olmak zorunda; uzunlarda
+    araya giren kısa bir başlığa izin verilir. Uydurulmuş sözcük yakalanır.
+    """
     position = 0
     for part in parts:
-        index = haystack.find(part, position)
-        if index < 0:
+        q = _evidence_tokens(part)
+        if not q:
             return False
-        position = index + len(part)
+        found = _find_token_run(q, page_tokens, position)
+        if found is None:
+            return False
+        position = found
     return True
+
+
+def _find_token_run(q, h, start):
+    """q'yu h içinde start'tan itibaren arar; bulunursa bitiş indeksi."""
+    n, m = len(h), len(q)
+    allow_gaps = m >= QUOTE_MIN_TOKENS_FOR_GAPS
+    budget = max(3, m // 4) if allow_gaps else 0
+    for i in range(start, n - m + 1):
+        if h[i] != q[0]:
+            continue
+        if h[i:i + m] == q:
+            return i + m
+        if not allow_gaps:
+            continue
+        j, k, extra = i + 1, 1, 0
+        while k < m and j < n:
+            if h[j] == q[k]:
+                k += 1
+                j += 1
+                continue
+            gap_end = j
+            while (gap_end < n and h[gap_end] != q[k]
+                   and gap_end - j < QUOTE_MAX_GAP_TOKENS):
+                gap_end += 1
+            if gap_end >= n or h[gap_end] != q[k]:
+                break
+            extra += gap_end - j
+            if extra > budget:
+                break
+            j = gap_end
+        if k == m:
+            return j
+    return None
 
 
 def evidence_quote_blockers(page_text, verdict):
