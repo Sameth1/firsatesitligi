@@ -20,7 +20,7 @@ Son tarih ve doğrudan başvuru adımı BURADA ELENMİYOR, ajana bırakılıyor:
   önceden bilemez.
 """
 
-from datetime import date
+from datetime import date, timedelta
 from urllib.parse import urlparse
 
 
@@ -72,6 +72,9 @@ def candidate_blockers(record, today=None):
     else:
         if parsed_deadline < today:
             blockers.append("son tarih geçmiş")
+        elif parsed_deadline > today + timedelta(days=730):
+            # Kaynaktaki yazım hatası ("2926") ya da yer tutucu tarih.
+            blockers.append("son tarih makul değil")
     if record.get("funding_type") not in VALID_FUNDING:
         blockers.append("finansman eksik/geçersiz")
     if len(str(record.get("eligibility_notes") or "").strip()) < 20:

@@ -71,6 +71,7 @@ HTTP_HEADERS = {
 }
 DETAIL_RE = re.compile(
     r"/tools/european-training-calendar/training/[a-z0-9-]+\.\d+/")
+ONLINE_RE = re.compile(r"\b(?:online|e-?learning|webinars?|virtual)\b", re.IGNORECASE)
 TURKIYE_RE = re.compile(r"\b(?:T[üu]rkiye|Turkey)\b", re.IGNORECASE)
 EN_MONTHS = {
     "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
@@ -219,7 +220,9 @@ def parse_training(html, url):
     activity = meta[0] if meta else ""
     when_where = meta[1] if len(meta) > 1 else ""
     venue = when_where.split("|", 1)[1].strip() if "|" in when_where else ""
-    if not venue or re.search(r"\bonline\b", f"{activity} {venue}", re.IGNORECASE):
+    # "E-learning" türü etkinlikler yer olarak ülke adı taşıyabiliyor
+    # ("1 October 2033 | Hungary"); bunlar da yurt dışı değil.
+    if not venue or ONLINE_RE.search(f"{activity} {venue} {title}"):
         return None, "çevrim içi etkinlik (yurt dışı değil)"
     country = venue_country(venue)
     if not country:

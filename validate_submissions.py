@@ -122,7 +122,10 @@ LEGACY_HUMAN_REJECTION_REASONS = {
     ),
 }
 TARGET_PAGE_CHAR_LIMIT = 5000
-SOURCE_PAGE_CHAR_LIMIT = 9000
+# Kaynak sayfa 9.000'de kesiliyordu; SALTO detay sayfalarında masraflar ve
+# katılımcı ülkeleri bu sınırın ötesinde kalıyor, model de kanıtı göremeyip
+# "alıntı sayfada yok" kapısına takılıyordu (Ekim 2026: 19 kaydın çoğu).
+SOURCE_PAGE_CHAR_LIMIT = 15000
 PAGE_CHAR_LIMIT = TARGET_PAGE_CHAR_LIMIT + SOURCE_PAGE_CHAR_LIMIT
 # Katı alan (uyruk/yaş/dil) taraması için: modele giden metin kırpılıyor,
 # tarama ise sayfanın tamamına bakmalı. Üst sınır yalnız patolojik sayfalar için.
@@ -1617,6 +1620,8 @@ UNRESTRICTED_FILTER_TESTS = {
                       and f.get("language_requirement") is None),
     "bolum": lambda f: f.get("target_fields") == ["all"],
 }
+# Bundan uzak son tarih makul sayılmaz (Ekim 2026: SALTO'da "2926" ve "2032").
+MAX_DEADLINE_DAYS_AHEAD = 730
 ALWAYS_QUOTED_EVIDENCE = (
     "guncellik", "son_tarih", "kategori", "finansman", "ulke", "uygunluk",
 )
@@ -1878,7 +1883,10 @@ def evidence_quote_blockers(page_text, verdict):
             if len(_normalize_evidence_text(quote)) < 5:
                 blockers.append(f"{label} eksik")
             elif not found:
-                blockers.append(f"{label} sayfa metninde bulunamadı")
+                # Alıntının başı nota yazılır: hangi metnin sayfada olmadığı
+                # görünmezse kapı teşhis edilemiyor.
+                blockers.append(f"{label} sayfa metninde bulunamadı "
+                                f"(\"{str(quote).strip()[:70]}\")")
         elif quote and not found:
             evidence[field] = ""
     return blockers
@@ -1942,6 +1950,10 @@ def deadline_verification_blockers(verdict, today=None):
     blockers = []
     if parsed < today:
         blockers.append(f"son tarih geçmiş ({deadline})")
+    if parsed > today + timedelta(days=MAX_DEADLINE_DAYS_AHEAD):
+        # Kaynakta yazım hatası ("1 June 2926") ya da yer tutucu ("2032")
+        # alıntıyla birebir uyuşur ama doğru değildir.
+        blockers.append(f"son tarih makul değil ({deadline}; kaynakta yazım hatası olabilir)")
     if parsed not in extract_dates(quote):
         blockers.append(f"son tarih alıntısında {deadline} tarihi geçmiyor")
     return blockers
@@ -2485,6 +2497,9 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
     target_limit = TARGET_PAGE_CHAR_LIMIT if source_text else PAGE_CHAR_LIMIT
     target_text = (page_to_text(html, target_limit)
                    if status == 200 and html else "")
+    if source_text and len(target_text) < TARGET_PAGE_CHAR_LIMIT:
+        # Hedef kısa (ör. Google Form) → kullanılmayan bütçe kaynak sayfaya.
+        source_text = page_to_text(source_html, PAGE_CHAR_LIMIT - len(target_text))
     page_text = target_text
     if source_text:
         page_text = (f"DOĞRUDAN HEDEF SAYFA:\n{target_text or '(metin yok / bot koruması)'}\n\n"
