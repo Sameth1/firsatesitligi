@@ -72,6 +72,7 @@ import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
+from discovery_gate import ONLINE_ONLY_RE
 from application_links import (
     CLOSED_FORM_REASON, is_closed_form, is_safe_guided_url, resolve_application_route,
 )
@@ -283,7 +284,7 @@ GÜNCELLİK KURALI: "Apply now", "Applications are invited" veya çalışan bir 
 
 2) kategori_uygun — Sayfa gerçekten bu fırsatı anlatıyor mu ve platforma uygun mu?
    - true: Gerçek bir fırsat ilanı, belirtilen kategoriyle makul örtüşüyor ve gencin ücret ödemesini gerektirmiyor. TEK bir fırsat = tek program, tek son başvuru tarihi, tek başvuru süreci.
-   - false: Fırsat ilanı değil (genel blog, ana sayfa, giriş sayfası, alakasız ürün/hizmet, hata sayfası); VEYA ücretli/ticari program; VEYA kategoriyle hiç ilgisi yok.
+   - false: Fırsat ilanı değil (genel blog, ana sayfa, giriş sayfası, alakasız ürün/hizmet, hata sayfası); VEYA ücretli/ticari program; VEYA kategoriyle hiç ilgisi yok; VEYA etkinlik YALNIZ çevrim içi (webinar, e-learning, online kurs, sanal değişim) — platform yurt dışına gitmeyi içeren fırsatlar içindir.
    - false (DERLEME/LİSTE KURALI): Sayfa birden çok AYRI fırsatı/placement'ı bir arada listeliyorsa — her birinin kendi son başvuru tarihi ve kendi başvuru linki olan bir derleme/liste/"roundup"/digest — genel teması platforma uygun OLSA BİLE kategori_uygun=false. Çünkü bu tek bir başvurulabilir fırsat değil, fırsat dizinidir. İpuçları: başlıkta/metinde "16 fırsat", "X yeni placement", "this list/batch", arka arkaya birden çok "Apply here"/"Başvur" linki ve birbirinden farklı deadline'lar. Örn. "16 New ESC Volunteering Opportunities" tek fırsat DEĞİLDİR → false.
 
 3) guven — Kararının kanıta dayanma gücü: "yuksek" (açık ve doğrudan kanıt), "orta" (dolaylı/kısmi), "dusuk" (zayıf veya çelişkili).
@@ -2566,6 +2567,16 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
                        f"Son başvuru tarihi geçmiş: {dl.isoformat()}", dry_run)
         print(f"  SÜRESİ GEÇMİŞ ({dl}) → REDDET")
         return "sure_gecti"
+
+    # Heuristik — yalnız çevrim içi etkinlik (LLM'siz). Platform yurt dışı
+    # fırsatları için; Ekim 2026'da bir "Webinar Series" yayına girmişti.
+    online = ONLINE_ONLY_RE.search(sub.get("title") or "")
+    if online:
+        apply_decision(sub, "reddet",
+                       f"Yalnız çevrim içi etkinlik ('{online.group(0)}') — yurt dışı fırsatı değil",
+                       dry_run)
+        print("  ÇEVRİM İÇİ ETKİNLİK → REDDET")
+        return "llm_red"
 
     # Heuristik 3 — başvuru formu kapanmış (LLM'siz). Google Forms yanıt almayı
     # durdurunca .../closedform'a yönleniyor; bu, fırsatın kapandığının kesin

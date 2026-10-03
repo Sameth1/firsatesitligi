@@ -1480,3 +1480,24 @@ class QuoteRepairTests(unittest.TestCase):
     def test_no_repair_call_when_all_quotes_verify(self, llm):
         validator._repair_failing_quotes(SILENT_PAGE, silent_page_verdict(), {"llm_calls": 0})
         llm.assert_not_called()
+
+
+class OnlineOnlyTests(unittest.TestCase):
+    @patch("validate_submissions.apply_decision")
+    def test_webinar_series_is_rejected_before_llm(self, apply_decision):
+        submission = complete_submission()
+        submission.update({"id": "t", "title": "Wellness Navigators - Webinar Series"})
+        result = validator.process(submission, True, set(), set(), {"llm_calls": 0})
+        self.assertEqual(result, "llm_red")
+        self.assertIn("çevrim içi", apply_decision.call_args.args[2])
+
+    def test_ordinary_titles_are_not_flagged(self):
+        from discovery_gate import ONLINE_ONLY_RE
+        for title in ("Online başvurulu Almanya ESC projesi", "Training Course in Malta",
+                      "Youth Exchange: Digital Citizenship"):
+            with self.subTest(title=title):
+                self.assertIsNone(ONLINE_ONLY_RE.search(title))
+        for title in ("E-learning for youth workers", "Online training course on inclusion",
+                      "Virtual exchange developments"):
+            with self.subTest(title=title):
+                self.assertIsNotNone(ONLINE_ONLY_RE.search(title))

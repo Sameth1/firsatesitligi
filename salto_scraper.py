@@ -49,7 +49,7 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
 from application_links import resolve_application_route
-from discovery_gate import KNOWN_URL_COLUMNS, candidate_blockers
+from discovery_gate import KNOWN_URL_COLUMNS, ONLINE_ONLY_RE, candidate_blockers
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -222,7 +222,8 @@ def parse_training(html, url):
     venue = when_where.split("|", 1)[1].strip() if "|" in when_where else ""
     # "E-learning" türü etkinlikler yer olarak ülke adı taşıyabiliyor
     # ("1 October 2033 | Hungary"); bunlar da yurt dışı değil.
-    if not venue or ONLINE_RE.search(f"{activity} {venue} {title}"):
+    if (not venue or ONLINE_RE.search(f"{activity} {venue}")
+            or ONLINE_ONLY_RE.search(title)):
         return None, "çevrim içi etkinlik (yurt dışı değil)"
     country = venue_country(venue)
     if not country:
