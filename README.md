@@ -95,7 +95,7 @@ Proje üç katmandan oluşur:
 | HTTP & parsing | `requests`, `BeautifulSoup4` | Sayfa çekme ve HTML ayrıştırma |
 | Konfigürasyon | `python-dotenv` | `.env` ortam değişkenleri |
 | Keşif LLM'i | Groq API (Llama 4) | Arama sorgusu üretimi, sayfa analizi |
-| Doğrulama LLM'i | NVIDIA NIM API (`nvidia/nemotron-3-super-120b-a12b`, OpenAI-uyumlu, ücretsiz tier) | Submission açık/kapalı & kategori doğrulaması |
+| Doğrulama LLM'i | NVIDIA NIM API (`nvidia/nemotron-3-ultra-550b-a55b`, kaldırılırsa yedek modellere kendiliğinden geçer; OpenAI-uyumlu, ücretsiz tier) | Submission açık/kapalı & kategori doğrulaması |
 | Genel scraping | Scrapling (`Fetcher` → `StealthyFetcher`) | Herhangi bir URL → sayfa metni; bot koruması ya da JS ile gelen içerik varsa gizli tarayıcıya düşer |
 | Web arama | DuckDuckGo (`ddgs`) | API anahtarı gerektirmeyen arama |
 

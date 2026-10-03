@@ -20,6 +20,7 @@ Son tarih ve doğrudan başvuru adımı BURADA ELENMİYOR, ajana bırakılıyor:
   önceden bilemez.
 """
 
+import re
 from datetime import date, timedelta
 from urllib.parse import urlparse
 
@@ -29,6 +30,17 @@ VALID_CATEGORIES = {
     "internship", "summer_school", "exchange",
 }
 VALID_FUNDING = {"full", "partial", "free", "stipend"}
+
+# Yalnız çevrim içi etkinlik yurt dışı fırsatı değildir (platformun konusu
+# yurt dışına gitmek). Başlıkta ya da etkinlik türünde bu kalıplar varsa kayıt
+# kapsam dışıdır. "online" tek başına değil, belirli kalıplar aranıyor:
+# "online başvuru" gibi ifadeler yanlış alarm vermesin.
+ONLINE_ONLY_RE = re.compile(
+    r"\b(?:webinars?|e-?learning|online\s+(?:course|training|activity|seminar|"
+    r"workshop|series|event|edition|programme|program)|virtual\s+(?:exchange|"
+    r"training|event|mobility))\b",
+    re.IGNORECASE,
+)
 
 # Scraper'ların "bu fırsatı daha önce gördük mü?" sorusu için bakılacak
 # kolonlar. Yalnız submissions.url'e bakmak yetmiyordu: scraper kaynak yazının

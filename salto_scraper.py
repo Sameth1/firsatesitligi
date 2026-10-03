@@ -49,7 +49,7 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
 from application_links import resolve_application_route
-from discovery_gate import KNOWN_URL_COLUMNS, candidate_blockers
+from discovery_gate import KNOWN_URL_COLUMNS, ONLINE_ONLY_RE, candidate_blockers
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -222,7 +222,8 @@ def parse_training(html, url):
     venue = when_where.split("|", 1)[1].strip() if "|" in when_where else ""
     # "E-learning" türü etkinlikler yer olarak ülke adı taşıyabiliyor
     # ("1 October 2033 | Hungary"); bunlar da yurt dışı değil.
-    if not venue or ONLINE_RE.search(f"{activity} {venue} {title}"):
+    if (not venue or ONLINE_RE.search(f"{activity} {venue}")
+            or ONLINE_ONLY_RE.search(title)):
         return None, "çevrim içi etkinlik (yurt dışı değil)"
     country = venue_country(venue)
     if not country:
@@ -262,9 +263,16 @@ def parse_training(html, url):
                            travel, re.IGNORECASE)
     funding_type = "full" if (covered and no_fee and reimbursed) else "partial"
 
+    # Uygunluk notu sayfadaki cümlenin sözcükleriyle AYNI sırada kurulur
+    # ("This Training Course is for 25 participants from … and recommended
+    # for …"). Ajan bu notu sayfayla karşılaştırıyor ve model alıntıyı bazen
+    # buradan kopyalıyor; "Training Course: …" gibi uydurma bir biçim kanıt
+    # kapısına takılıyordu.
+    sentence = f"This {activity} is {count} {groups}".strip()
+    if recommended:
+        sentence += f" and recommended for {recommended}"
     eligibility = " ".join(filter(None, (
-        f"{activity}: {count} {groups}".strip() + ".",
-        f"Recommended for: {recommended}." if recommended else "",
+        sentence + ".",
         f"Working language(s): {language}." if language else "",
         profile[:600],
     )))

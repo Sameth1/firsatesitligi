@@ -174,42 +174,17 @@ def build_user_text(opp, category_label):
 
 
 def _chat(user_text):
-    """OpenAI-uyumlu chat/completions çağrısı — sağlayıcı ayarları, retry ve
-    429/503 backoff davranışı validate_submissions ile AYNI (vs.LLM_* sabitleri).
-    validate_submissions.judge_with_llm submission'a özel prompt'a bağlı olduğu
-    için doğrudan çağrılamıyor; taşıyıcı katman burada tekrarlanıyor."""
-    body = {
-        "model": vs.LLM_MODEL,
-        "messages": [
+    """OpenAI-uyumlu chat/completions çağrısı. Taşıyıcı katman (retry, 429/503
+    geri çekilmesi, kaldırılmış modelden yedeğe geçiş) validate_submissions
+    .post_chat ile ortak; özet ajanı da model kaldırılınca durmasın."""
+    res = vs.post_chat(
+        [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_text},
         ],
-        "temperature": 0,
-        "max_tokens": vs.LLM_MAX_TOKENS,
-    }
-    headers = {
-        "Authorization": f"Bearer {vs.LLM_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    res = None
-    for attempt in range(3):
-        try:
-            res = requests.post(f"{vs.LLM_BASE_URL}/chat/completions",
-                                headers=headers, json=body, timeout=45)
-        except requests.exceptions.RequestException as e:
-            print(f"  ! LLM ağ hatası: {e}")
-            return None
-        if res.status_code in (429, 500, 502, 503, 504) and attempt < 2:
-            # NVIDIA ücretsiz endpoint'i yoğunlukta 503 döndürebiliyor. 429 için
-            # daha uzun, diğer geçici sunucu hataları için kademeli kısa backoff.
-            if res.status_code == 429:
-                wait, reason = 20 * (attempt + 1), "rate limit"
-            else:
-                wait, reason = 5 * (attempt + 1), "geçici sunucu hatası"
-            print(f"  LLM {res.status_code} ({reason}) — {wait}s bekleniyor...")
-            time.sleep(wait)
-            continue
-        break
+        timeout=45,
+        reasoning=False,
+    )
     if res is None or res.status_code != 200:
         detail = res.text[:200] if res is not None else "yanıt yok"
         print(f"  ! LLM HTTP {getattr(res, 'status_code', '?')}: {detail}")
@@ -293,7 +268,7 @@ def main():
         todo = todo[:args.limit]
 
     mode = "CANLI — DB GÜNCELLENECEK" if args.apply else "DRY-RUN — DB'ye yazılmaz"
-    print(f"{len(rows)} aktif kayıt · {len(todo)} işlenecek · model {vs.LLM_MODEL}\n"
+    print(f"{len(rows)} aktif kayıt · {len(todo)} işlenecek · model {vs.active_llm_model()}\n"
           f"{mode}\n" + "─" * 72)
 
     n_sum = n_elig = n_skip = n_err = 0

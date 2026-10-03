@@ -1352,3 +1352,152 @@ class DeadlinePlausibilityTests(unittest.TestCase):
         verdict["kanitlar"]["finansman"] = "All costs are covered by the organisers"
         blockers = validator.evidence_quote_blockers(SILENT_PAGE, verdict)
         self.assertTrue(any("All costs are covered" in b for b in blockers), blockers)
+
+
+class ModelFallbackTests(unittest.TestCase):
+    """3 Ekim 2026: birincil model 410 Gone döndü, ajan tamamen durdu."""
+
+    def setUp(self):
+        validator._ACTIVE_LLM_MODEL = None
+        self.addCleanup(setattr, validator, "_ACTIVE_LLM_MODEL", None)
+
+    @staticmethod
+    def response(status, text="{}"):
+        class R:
+            pass
+        r = R()
+        r.status_code, r.text = status, text
+        r.json = lambda: {"choices": [{"message": {"content": '{"ok": true}'},
+                                       "finish_reason": "stop"}]}
+        return r
+
+    @patch("validate_submissions._post_chat_once")
+    def test_retired_model_falls_back_and_is_remembered(self, post):
+        gone = self.response(410, '{"detail":"reached its end of life"}')
+        post.side_effect = [gone, self.response(200), self.response(200)]
+
+        first = validator.post_chat([{"role": "user", "content": "x"}])
+        second = validator.post_chat([{"role": "user", "content": "x"}])
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        models = [call.args[0]["model"] for call in post.call_args_list]
+        self.assertEqual(models, [validator.LLM_MODELS[0], validator.LLM_MODELS[1],
+                                  validator.LLM_MODELS[1]])
+        self.assertEqual(validator.active_llm_model(), validator.LLM_MODELS[1])
+
+    @patch("validate_submissions._post_chat_once")
+    def test_unsupported_reasoning_parameter_is_dropped(self, post):
+        post.side_effect = [self.response(400, "unknown parameter reasoning_effort"),
+                            self.response(200)]
+
+        res = validator.post_chat([{"role": "user", "content": "x"}])
+
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("reasoning_effort", post.call_args_list[0].args[0])
+        self.assertNotIn("reasoning_effort", post.call_args_list[1].args[0])
+
+    @patch("validate_submissions._post_chat_once")
+    def test_ordinary_error_does_not_switch_models(self, post):
+        post.return_value = self.response(500, "server error")
+
+        res = validator.post_chat([{"role": "user", "content": "x"}])
+
+        self.assertEqual(res.status_code, 500)
+        self.assertEqual(post.call_count, 1)
+
+    def test_retired_model_is_not_the_default(self):
+        self.assertNotIn("nvidia/nemotron-3-super-120b-a12b", validator.LLM_MODELS)
+
+
+class TokenQuoteMatchingTests(unittest.TestCase):
+    """Ekim 2026: gerçek alıntılar başlık, ":" ve madde işaretleri yüzünden
+    "sayfada yok" sayılıyordu. Sözcük düzeyinde eşleşme bunları kurtarmalı,
+    uydurma sözcükleri ise yakalamalı."""
+
+    PAGE = ("Profile of participants\n✔ The call is open for youth leaders and youth "
+            "workers who fit the following criteria:\n- representatives of youth work "
+            "organisations\nThis project is financed by the Hellenic National Agency "
+            "of Erasmus+/ Youth and European Solidarity Corps.")
+
+    def match(self, quote):
+        return validator._quote_in_page(quote, validator._normalize_evidence_text(self.PAGE))
+
+    def test_heading_colon_and_bullet_do_not_break_a_real_quote(self):
+        self.assertTrue(self.match(
+            "Profile of participants: The call is open for youth leaders and youth workers"))
+        self.assertTrue(self.match(
+            "financed by the Hellenic National Agency of Erasmus+/Youth and European "
+            "Solidarity Corps"))
+
+    def test_invented_words_are_still_caught(self):
+        self.assertFalse(self.match(
+            "This project is financed by the National Agencies of the Erasmus+ Youth in Action Programme"))
+        self.assertFalse(self.match("The call is open for youth leaders and teachers who"))
+
+    def test_short_quotes_must_be_contiguous(self):
+        self.assertTrue(self.match("youth leaders and youth workers"))
+        self.assertFalse(self.match("youth leaders youth workers"))
+
+    def test_tooltip_list_goes_to_the_end_not_mid_sentence(self):
+        html = ('<p>for 25 participants</p><p>from Erasmus+ Youth Programme countries '
+                '<img title="Austria, Belgium, Türkiye"/> and recommended for</p><p>Youth workers</p>')
+        text = validator.page_to_text(html)
+        self.assertTrue(validator._quote_in_page(
+            "for 25 participants from Erasmus+ Youth Programme countries and recommended for Youth workers",
+            validator._normalize_evidence_text(text)))
+        self.assertTrue(text.rstrip().endswith("Ek bilgi (ipucu): Austria, Belgium, Türkiye"))
+
+
+class QuoteRepairTests(unittest.TestCase):
+    def test_only_failing_required_fields_are_listed(self):
+        verdict = silent_page_verdict()
+        verdict["kanitlar"]["finansman"] = "All costs covered"          # sayfada yok
+        verdict["dogrulanmis_filtreler"]["age_min"] = 18                 # kısıt, alıntısız
+        self.assertEqual(
+            validator.failing_quote_fields(SILENT_PAGE, verdict), ["finansman", "yas"])
+
+    @patch("validate_submissions.time.sleep")
+    @patch("validate_submissions.request_llm_json")
+    def test_repaired_quote_is_kept_only_if_it_is_on_the_page(self, llm, _sleep):
+        verdict = silent_page_verdict()
+        verdict["kanitlar"]["finansman"] = ""
+        verdict["kanitlar"]["uygunluk"] = ""
+        llm.return_value = {"kanitlar": {
+            "finansman": "Fully funded",                          # sayfada var
+            "uygunluk": "Open to students of every country",      # uydurma
+        }}
+
+        repaired = validator.repair_quotes(SILENT_PAGE, verdict, ["finansman", "uygunluk"])
+
+        self.assertEqual(repaired, 1)
+        self.assertEqual(verdict["kanitlar"]["finansman"], "Fully funded")
+        self.assertEqual(verdict["kanitlar"]["uygunluk"], "")
+        # Filtre değerleri ve kararlar onarımda değişmez.
+        self.assertEqual(verdict["dogrulanmis_filtreler"], silent_page_verdict()["dogrulanmis_filtreler"])
+
+    @patch("validate_submissions.request_llm_json")
+    def test_no_repair_call_when_all_quotes_verify(self, llm):
+        validator._repair_failing_quotes(SILENT_PAGE, silent_page_verdict(), {"llm_calls": 0})
+        llm.assert_not_called()
+
+
+class OnlineOnlyTests(unittest.TestCase):
+    @patch("validate_submissions.apply_decision")
+    def test_webinar_series_is_rejected_before_llm(self, apply_decision):
+        submission = complete_submission()
+        submission.update({"id": "t", "title": "Wellness Navigators - Webinar Series"})
+        result = validator.process(submission, True, set(), set(), {"llm_calls": 0})
+        self.assertEqual(result, "llm_red")
+        self.assertIn("çevrim içi", apply_decision.call_args.args[2])
+
+    def test_ordinary_titles_are_not_flagged(self):
+        from discovery_gate import ONLINE_ONLY_RE
+        for title in ("Online başvurulu Almanya ESC projesi", "Training Course in Malta",
+                      "Youth Exchange: Digital Citizenship"):
+            with self.subTest(title=title):
+                self.assertIsNone(ONLINE_ONLY_RE.search(title))
+        for title in ("E-learning for youth workers", "Online training course on inclusion",
+                      "Virtual exchange developments"):
+            with self.subTest(title=title):
+                self.assertIsNotNone(ONLINE_ONLY_RE.search(title))
