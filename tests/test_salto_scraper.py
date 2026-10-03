@@ -97,6 +97,14 @@ class ParseTrainingTests(unittest.TestCase):
                 self.assertIsNone(record)
                 self.assertIn("çevrim içi", reason)
 
+    def test_e_learning_with_a_country_is_still_online(self, _route):
+        for activity in ("E-learning", "Webinar series", "Virtual exchange"):
+            with self.subTest(activity=activity):
+                record, reason = salto.parse_training(
+                    page(activity=activity, venue="Hungary"), URL)
+                self.assertIsNone(record)
+                self.assertIn("çevrim içi", reason)
+
     def test_training_in_turkiye_is_not_abroad(self, _route):
         record, reason = salto.parse_training(page(venue="Ankara, Türkiye"), URL)
         self.assertIsNone(record)

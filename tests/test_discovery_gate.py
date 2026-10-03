@@ -61,6 +61,12 @@ class DiscoveryGateTests(unittest.TestCase):
         record["details_url"] = "https://www2.daad.de/detail?id=1"
         self.assertEqual(candidate_blockers(record, today=date(2026, 9, 11)), [])
 
+    def test_far_future_deadline_is_blocked(self):
+        record = complete_candidate()
+        record["deadline_text"] = "2926-06-01"
+        self.assertIn("son tarih makul değil",
+                      candidate_blockers(record, today=date(2026, 9, 11)))
+
     def test_expired_candidate_is_blocked(self):
         record = complete_candidate()
         record["deadline_text"] = "2025-01-01"

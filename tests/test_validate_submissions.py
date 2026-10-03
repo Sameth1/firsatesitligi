@@ -907,7 +907,7 @@ class SilentPagePolicyTests(unittest.TestCase):
         verdict = silent_page_verdict()
         self.assertEqual(
             validator.page_evidence_blockers(
-                SILENT_PAGE, SILENT_PAGE, verdict, today=date(2026, 9, 29)),
+                SILENT_PAGE, SILENT_PAGE, verdict, today=date(2099, 9, 29)),
             [],
         )
         self.assertEqual(validator.strict_filter_blockers(verdict), [])
@@ -922,7 +922,7 @@ class SilentPagePolicyTests(unittest.TestCase):
         )
         verdict["kanitlar"]["yas"] = "aged 18 to 30"
         self.assertIn(
-            "yaş filtresi alıntısı sayfa metninde bulunamadı",
+            'yaş filtresi alıntısı sayfa metninde bulunamadı ("aged 18 to 30")',
             validator.evidence_quote_blockers(SILENT_PAGE, verdict),
         )
 
@@ -1023,14 +1023,14 @@ class StrictSilenceScanTests(unittest.TestCase):
         full = SILENT_PAGE + (" filler" * 5000) + " Only nationals of Norway may apply."
         self.assertEqual(
             validator.page_evidence_blockers(
-                truncated, truncated, verdict, today=date(2026, 9, 29)), [])
+                truncated, truncated, verdict, today=date(2099, 9, 29)), [])
         self.assertTrue(
             validator.page_evidence_blockers(
-                truncated, full, verdict, today=date(2026, 9, 29)))
+                truncated, full, verdict, today=date(2099, 9, 29)))
 
 
 class DeadlineEvidenceTests(unittest.TestCase):
-    TODAY = date(2026, 9, 29)
+    TODAY = date(2099, 9, 29)
 
     def verdict(self, quote, deadline, rolling=False):
         verdict = silent_page_verdict()
@@ -1107,8 +1107,8 @@ class DeadlineEvidenceTests(unittest.TestCase):
         # deadline_text'teki ilk tarih geçmiş ama kanıtlanmış tarih gelecekte:
         # model "açık" dediğinde tutarsızlık sayılmamalı.
         submission = complete_submission()
-        submission["deadline_text"] = "15 January 2020; for the next intake 15 January 2099"
-        verdict = self.verdict("next intake 15 January 2099", "2099-01-15")
+        submission["deadline_text"] = "15 January 2020; for the next intake 15 November 2099"
+        verdict = self.verdict("next intake 15 November 2099", "2099-11-15")
         self.assertEqual(
             validator.verdict_date_consistency_blockers(
                 submission, verdict, today=self.TODAY), [])
@@ -1153,6 +1153,13 @@ class QuoteMatchingTests(unittest.TestCase):
 
 
 class DecisionOutcomeTests(unittest.TestCase):
+    # Örnek sayfadaki son tarih 2099; "bugün" de ona göre sabitleniyor ki
+    # son tarih makullük kapısı (en fazla 2 yıl ileri) testi bozmasın.
+    def setUp(self):
+        patcher = patch("validate_submissions.platform_today", return_value=date(2099, 9, 29))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_listing_page_is_rejected(self):
         verdict = high_confidence_verdict()
         verdict["tek_firsat"] = False
@@ -1327,3 +1334,21 @@ class ClosedFormTests(unittest.TestCase):
 
         self.assertEqual(result, "sure_gecti")
         self.assertEqual(apply_decision.call_args.args[1], "reddet")
+
+
+class DeadlinePlausibilityTests(unittest.TestCase):
+    def test_far_future_deadline_from_a_typo_is_not_trusted(self):
+        for quote, iso in (("Application deadline (24h UTC) : 1 June 2926", "2926-06-01"),
+                           ("Application deadline (24h UTC) : 30 September 2032", "2032-09-30")):
+            with self.subTest(iso=iso):
+                verdict = silent_page_verdict()
+                verdict["kanitlar"]["son_tarih"] = quote
+                verdict["dogrulanmis_filtreler"]["deadline"] = iso
+                blockers = validator.deadline_verification_blockers(verdict, date(2026, 10, 3))
+                self.assertTrue(any("makul değil" in b for b in blockers), blockers)
+
+    def test_failed_quote_is_shown_in_the_reason(self):
+        verdict = silent_page_verdict()
+        verdict["kanitlar"]["finansman"] = "All costs are covered by the organisers"
+        blockers = validator.evidence_quote_blockers(SILENT_PAGE, verdict)
+        self.assertTrue(any("All costs are covered" in b for b in blockers), blockers)
