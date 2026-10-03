@@ -112,7 +112,7 @@ Fırsatlar doğrudan yayına girmez; bir **inceleme hattından** geçer. Bu, hem
   Kullanıcı önerisi  ┐
   nasilgitmis.com    │
   DAAD               ├──►  submissions tablosu  ──►  validate_     ──►  opportunities
-  SALTO-YOUTH        │     (status = 'pending')      submissions.py     (canlı site)
+  SALTO-YOUTH, ESC   │     (status = 'pending')      submissions.py     (canlı site)
   Genel URL          ┘                                    │
                                                           │
                             ┌─────────────────────────────┤
@@ -167,6 +167,7 @@ Scriptler kök dizinde (biri `scripts/` altında) yer alır; `.env` dosyasından
 | `nasilgitmis_scraper.py` | nasilgitmis.com'dan Erasmus+/ESC/burs/staj fırsatlarını çeker | `submissions` (pending) |
 | `idealist_scraper.py` | idealist.org gönüllülük fırsatlarını çeker | `opportunities` |
 | `daad_scraper.py` | DAAD burs veritabanından Türkiye'ye açık programları çeker | `submissions` (pending) |
+| `esc_scraper.py` | Avrupa Gençlik Portalı'nın resmî API'sinden Türkiye'den gönüllü kabul eden, yurt dışındaki açık ESC gönüllülük ve insani yardım ilanlarını çeker | `submissions` (pending) |
 | `salto_scraper.py` | SALTO-YOUTH Avrupa Eğitim Takvimi'nden Türkiye'den katılıma açık, yurt dışında yapılan Erasmus+/ESC eğitim ve seminerlerini çeker | `submissions` (pending) |
 | `youthop_scraper.py` | youthop.com fırsatlarını çeker | `submissions` (pending) |
 | `agent_reach_url_scraper.py` | Herhangi bir fırsat URL'sini Scrapling ile çekip alan çıkarımı yapar | `submissions` (pending) |
@@ -198,7 +199,7 @@ Hattın tamamı `.github/workflows/` altında cron ile dönüyor; hepsi ayrıca
 |---|---|---|---|---|
 | `agent-triage.yml` | `0 */4 * * *` | her 4 saatte bir | `validate_submissions.py` | Bekleyen submission'ları `validate_submissions.py` ile doğrular, uygun olanları yayına alır |
 | `audit-opportunities.yml` | `0 3 * * *` | her gün 06:00 | `scripts/audit_opportunities.py` | Aktif fırsatların bağlantılarını yoklar, ölmüş olanları pasifleştirir |
-| `opportunity-discovery.yml` | `20 3 * * 1` | Pazartesi 06:20 | `nasilgitmis_scraper.py` + `daad_scraper.py` + `salto_scraper.py` | Kaynak siteleri tarar, yeni fırsatları `submissions`'a pending olarak yazar; her kaynak bağımsız çalışır |
+| `opportunity-discovery.yml` | `20 3 * * 1` | Pazartesi 06:20 | `nasilgitmis_scraper.py` + `daad_scraper.py` + `salto_scraper.py` + `esc_scraper.py` | Kaynak siteleri tarar, yeni fırsatları `submissions`'a pending olarak yazar; her kaynak bağımsız çalışır |
 | `direct-application-links.yml` | `40 4 * * 0` | Pazar 07:40 | `backfill_apply_links.py` | Bilgi sayfası kayıtlarının gerçek başvuru bağlantısını bulup doldurur |
 
 Keşif haftalık: kaynaklar günlük yenilenmediği için daha sık çalıştırmak aynı
