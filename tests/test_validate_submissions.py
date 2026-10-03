@@ -1447,3 +1447,36 @@ class TokenQuoteMatchingTests(unittest.TestCase):
             "for 25 participants from Erasmus+ Youth Programme countries and recommended for Youth workers",
             validator._normalize_evidence_text(text)))
         self.assertTrue(text.rstrip().endswith("Ek bilgi (ipucu): Austria, Belgium, Türkiye"))
+
+
+class QuoteRepairTests(unittest.TestCase):
+    def test_only_failing_required_fields_are_listed(self):
+        verdict = silent_page_verdict()
+        verdict["kanitlar"]["finansman"] = "All costs covered"          # sayfada yok
+        verdict["dogrulanmis_filtreler"]["age_min"] = 18                 # kısıt, alıntısız
+        self.assertEqual(
+            validator.failing_quote_fields(SILENT_PAGE, verdict), ["finansman", "yas"])
+
+    @patch("validate_submissions.time.sleep")
+    @patch("validate_submissions.request_llm_json")
+    def test_repaired_quote_is_kept_only_if_it_is_on_the_page(self, llm, _sleep):
+        verdict = silent_page_verdict()
+        verdict["kanitlar"]["finansman"] = ""
+        verdict["kanitlar"]["uygunluk"] = ""
+        llm.return_value = {"kanitlar": {
+            "finansman": "Fully funded",                          # sayfada var
+            "uygunluk": "Open to students of every country",      # uydurma
+        }}
+
+        repaired = validator.repair_quotes(SILENT_PAGE, verdict, ["finansman", "uygunluk"])
+
+        self.assertEqual(repaired, 1)
+        self.assertEqual(verdict["kanitlar"]["finansman"], "Fully funded")
+        self.assertEqual(verdict["kanitlar"]["uygunluk"], "")
+        # Filtre değerleri ve kararlar onarımda değişmez.
+        self.assertEqual(verdict["dogrulanmis_filtreler"], silent_page_verdict()["dogrulanmis_filtreler"])
+
+    @patch("validate_submissions.request_llm_json")
+    def test_no_repair_call_when_all_quotes_verify(self, llm):
+        validator._repair_failing_quotes(SILENT_PAGE, silent_page_verdict(), {"llm_calls": 0})
+        llm.assert_not_called()
