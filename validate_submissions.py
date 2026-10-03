@@ -92,7 +92,20 @@ SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 # NVIDIA_API_KEY env'i değişir, kod aynı kalır.
 LLM_API_KEY = os.getenv("NVIDIA_API_KEY", "")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://integrate.api.nvidia.com/v1").rstrip("/")
-LLM_MODEL = os.getenv("LLM_MODEL", "nvidia/nemotron-3-super-120b-a12b")
+# Model kaldırılabiliyor: nvidia/nemotron-3-super-120b-a12b 3 Ekim 2026
+# 09:00 UTC'de "end of life" oldu (HTTP 410) ve ajan bir anda hiçbir kaydı
+# değerlendiremez hâle geldi. Artık birincil modelin ardından yedekler denenir;
+# 404/410 alınan model atlanır (post_chat). LLM_MODEL env'i birincili, virgüllü
+# LLM_FALLBACK_MODELS yedekleri değiştirir.
+LLM_MODEL = os.getenv("LLM_MODEL", "nvidia/nemotron-3-ultra-550b-a55b")
+LLM_FALLBACK_MODELS = [m.strip() for m in os.getenv(
+    "LLM_FALLBACK_MODELS",
+    "nvidia/llama-3.1-nemotron-ultra-253b-v1,deepseek-ai/deepseek-v4.1-flash,"
+    "mistralai/mistral-large-2-instruct",
+).split(",") if m.strip()]
+LLM_MODELS = list(dict.fromkeys([LLM_MODEL, *LLM_FALLBACK_MODELS]))
+MODEL_GONE_STATUSES = (404, 410)
+_ACTIVE_LLM_MODEL = None
 LLM_MIN_INTERVAL = 1.5        # çağrılar arası bekleme — ücretsiz tier RPM sınırı
 LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "90"))
 LLM_REASONING_EFFORT = os.getenv("LLM_REASONING_EFFORT", "none")
@@ -1446,18 +1459,8 @@ def _parse_verdict(text):
     }
 
 
-def request_llm_json(system_prompt, user_text):
-    """OpenAI-uyumlu uçtan savunmacı biçimde bir JSON nesnesi alır."""
-    body = {
-        "model": LLM_MODEL,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_text},
-        ],
-        "temperature": 0,
-        "max_tokens": LLM_MAX_TOKENS,
-        "reasoning_effort": LLM_REASONING_EFFORT,
-    }
+def _post_chat_once(body, timeout):
+    """Tek bir model için 429/5xx geri çekilmeli istek. Yanıt ya da None."""
     headers = {
         "Authorization": f"Bearer {LLM_API_KEY}",
         "Content-Type": "application/json",
@@ -1467,7 +1470,7 @@ def request_llm_json(system_prompt, user_text):
         try:
             res = requests.post(
                 f"{LLM_BASE_URL}/chat/completions",
-                headers=headers, json=body, timeout=LLM_TIMEOUT,
+                headers=headers, json=body, timeout=timeout,
             )
         except requests.exceptions.RequestException as e:
             if attempt < 2:
@@ -1484,6 +1487,59 @@ def request_llm_json(system_prompt, user_text):
             time.sleep(wait)
             continue
         break
+    return res
+
+
+def post_chat(messages, *, max_tokens=None, timeout=None, reasoning=True):
+    """chat/completions çağrısı; kaldırılmış modelden yedeğe kendiliğinden geçer.
+
+    404/410 "model yok / ömrü doldu" yanıtında sıradaki modele geçilir ve
+    çalışan model bu süreç boyunca hatırlanır. Model "reasoning_effort"
+    parametresini tanımıyorsa (400) parametre atılıp aynı model yeniden denenir.
+    Dönüş: HTTP yanıtı (başarısızsa son hata yanıtı) ya da None.
+    """
+    global _ACTIVE_LLM_MODEL
+    models = [_ACTIVE_LLM_MODEL] if _ACTIVE_LLM_MODEL else LLM_MODELS
+    last = None
+    for model in models:
+        body = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0,
+            "max_tokens": max_tokens or LLM_MAX_TOKENS,
+        }
+        if reasoning and LLM_REASONING_EFFORT:
+            body["reasoning_effort"] = LLM_REASONING_EFFORT
+        res = _post_chat_once(body, timeout or LLM_TIMEOUT)
+        if (res is not None and res.status_code == 400 and "reasoning_effort" in body
+                and "reasoning" in res.text.casefold()):
+            body = {k: v for k, v in body.items() if k != "reasoning_effort"}
+            res = _post_chat_once(body, timeout or LLM_TIMEOUT)
+        last = res
+        if res is not None and res.status_code in MODEL_GONE_STATUSES:
+            print(f"::warning title=LLM modeli kullanılamıyor::{model} → "
+                  f"HTTP {res.status_code}; sıradaki yedek model deneniyor")
+            continue
+        if res is not None and res.status_code == 200:
+            if _ACTIVE_LLM_MODEL != model:
+                _ACTIVE_LLM_MODEL = model
+                if model != LLM_MODELS[0]:
+                    print(f"::warning title=Yedek LLM modeli kullanılıyor::{model}")
+        return res
+    return last
+
+
+def active_llm_model():
+    """Bu süreçte çalıştığı doğrulanan model (henüz çağrı yoksa birincil)."""
+    return _ACTIVE_LLM_MODEL or LLM_MODELS[0]
+
+
+def request_llm_json(system_prompt, user_text):
+    """OpenAI-uyumlu uçtan savunmacı biçimde bir JSON nesnesi alır."""
+    res = post_chat([
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_text},
+    ])
     if res is None or res.status_code != 200:
         detail = res.text[:200] if res is not None else "yanıt yok"
         print(f"  ! LLM HTTP {getattr(res, 'status_code', '?')}: {detail}")
@@ -2232,7 +2288,7 @@ def process_agent_revision(sub, dry_run, stats):
         print("  İçerik yetersiz → İNSAN İNCELEMESİNE DÖNDÜ")
         return "revision_done"
 
-    print(f"  Admin notu + kaynak → LLM ({LLM_MODEL})")
+    print(f"  Admin notu + kaynak → LLM ({active_llm_model()})")
     stats["llm_calls"] += 1
     result = suggest_revision_with_llm(sub, page_text)
     time.sleep(LLM_MIN_INTERVAL)
@@ -2519,7 +2575,7 @@ def process(sub, dry_run, known_urls, seen_urls, stats):
     http_note = str(status) if status is not None else f"ulaşılamadı: {err}"
     if final_url and _norm_url(final_url) != norm:
         http_note += f" (yönlendirildi: {final_url})"
-    print(f"  Hedef HTTP {status}, kayıt doğrulaması → LLM ({LLM_MODEL}) sorgulanıyor...")
+    print(f"  Hedef HTTP {status}, kayıt doğrulaması → LLM ({active_llm_model()}) sorgulanıyor...")
     stats["llm_calls"] += 1
     verdict = judge_with_llm(sub, url, http_note, page_text)
     time.sleep(LLM_MIN_INTERVAL)                   # sağlayıcı RPM sınırı
@@ -2651,7 +2707,7 @@ def _create_evaluation_batch(name, target_size):
             "name": name,
             "target_size": target_size,
             "status": "running",
-            "model": LLM_MODEL,
+            "model": active_llm_model(),
             "prompt_version": "two-pass-evidence-v1",
         },
         timeout=20,
@@ -3035,7 +3091,7 @@ def main():
                 f"| 🚫 Otomatik Reddedilen | **{reddedildi}** | Kopya, ölü link, süresi geçmiş veya LLM red |",
                 f"| ⚠️ Önerilen / Belirsiz | **{tally['oner'] + tally['belirsiz']}** | Admin incelemesi için pending bırakıldı |",
                 f"| 🔄 Tekrar Denenecek | **{tally['tekrar'] + tally['revision_retry']}** | Geçici teknik hata |",
-                f"| 🧠 Toplam LLM Çağrısı | **{stats['llm_calls']}** | NVIDIA NIM ({LLM_MODEL}) |",
+                f"| 🧠 Toplam LLM Çağrısı | **{stats['llm_calls']}** | NVIDIA NIM ({active_llm_model()}) |",
                 "",
             ]
             with open(summary_file, "a", encoding="utf-8") as f:

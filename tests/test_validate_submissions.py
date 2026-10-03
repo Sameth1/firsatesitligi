@@ -1352,3 +1352,59 @@ class DeadlinePlausibilityTests(unittest.TestCase):
         verdict["kanitlar"]["finansman"] = "All costs are covered by the organisers"
         blockers = validator.evidence_quote_blockers(SILENT_PAGE, verdict)
         self.assertTrue(any("All costs are covered" in b for b in blockers), blockers)
+
+
+class ModelFallbackTests(unittest.TestCase):
+    """3 Ekim 2026: birincil model 410 Gone döndü, ajan tamamen durdu."""
+
+    def setUp(self):
+        validator._ACTIVE_LLM_MODEL = None
+        self.addCleanup(setattr, validator, "_ACTIVE_LLM_MODEL", None)
+
+    @staticmethod
+    def response(status, text="{}"):
+        class R:
+            pass
+        r = R()
+        r.status_code, r.text = status, text
+        r.json = lambda: {"choices": [{"message": {"content": '{"ok": true}'},
+                                       "finish_reason": "stop"}]}
+        return r
+
+    @patch("validate_submissions._post_chat_once")
+    def test_retired_model_falls_back_and_is_remembered(self, post):
+        gone = self.response(410, '{"detail":"reached its end of life"}')
+        post.side_effect = [gone, self.response(200), self.response(200)]
+
+        first = validator.post_chat([{"role": "user", "content": "x"}])
+        second = validator.post_chat([{"role": "user", "content": "x"}])
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        models = [call.args[0]["model"] for call in post.call_args_list]
+        self.assertEqual(models, [validator.LLM_MODELS[0], validator.LLM_MODELS[1],
+                                  validator.LLM_MODELS[1]])
+        self.assertEqual(validator.active_llm_model(), validator.LLM_MODELS[1])
+
+    @patch("validate_submissions._post_chat_once")
+    def test_unsupported_reasoning_parameter_is_dropped(self, post):
+        post.side_effect = [self.response(400, "unknown parameter reasoning_effort"),
+                            self.response(200)]
+
+        res = validator.post_chat([{"role": "user", "content": "x"}])
+
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("reasoning_effort", post.call_args_list[0].args[0])
+        self.assertNotIn("reasoning_effort", post.call_args_list[1].args[0])
+
+    @patch("validate_submissions._post_chat_once")
+    def test_ordinary_error_does_not_switch_models(self, post):
+        post.return_value = self.response(500, "server error")
+
+        res = validator.post_chat([{"role": "user", "content": "x"}])
+
+        self.assertEqual(res.status_code, 500)
+        self.assertEqual(post.call_count, 1)
+
+    def test_retired_model_is_not_the_default(self):
+        self.assertNotIn("nvidia/nemotron-3-super-120b-a12b", validator.LLM_MODELS)
