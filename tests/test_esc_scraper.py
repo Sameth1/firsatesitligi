@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 from datetime import date
 
 import esc_scraper as esc
@@ -109,3 +110,37 @@ class RecordTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RouteUpgradeTests(unittest.TestCase):
+    ROW = {"id": "o1", "title": "Be the Change!",
+           "source_url": "https://youth.europa.eu/solidarity/placement/53934_en",
+           "application_route_status": "guided"}
+
+    def test_guided_listing_is_pointed_at_the_verified_apply_target(self):
+        from application_links import ApplicationRoute
+        url = "https://youth.europa.eu/solidarity/opportunity/53934_en"
+        route = ApplicationRoute(url, url, "portal", True, 200, url, "Apply butonu", "ok")
+        with patch.object(esc, "resolve_application_route", return_value=route), \
+             patch.object(esc, "_sb_patch", return_value=(True, "")) as sb_patch, \
+             patch.object(esc.time, "sleep"):
+            self.assertEqual(esc.upgrade_route(dict(self.ROW), False, "2026-10-04T00:00:00Z"), 0)
+        table, row_id, body = sb_patch.call_args.args
+        self.assertEqual((table, row_id), ("opportunities", "o1"))
+        self.assertEqual((body["official_url"], body["application_route_status"],
+                          body["application_method"]), (url, "verified", "portal"))
+
+    def test_closed_org_form_takes_the_listing_down(self):
+        from application_links import ApplicationRoute, CLOSED_FORM_REASON
+        route = ApplicationRoute(None, "x", "online_form", False, 200, "x", None,
+                                 CLOSED_FORM_REASON)
+        with patch.object(esc, "resolve_application_route", return_value=route), \
+             patch.object(esc, "_sb_patch", return_value=(True, "")) as sb_patch, \
+             patch.object(esc.time, "sleep"):
+            esc.upgrade_route(dict(self.ROW), False, "2026-10-04T00:00:00Z")
+        self.assertEqual(sb_patch.call_args.args[2]["is_active"], False)
+
+    def test_already_verified_listing_is_left_alone(self):
+        with patch.object(esc, "resolve_application_route") as resolve:
+            esc.upgrade_route({**self.ROW, "application_route_status": "verified"}, False, "t")
+        resolve.assert_not_called()

@@ -212,6 +212,31 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class KnownApplyPageTests(unittest.TestCase):
+    ESC_MODAL = ("<a href='#modal_box'>Apply</a><div id='modal_box'><b>In order to "
+                 "check if you can apply for this project, you must first Sign In or "
+                 "Join the Corps.</b><a href='/solidarity/register_en'>Sign in / Join</a></div>")
+
+    def test_esc_listing_with_apply_button_is_a_verified_portal(self):
+        url = "https://youth.europa.eu/solidarity/opportunity/54639_en"
+        route = resolve_application_route(url, fetcher=map_fetcher({url: self.ESC_MODAL}))
+        self.assertTrue(route.verified)
+        self.assertEqual((route.application_url, route.details_url, route.application_method),
+                         (url, url, "portal"))
+        self.assertIn("Apply", route.evidence)
+
+    def test_esc_url_without_the_apply_button_is_not_verified(self):
+        url = "https://youth.europa.eu/solidarity/opportunity/54639_en"
+        route = resolve_application_route(
+            url, fetcher=map_fetcher({url: "<p>This opportunity is no longer available.</p>"}))
+        self.assertFalse(route.verified)
+
+    def test_apply_text_on_other_portal_pages_is_not_enough(self):
+        url = "https://youth.europa.eu/solidarity/register_en"
+        route = resolve_application_route(url, fetcher=map_fetcher({url: self.ESC_MODAL}))
+        self.assertFalse(route.verified)
+
+
 class ClosedFormResolverTests(unittest.TestCase):
     def test_closed_form_detection(self):
         from application_links import is_closed_form

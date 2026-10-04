@@ -197,7 +197,7 @@ Hattın tamamı `.github/workflows/` altında cron ile dönüyor; hepsi ayrıca
 
 | Workflow | Cron (UTC) | Türkiye saati | Çalıştırdığı script | Yaptığı iş |
 |---|---|---|---|---|
-| `agent-triage.yml` | `0 */4 * * *` | her 4 saatte bir | `esc_scraper.py --sync` + `validate_submissions.py` | Önce portalda kapanan ya da faaliyeti biten ESC ilanlarını reddeder/yayından kaldırır; sonra bekleyen submission'ları doğrular, uygun olanları yayına alır. 12:00 UTC koşusu insana bırakılmış kayıtları da yeniden denetler |
+| `agent-triage.yml` | `0 */4 * * *` | her 4 saatte bir | `esc_scraper.py --sync` + `validate_submissions.py` | Önce portalda kapanan ya da faaliyeti biten ESC ilanlarını reddeder/yayından kaldırır ve yayındakilerin başvuru linkini doğrudan hedefe (kurumun formu ya da ilanın Apply butonu) çeker; sonra bekleyen submission'ları doğrular, uygun olanları yayına alır. 12:00 UTC koşusu insana bırakılmış kayıtları da yeniden denetler |
 | `audit-opportunities.yml` | `0 3 * * *` | her gün 06:00 | `scripts/audit_opportunities.py` | Aktif fırsatların bağlantılarını yoklar, ölmüş olanları pasifleştirir |
 | `opportunity-discovery.yml` | `20 3 * * 1` | Pazartesi 06:20 | `nasilgitmis_scraper.py` + `daad_scraper.py` + `salto_scraper.py` + `esc_scraper.py` | Kaynak siteleri tarar, yeni fırsatları `submissions`'a pending olarak yazar; her kaynak bağımsız çalışır |
 | `direct-application-links.yml` | `40 4 * * 0` | Pazar 07:40 | `backfill_apply_links.py` | Bilgi sayfası kayıtlarının gerçek başvuru bağlantısını bulup doldurur |
