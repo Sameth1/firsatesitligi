@@ -87,6 +87,13 @@ jobs:
           if [ "$INPUT_RECHECK" = "true" ]; then
             ARGS+=(--recheck)
           fi
+          # Günde bir zamanlanmış koşu (12:00 UTC dilimi) insana bırakılmış
+          # kayıtları da yeniden denetler: ajan kuralı düzeldiğinde ya da
+          # sayfa güncellendiğinde bekleyen kayıt kendiliğinden yayına girer.
+          # Yeni kayıtlar yine önce işlenir.
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ] && [[ "$(date -u +%H)" =~ ^1[23]$ ]]; then
+            ARGS+=(--recheck)
+          fi
 
           LIMIT="${INPUT_LIMIT:-50}"
           if [ "$LIMIT" = "0" ] || [ "$LIMIT" = "all" ]; then
