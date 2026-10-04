@@ -1099,6 +1099,18 @@ class DeadlineEvidenceTests(unittest.TestCase):
             validator.extract_dates(text), [date(2099, 11, 15), date(2099, 12, 1)])
         self.assertEqual(validator.extract_dates("November 2099"), [])
 
+    def test_recheck_order_puts_waiting_rows_first_and_rotates_the_rest(self):
+        rows = [{"id": f"j{i}", "admin_note": "[ajan] BELİRSİZ: elle bak — x"}
+                for i in range(20)]
+        rows.insert(5, {"id": "fresh", "admin_note": None})
+        rows.insert(9, {"id": "retry", "admin_note": "[ajan] TEKRAR: teknik"})
+        first = validator.recheck_order(rows, "2099-10-04T09")
+        second = validator.recheck_order(rows, "2099-10-04T13")
+        self.assertEqual([r["id"] for r in first[:2]], ["fresh", "retry"])
+        self.assertEqual(sorted(r["id"] for r in first), sorted(r["id"] for r in rows))
+        self.assertNotEqual([r["id"] for r in first[2:7]], [r["id"] for r in second[2:7]])
+        self.assertEqual(first, validator.recheck_order(rows, "2099-10-04T09"))
+
     def test_extract_dates_reads_european_slash_dates(self):
         # Avrupa Gençlik Portalı biçimi; belirsizse GG/AA, ikinci sayı >12 ise AA/GG.
         self.assertEqual(

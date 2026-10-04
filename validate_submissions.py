@@ -53,6 +53,7 @@ AUDIT MODU — --audit-opportunities:
 """
 
 import argparse
+import hashlib
 import ipaddress
 import socket
 import html
@@ -436,12 +437,30 @@ def fetch_pending(limit=None, recheck=False):
     # Ajanın daha önce işlediklerini varsayılan olarak atla — idempotent.
     # --recheck özellikle eski pending kararlarını tazelemek için bu süzgeci açar.
     if not recheck:
-        rows = [
-            r for r in rows
-            if not (r.get("admin_note") or "").startswith(AGENT_MARKER)
-            or (r.get("admin_note") or "").startswith(f"{AGENT_MARKER} TEKRAR")
-        ]
+        rows = [r for r in rows if _awaits_agent(r)]
+    else:
+        rows = recheck_order(rows, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H"))
     return rows[:limit] if limit else rows
+
+
+def _awaits_agent(row):
+    note = row.get("admin_note") or ""
+    return not note.startswith(AGENT_MARKER) or note.startswith(f"{AGENT_MARKER} TEKRAR")
+
+
+def recheck_order(rows, rotation_key):
+    """--recheck sırası: önce ajanı bekleyenler (eskiden yeniye), sonra daha
+    önce karar verilmişler her koşuda farklı bir sırayla.
+
+    Zaman bütçesi bir koşuda ~25 kayda yetiyor. Hep en eskiden başlamak, art
+    arda yeniden denetimlerde aynı kayıtları tekrar tekrar işleyip kuyruğun
+    gerisine hiç ulaşmamak demekti (Ekim 2026: tarih okuma düzeltmesinden
+    sonra 41 ESC kaydı bekledi)."""
+    fresh = [r for r in rows if _awaits_agent(r)]
+    judged = [r for r in rows if not _awaits_agent(r)]
+    judged.sort(key=lambda r: hashlib.sha256(
+        f"{r.get('id')}:{rotation_key}".encode()).hexdigest())
+    return fresh + judged
 
 
 def fetch_evaluation_candidates(limit):
