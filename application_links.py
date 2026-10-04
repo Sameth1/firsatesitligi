@@ -78,19 +78,45 @@ _CLOSED_FORM_RE = re.compile(
     re.I,
 )
 CLOSED_FORM_REASON = "başvuru formu kapanmış (artık yanıt kabul etmiyor)"
-# Başvurunun ilanın KENDİ sayfasındaki butonla yapıldığı resmî portallar. Ayrı
-# bir form adresi yok: buton kullanıcıyı portal hesabına sokup o ilana
-# başvurtuyor. Her kural sayfada bu butonun gerçekten bulunduğunu metinden
-# doğrular; yalnız adres kalıbına güvenilmez.
-#   (host, yol kalıbı, sayfa kanıtı, kanıt etiketi)
+# Başvurunun portalın kendi butonu/sayfasıyla yapıldığı resmî kaynaklar. Ayrı
+# bir form adresi olmayabilir: buton kullanıcıyı portal hesabına sokup o ilana
+# başvurtuyor. Her kural sayfada başvuru adımının gerçekten bulunduğunu
+# metinden doğrular; yalnız adres kalıbına güvenilmez.
+@dataclass(frozen=True)
+class KnownApplyPage:
+    host: str
+    path_re: re.Pattern
+    evidence_re: re.Pattern
+    label: str
+    # Sayfa ilanın kendisi mi (koşullar burada) yoksa ayrı başvuru adımı mı?
+    is_listing: bool
+    # Başvuru harici siteye devrediliyorsa o bağlantının etiketi.
+    external_label_re: re.Pattern | None = None
+
+
 KNOWN_APPLY_PAGES = (
-    # Avrupa Dayanışma Programı: ilan sayfasındaki "Apply" butonu
-    # "In order to check if you can apply for this project, you must first
-    # Sign In or Join the Corps." penceresini açar.
-    ("youth.europa.eu",
-     re.compile(r"^/solidarity/(?:placement|opportunity)/\d+(?:_[a-z]{2})?/?$"),
-     re.compile(r"check\s+if\s+you\s+can\s+apply\s+for\s+this\s+project", re.I),
-     "İlan sayfasındaki Apply butonu (Avrupa Dayanışma Programı hesabıyla başvuru)"),
+    # Avrupa Dayanışma Programı: ilan sayfasındaki "Apply" butonu "In order to
+    # check if you can apply for this project, you must first Sign In or Join
+    # the Corps." penceresini açar.
+    KnownApplyPage(
+        "youth.europa.eu",
+        re.compile(r"^/solidarity/(?:placement|opportunity)/\d+(?:_[a-z]{2})?/?$"),
+        re.compile(r"check\s+if\s+you\s+can\s+apply\s+for\s+this\s+project", re.I),
+        "İlan sayfasındaki Apply butonu (Avrupa Dayanışma Programı hesabıyla başvuru)",
+        is_listing=True,
+    ),
+    # SALTO Avrupa Eğitim Takvimi: eğitimin "Apply now!" butonu bu sayfaya
+    # gelir. Ya SALTO'nun kendi formu (SALTO hesabıyla) ya da "Applications
+    # for this training activity are handled on an external website" notuyla
+    # düzenleyicinin formuna devir.
+    KnownApplyPage(
+        "www.salto-youth.net",
+        re.compile(r"^/tools/european-training-calendar/application-procedure/\d+/?$"),
+        re.compile(r"\bApply\s+online\b", re.I),
+        "SALTO başvuru sayfası (SALTO hesabıyla başvuru)",
+        is_listing=False,
+        external_label_re=re.compile(r"proceed\s+to\s+the\s+external\s+online\s+application", re.I),
+    ),
 )
 _ACTION_FRAGMENT_RE = re.compile(
     r"^(?:apply|application|application-form|apply-now|form|basvuru|başvuru)(?:[-_].*)?$",
@@ -331,15 +357,79 @@ def extract_candidates(page_html: str, page_url: str) -> tuple[list[Candidate], 
     return ordered, real_form
 
 
-def known_apply_page_evidence(url: str, body: str | None) -> str | None:
-    """Sayfa, başvurunun kendi butonuyla yapıldığı bilinen bir portal ilanıysa
-    kanıt etiketi; değilse None."""
+def known_apply_page(url: str, body: str | None) -> KnownApplyPage | None:
+    """Sayfa, başvurunun kendi adımıyla yapıldığı bilinen bir portal sayfasıysa
+    kuralı; değilse None."""
     parts = urlsplit(url or "")
     host = (parts.hostname or "").lower()
-    for rule_host, path_re, body_re, label in KNOWN_APPLY_PAGES:
-        if host == rule_host and path_re.match(parts.path or "") and body_re.search(body or ""):
-            return label
+    for rule in KNOWN_APPLY_PAGES:
+        if (host == rule.host and rule.path_re.match(parts.path or "")
+                and rule.evidence_re.search(body or "")):
+            return rule
     return None
+
+
+def _external_apply_link(rule: KnownApplyPage, page_html: str, page_url: str) -> str | None:
+    if not rule.external_label_re:
+        return None
+    soup = BeautifulSoup(page_html or "", "html.parser")
+    for anchor in soup.find_all("a", href=True):
+        label = " ".join(anchor.get_text(" ", strip=True).split())
+        if rule.external_label_re.search(label):
+            target = _clean_url(urljoin(page_url, anchor["href"].strip()))
+            if urlsplit(target).scheme in ("http", "https"):
+                return target
+    return None
+
+
+def _known_apply_route(rule, page_url, page_html, details_url, details_status_code, fetcher):
+    """Bilinen portal sayfasından doğrudan başvuru hedefi.
+
+    Öncelik: portalın devrettiği harici başvuru sitesi, sonra kurumun ilan
+    metninde verdiği form ("ONLY way to apply: please fill in this form:
+    forms.gle/…"), en son portalın kendi başvuru sayfası. Kapanmış form
+    kapalı fırsat kanıtıdır."""
+    conditions_url = page_url if rule.is_listing else details_url
+    external = _external_apply_link(rule, page_html, page_url)
+    targets = ([(external, "Portalın yönlendirdiği harici başvuru sitesi")] if external else [])
+    targets += [(url, "İlan açıklamasında kurumun verdiği başvuru formu")
+                for url in contextual_form_links(page_html, page_url)]
+    for target_url, label in targets:
+        target = fetcher(target_url)
+        if is_closed_form(target.final_url or target_url, target.body):
+            return ApplicationRoute(None, conditions_url, "online_form", False,
+                                    target.status, target.final_url, None,
+                                    CLOSED_FORM_REASON,
+                                    details_status_code=details_status_code)
+        if _healthy_target(target):
+            if external and target_url == external and not _is_form_provider(target_url):
+                # Devredilen adres bazen formun kendisi değil, düzenleyicinin
+                # çağrı yazısı. İçinde form varsa doğrudan ona git.
+                inner = resolve_application_route(target_url, target.body, max_hops=1,
+                                                  fetcher=fetcher)
+                if inner.verified and inner.application_url:
+                    return ApplicationRoute(inner.application_url, conditions_url,
+                                            inner.application_method, True,
+                                            inner.status_code, inner.final_url,
+                                            f"{label} → {inner.evidence}",
+                                            "portalın devrettiği sitede başvuru adımı doğrulandı",
+                                            details_status_code=details_status_code)
+            return ApplicationRoute(target_url, conditions_url, _method_for(target_url), True,
+                                    target.status, target.final_url, label,
+                                    "portal başvuruyu bu adrese devrediyor",
+                                    details_status_code=details_status_code)
+        if label.startswith("Portalın"):
+            # Portal başvuruyu yalnız bu siteye devrediyor; açılmıyorsa
+            # portal sayfasını "doğrulanmış" saymak yanlış olur.
+            return ApplicationRoute(None, conditions_url, "portal", False, target.status,
+                                    target.final_url, None,
+                                    "portalın yönlendirdiği harici başvuru sitesi açılmadı",
+                                    details_status_code=details_status_code)
+    # İlan sayfasıysa detay adresi başvuru adresiyle aynı: kartta ayrı
+    # "Koşulları Gör" linki çıkmaz.
+    return ApplicationRoute(page_url, conditions_url, "portal", True, 200, page_url,
+                            rule.label, "portalın kendi başvuru sayfası",
+                            details_status_code=details_status_code)
 
 
 _APPLY_CONTEXT_RE = re.compile(r"\b(?:appl(?:y|ication)|register|registration|başvur)", re.I)
@@ -424,31 +514,10 @@ def resolve_application_route(
             return ApplicationRoute(None, details_url, "online_form", False, 200, page_url,
                                     None, CLOSED_FORM_REASON,
                                     details_status_code=details_status_code)
-        known_apply = known_apply_page_evidence(page_url, page_html)
-        if known_apply:
-            # Kurum açıklamada kendi başvuru formunu veriyorsa ("ONLY way to
-            # apply: please fill in this form: forms.gle/…") doğrudan hedef o
-            # form; yoksa ilanın Apply butonlu sayfası. Koşullar her durumda
-            # ilan sayfasında.
-            for form_url in contextual_form_links(page_html, page_url):
-                target = fetcher(form_url)
-                if is_closed_form(target.final_url or form_url, target.body):
-                    return ApplicationRoute(None, page_url, "online_form", False,
-                                            target.status, target.final_url,
-                                            None, CLOSED_FORM_REASON,
-                                            details_status_code=details_status_code)
-                if _healthy_target(target):
-                    return ApplicationRoute(form_url, page_url, "online_form", True,
-                                            target.status, target.final_url,
-                                            "İlan açıklamasında kurumun verdiği başvuru formu",
-                                            "ilan metni başvuruyu bu forma yönlendiriyor",
-                                            details_status_code=details_status_code)
-            # Detay adresi başvuru adresiyle aynı: kartta ayrı "Koşulları Gör"
-            # linki çıkmaz.
-            return ApplicationRoute(page_url, page_url, "portal", True, 200,
-                                    page_url, known_apply,
-                                    "ilanın kendi sayfası başvuru portalı",
-                                    details_status_code=details_status_code)
+        known = known_apply_page(page_url, page_html)
+        if known:
+            return _known_apply_route(known, page_url, page_html, details_url,
+                                      details_status_code, fetcher)
         if _is_form_provider(page_url):
             return ApplicationRoute(page_url, details_url, "online_form", True, 200,
                                     page_url, "Bilinen form sağlayıcısı URL'i",
