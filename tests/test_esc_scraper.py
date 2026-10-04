@@ -45,6 +45,43 @@ class ScopeTests(unittest.TestCase):
         op = opportunity(has_no_deadline=True, date_application_end=None)
         self.assertEqual(esc.scope_reason(op, TODAY), "")
 
+    def test_finished_activity_is_out_of_scope_even_without_deadline(self):
+        # Portal "ESC Volunteering Team in Portugal – August 2026" ilanını Ekim'de
+        # hâlâ open + son tarihsiz gösteriyordu.
+        op = opportunity(has_no_deadline=True, date_application_end=None,
+                         date_start="2026-08-10T12:00:00", date_end="2026-09-09T12:00:00",
+                         date_flexibility="precise")
+        self.assertIn("bitmiş", esc.scope_reason(op, TODAY))
+
+    def test_started_fixed_date_activity_is_out_of_scope(self):
+        op = opportunity(date_start="2025-10-01T12:00:00", date_end="2026-12-30T12:00:00",
+                         date_flexibility="precise")
+        self.assertIn("başlangıç", esc.scope_reason(op, TODAY))
+
+    def test_started_flexible_placement_stays_in_scope(self):
+        op = opportunity(date_start="2025-09-01T12:00:00", date_end="2027-08-31T12:00:00",
+                         date_flexibility="flexible")
+        self.assertEqual(esc.scope_reason(op, TODAY), "")
+
+
+class SyncTests(unittest.TestCase):
+    def test_sync_flags_closed_and_finished_listings_only(self):
+        open_by_id = {
+            "41835": opportunity(),
+            "53041": opportunity(id=53041, has_no_deadline=True,
+                                 date_end="2026-09-09T12:00:00"),
+        }
+        rows = [
+            {"id": "a", "official_url": "https://youth.europa.eu/solidarity/placement/41835_en"},
+            {"id": "b", "official_url": "https://youth.europa.eu/solidarity/placement/53041_en"},
+            {"id": "c", "official_url": "https://youth.europa.eu/solidarity/placement/99999_en"},
+            {"id": "d", "official_url": "https://example.org/other"},
+        ]
+        decisions = esc.sync_decisions(rows, open_by_id, TODAY,
+                                       ("official_url", "details_url", "source_url"))
+        self.assertEqual({row["id"]: reason for row, reason in decisions},
+                         {"b": "faaliyet bitmiş", "c": "ilan portalda artık açık değil"})
+
 
 class RecordTests(unittest.TestCase):
     def test_record_points_to_the_official_placement_page(self):

@@ -26,6 +26,9 @@ FİLTRELEME (scraper tarafı, ajandan ÖNCE):
   • volunteer_countries içinde Türkiye ya da "all"
   • ev sahibi ülke Türkiye değil (platform yurt dışı fırsatları için)
   • son başvuru bugün ya da sonrası, veya ilan açıkça son tarihsiz
+  • faaliyet bitmemiş ve kesin (esnek olmayan) başlangıç tarihi geçmemiş —
+    portal bitmiş ilanları da "open" ve "son tarih yok" gösterebiliyor
+    (Ekim 2026: "ESC Volunteering Team in Portugal – August 2026")
   • yalnız gönüllülük ve insani yardım gönüllülüğü kolları
 
 Yaş, dil, uyruk gibi kullanıcı filtreleri burada TAHMİN EDİLMEZ; ajan sayfadan
@@ -33,9 +36,17 @@ birebir alıntıyla belirler. (Örnek: API bir ilanda Türkiye'yi listeliyor ama
 profil "citizen of an EU country" diyor — ajanın katı uyruk taraması bu
 çelişkiyi yakalar.)
 
+SENKRONİZASYON (--sync): son tarihsiz ilanların yayından kalkacağı bir tarih
+yok; ilan portalda kapanınca ya da faaliyet bitince bizde de kalkmalı. --sync
+güncel açık ilan listesini çeker ve
+  • kapsam dışına düşen bekleyen esc-bot kayıtlarını reddeder,
+  • kapsam dışına düşen yayındaki ESC fırsatlarını pasifleştirir.
+Ajan çalışmadan önce her triage koşusunda çalışır.
+
 Kullanım:
   python esc_scraper.py --dry-run --limit 5
   python esc_scraper.py                  # canlı — submissions'a yaz
+  python esc_scraper.py --sync [--dry-run]
 
 .env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 """
@@ -47,7 +58,7 @@ import os
 import re
 import sys
 import time
-from datetime import date
+from datetime import date, datetime, timezone
 
 import requests
 from dotenv import load_dotenv
@@ -72,6 +83,10 @@ HTTP_HEADERS = {
     "Accept": "application/json",
 }
 ALLOWED_STRANDS = {"volunteering", "humanitarian"}
+DETAIL_ID_RE = re.compile(r"youth\.europa\.eu/solidarity/placement/(\d+)")
+# Portal yanıtı kısmi gelirse (bakım, hata) senkronizasyon her şeyi kapsam
+# dışı sanıp yayındaki ilanları silmesin. Ekim 2026'da ~2600 açık ilan var.
+MIN_OPEN_FOR_SYNC = 500
 # Portal AB kodlarını kullanıyor; ISO 3166-1 alfa-2'ye çevir.
 EU_TO_ISO = {"EL": "GR", "UK": "GB"}
 
@@ -163,6 +178,24 @@ def scope_reason(op, today):
     deadline, rolling = _deadline(op)
     if not rolling and (deadline is None or deadline < today.isoformat()):
         return "son başvuru tarihi geçmiş ya da yok"
+    return _activity_reason(op, today)
+
+
+def _iso_day(value):
+    try:
+        return date.fromisoformat(str(value or "")[:10])
+    except ValueError:
+        return None
+
+
+def _activity_reason(op, today):
+    """Faaliyet tarihleri katılımı imkânsız kılıyorsa nedeni."""
+    end = _iso_day(op.get("date_end"))
+    if end and end < today:
+        return "faaliyet bitmiş"
+    start = _iso_day(op.get("date_start"))
+    if start and start < today and op.get("date_flexibility") == "precise":
+        return "kesin başlangıç tarihi geçmiş"
     return ""
 
 
@@ -204,6 +237,100 @@ def build_record(op):
         "submission_origin": "agent",
         "review_stage": "agent_queue",
     }
+
+# ─── Senkronizasyon ──────────────────────────────────────────────────────────
+
+def detail_id(*urls):
+    for url in urls:
+        match = DETAIL_ID_RE.search(url or "")
+        if match:
+            return match.group(1)
+    return None
+
+
+def sync_decisions(rows, open_by_id, today, url_fields):
+    """(satır, neden) — güncel listede kapsam dışı kalan satırlar."""
+    out = []
+    for row in rows:
+        op_id = detail_id(*(row.get(field) for field in url_fields))
+        if not op_id:
+            continue
+        op = open_by_id.get(op_id)
+        reason = ("ilan portalda artık açık değil" if op is None
+                  else scope_reason(op, today))
+        if reason:
+            out.append((row, reason))
+    return out
+
+
+def _sb_get(table, params):
+    res = requests.get(f"{SUPABASE_URL}/rest/v1/{table}", headers=sb_headers(),
+                       params=params, timeout=30)
+    res.raise_for_status()
+    return res.json()
+
+
+def _sb_patch(table, row_id, patch):
+    res = requests.patch(f"{SUPABASE_URL}/rest/v1/{table}", headers=sb_headers(),
+                         params={"id": f"eq.{row_id}"}, json=patch, timeout=30)
+    return res.status_code in (200, 204), res.text[:160]
+
+
+def sync(dry_run, today=None):
+    today = today or date.today()
+    print(f"🔄 ESC senkronizasyonu — {'DRY-RUN' if dry_run else 'CANLI'}")
+    if not SUPABASE_KEY:
+        print("❌ SUPABASE_SERVICE_ROLE_KEY yok (.env).")
+        return 1
+    try:
+        opportunities = fetch_open_opportunities()
+    except (requests.RequestException, ValueError) as exc:
+        print(f"::warning title=ESC portalı erişilemedi::{exc}")
+        return 0
+    if len(opportunities) < MIN_OPEN_FOR_SYNC:
+        print(f"::warning title=ESC listesi eksik::yalnız {len(opportunities)} açık ilan "
+              "geldi; senkronizasyon atlandı")
+        return 0
+    open_by_id = {str(op.get("id")): op for op in opportunities}
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    pending = _sb_get("submissions", {
+        "submitter_nickname": "eq.esc-bot", "status": "eq.pending",
+        "select": "id,title,url,details_url,source_url",
+    })
+    active = _sb_get("opportunities", {
+        "submitted_by_nickname": "eq.esc-bot", "is_active": "eq.true",
+        "select": "id,title,official_url,details_url,source_url",
+    })
+    print(f"  {len(opportunities)} açık ilan · {len(pending)} bekleyen · {len(active)} yayında")
+
+    failures = 0
+    for row, reason in sync_decisions(pending, open_by_id, today,
+                                      ("url", "details_url", "source_url")):
+        print(f"  🚫 bekleyen reddedildi: {row['title'][:55]} — {reason}")
+        if dry_run:
+            continue
+        ok, detail = _sb_patch("submissions", row["id"], {
+            "status": "rejected",
+            "admin_note": f"[ajan] RED — ESC: {reason}",
+            "reviewed_at": now_iso,
+            "review_stage": "decided",
+        })
+        failures += 0 if ok else 1
+        if not ok:
+            print(f"    ❌ {detail}")
+    for row, reason in sync_decisions(active, open_by_id, today,
+                                      ("official_url", "details_url", "source_url")):
+        print(f"  ⏹ yayından kaldırıldı: {row['title'][:55]} — {reason}")
+        if dry_run:
+            continue
+        ok, detail = _sb_patch("opportunities", row["id"], {
+            "is_active": False, "last_verified_at": now_iso,
+        })
+        failures += 0 if ok else 1
+        if not ok:
+            print(f"    ❌ {detail}")
+    return 1 if failures else 0
 
 # ─── Çalıştırma ──────────────────────────────────────────────────────────────
 
@@ -277,7 +404,11 @@ def main():
     ap = argparse.ArgumentParser(description="ESC gönüllülük ilanları scraper")
     ap.add_argument("--dry-run", action="store_true", help="DB'ye yazma, kayıtları göster")
     ap.add_argument("--limit", type=int, help="en fazla bu kadar ilan işle")
+    ap.add_argument("--sync", action="store_true",
+                    help="kapsam dışına düşen bekleyenleri reddet, yayındakileri kaldır")
     args = ap.parse_args()
+    if args.sync:
+        sys.exit(sync(dry_run=args.dry_run))
     sys.exit(run(dry_run=args.dry_run, limit=args.limit))
 
 
