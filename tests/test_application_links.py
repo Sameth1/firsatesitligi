@@ -237,6 +237,47 @@ class KnownApplyPageTests(unittest.TestCase):
         self.assertFalse(route.verified)
 
 
+class SaltoApplyPageTests(unittest.TestCase):
+    TRAINING = "https://www.salto-youth.net/tools/european-training-calendar/training/mental-health.15390/"
+    PROCEDURE = "https://www.salto-youth.net/tools/european-training-calendar/application-procedure/16883/"
+    TRAINING_HTML = ("<p>Application deadline: 31 October 2099</p>"
+                     f"<a href='{PROCEDURE}'>Apply now! Application deadline</a>")
+
+    def test_external_application_handed_over_by_salto_is_the_target(self):
+        external = "https://tcanetplatform.com/form/mental-health-tc"
+        pages = {
+            self.TRAINING: self.TRAINING_HTML,
+            self.PROCEDURE: ("<h2>Apply online</h2><p>Applications for this training activity "
+                             "are handled on an external website.</p>"
+                             f"<a href='{external}'>Proceed to the external online application</a>"),
+            external: "<form><input name='a'><input name='b'></form>",
+        }
+        route = resolve_application_route(self.TRAINING, fetcher=map_fetcher(pages))
+        self.assertTrue(route.verified)
+        self.assertEqual(route.application_url, external)
+        # Koşullar eğitim sayfasında kalır.
+        self.assertEqual(route.details_url, self.TRAINING)
+
+    def test_salto_own_application_page_is_a_portal(self):
+        pages = {
+            self.TRAINING: self.TRAINING_HTML,
+            self.PROCEDURE: "<h2>Apply online</h2><p>Already registered? Login now!</p>",
+        }
+        route = resolve_application_route(self.TRAINING, fetcher=map_fetcher(pages))
+        self.assertTrue(route.verified)
+        self.assertEqual((route.application_url, route.application_method),
+                         (self.PROCEDURE, "portal"))
+
+    def test_dead_external_site_is_not_verified(self):
+        pages = {
+            self.TRAINING: self.TRAINING_HTML,
+            self.PROCEDURE: ("<h2>Apply online</h2><a href='https://gone.example/form'>"
+                             "Proceed to the external online application</a>"),
+        }
+        route = resolve_application_route(self.TRAINING, fetcher=map_fetcher(pages))
+        self.assertFalse(route.verified)
+
+
 class ClosedFormResolverTests(unittest.TestCase):
     def test_closed_form_detection(self):
         from application_links import is_closed_form
