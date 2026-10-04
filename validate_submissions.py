@@ -1595,6 +1595,18 @@ def request_llm_json(system_prompt, user_text):
     return result
 
 
+def route_evidence_line(sub):
+    """Deterministik rota doğrulamasının kanıtı (yalnız doğrulanmış rotada).
+
+    Portal ilanlarında başvuru butonu bir açılır pencere; kırpılmış sayfa
+    metninde "Apply" tek kelime olarak kalıyor. Model hedefin başvuru sayfası
+    olduğunu bu kanıtla birlikte değerlendirir."""
+    if sub.get("application_route_status") != "verified" or not sub.get("application_url_evidence"):
+        return ""
+    return (f"Teknik başvuru rotası doğrulaması ({sub.get('application_method') or '?'}): "
+            f"{sub['application_url_evidence']}\n")
+
+
 def judge_with_llm(sub, url, http_note, page_text, prior_verdict=None):
     """LLM'e (OpenAI-uyumlu chat/completions) sorar, karar dict'i döndürür
     (hata → None). SYSTEM_PROMPT ve user_text sağlayıcıdan bağımsızdır; yalnızca
@@ -1626,6 +1638,7 @@ def judge_with_llm(sub, url, http_note, page_text, prior_verdict=None):
         f"Submitter eligibility notu: {(sub.get('eligibility_notes') or '(yok)')[:400]}\n"
         f"Doğrudan başvuru/resmî fırsat URL'i: {url}\n"
         f"Doğrudan URL HTTP: {http_note}\n"
+        f"{route_evidence_line(sub)}"
         f"Bilginin alındığı kaynak URL: {sub.get('source_url') or url}\n\n"
         "İNSAN REDLERİNDEN ÖĞRENİLEN İLGİLİ HAFIZA\n"
         f"{sub.get('_memory_context') or '(yok)'}\n"

@@ -78,6 +78,20 @@ _CLOSED_FORM_RE = re.compile(
     re.I,
 )
 CLOSED_FORM_REASON = "başvuru formu kapanmış (artık yanıt kabul etmiyor)"
+# Başvurunun ilanın KENDİ sayfasındaki butonla yapıldığı resmî portallar. Ayrı
+# bir form adresi yok: buton kullanıcıyı portal hesabına sokup o ilana
+# başvurtuyor. Her kural sayfada bu butonun gerçekten bulunduğunu metinden
+# doğrular; yalnız adres kalıbına güvenilmez.
+#   (host, yol kalıbı, sayfa kanıtı, kanıt etiketi)
+KNOWN_APPLY_PAGES = (
+    # Avrupa Dayanışma Programı: ilan sayfasındaki "Apply" butonu
+    # "In order to check if you can apply for this project, you must first
+    # Sign In or Join the Corps." penceresini açar.
+    ("youth.europa.eu",
+     re.compile(r"^/solidarity/(?:placement|opportunity)/\d+(?:_[a-z]{2})?/?$"),
+     re.compile(r"check\s+if\s+you\s+can\s+apply\s+for\s+this\s+project", re.I),
+     "İlan sayfasındaki Apply butonu (Avrupa Dayanışma Programı hesabıyla başvuru)"),
+)
 _ACTION_FRAGMENT_RE = re.compile(
     r"^(?:apply|application|application-form|apply-now|form|basvuru|başvuru)(?:[-_].*)?$",
     re.I,
@@ -317,6 +331,44 @@ def extract_candidates(page_html: str, page_url: str) -> tuple[list[Candidate], 
     return ordered, real_form
 
 
+def known_apply_page_evidence(url: str, body: str | None) -> str | None:
+    """Sayfa, başvurunun kendi butonuyla yapıldığı bilinen bir portal ilanıysa
+    kanıt etiketi; değilse None."""
+    parts = urlsplit(url or "")
+    host = (parts.hostname or "").lower()
+    for rule_host, path_re, body_re, label in KNOWN_APPLY_PAGES:
+        if host == rule_host and path_re.match(parts.path or "") and body_re.search(body or ""):
+            return label
+    return None
+
+
+_APPLY_CONTEXT_RE = re.compile(r"\b(?:appl(?:y|ication)|register|registration|başvur)", re.I)
+
+
+def contextual_form_links(page_html: str, page_url: str) -> list[str]:
+    """Hemen önündeki metinde başvuru geçen form sağlayıcısı linkleri.
+
+    Portal ilanlarında form linki çoğu zaman etiketi URL'in kendisi olan düz
+    bir bağlantı: "To apply, fill in this form: https://forms.gle/…". Etiket
+    zayıf olduğu için genel aday çıkarımı bunu görmüyor."""
+    soup = BeautifulSoup(page_html or "", "html.parser")
+    found = []
+    for anchor in soup.find_all("a", href=True):
+        target = _clean_url(urljoin(page_url, anchor["href"].strip()))
+        if not _is_form_provider(target) or target in found:
+            continue
+        before = []
+        for node in anchor.previous_elements:
+            if isinstance(node, str):
+                before.append(node)
+                if sum(len(part) for part in before) >= 160:
+                    break
+        context = " ".join(reversed(before))[-160:]
+        if _APPLY_CONTEXT_RE.search(context):
+            found.append(target)
+    return found
+
+
 def is_closed_form(url: str, body: str | None = None) -> bool:
     """Form sağlayıcısının "artık yanıt kabul etmiyor" sayfası mı?"""
     path = (urlsplit(url or "").path or "").rstrip("/").casefold()
@@ -371,6 +423,31 @@ def resolve_application_route(
         if is_closed_form(page_url, page_html):
             return ApplicationRoute(None, details_url, "online_form", False, 200, page_url,
                                     None, CLOSED_FORM_REASON,
+                                    details_status_code=details_status_code)
+        known_apply = known_apply_page_evidence(page_url, page_html)
+        if known_apply:
+            # Kurum açıklamada kendi başvuru formunu veriyorsa ("ONLY way to
+            # apply: please fill in this form: forms.gle/…") doğrudan hedef o
+            # form; yoksa ilanın Apply butonlu sayfası. Koşullar her durumda
+            # ilan sayfasında.
+            for form_url in contextual_form_links(page_html, page_url):
+                target = fetcher(form_url)
+                if is_closed_form(target.final_url or form_url, target.body):
+                    return ApplicationRoute(None, page_url, "online_form", False,
+                                            target.status, target.final_url,
+                                            None, CLOSED_FORM_REASON,
+                                            details_status_code=details_status_code)
+                if _healthy_target(target):
+                    return ApplicationRoute(form_url, page_url, "online_form", True,
+                                            target.status, target.final_url,
+                                            "İlan açıklamasında kurumun verdiği başvuru formu",
+                                            "ilan metni başvuruyu bu forma yönlendiriyor",
+                                            details_status_code=details_status_code)
+            # Detay adresi başvuru adresiyle aynı: kartta ayrı "Koşulları Gör"
+            # linki çıkmaz.
+            return ApplicationRoute(page_url, page_url, "portal", True, 200,
+                                    page_url, known_apply,
+                                    "ilanın kendi sayfası başvuru portalı",
                                     details_status_code=details_status_code)
         if _is_form_provider(page_url):
             return ApplicationRoute(page_url, details_url, "online_form", True, 200,

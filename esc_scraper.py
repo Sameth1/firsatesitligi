@@ -40,7 +40,10 @@ SENKRONİZASYON (--sync): son tarihsiz ilanların yayından kalkacağı bir tari
 yok; ilan portalda kapanınca ya da faaliyet bitince bizde de kalkmalı. --sync
 güncel açık ilan listesini çeker ve
   • kapsam dışına düşen bekleyen esc-bot kayıtlarını reddeder,
-  • kapsam dışına düşen yayındaki ESC fırsatlarını pasifleştirir.
+  • kapsam dışına düşen yayındaki ESC fırsatlarını pasifleştirir,
+  • yayındaki ESC fırsatlarının başvuru linkini doğrudan hedefe çeker:
+    kurumun açıklamada verdiği form varsa o, yoksa ilanın Apply butonlu
+    sayfası (application_links.KNOWN_APPLY_PAGES).
 Ajan çalışmadan önce her triage koşusunda çalışır.
 
 Kullanım:
@@ -63,6 +66,7 @@ from datetime import date, datetime, timezone
 import requests
 from dotenv import load_dotenv
 
+from application_links import CLOSED_FORM_REASON, resolve_application_route
 from discovery_gate import KNOWN_URL_COLUMNS, ONLINE_ONLY_RE, candidate_blockers
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -301,7 +305,8 @@ def sync(dry_run, today=None):
     })
     active = _sb_get("opportunities", {
         "submitted_by_nickname": "eq.esc-bot", "is_active": "eq.true",
-        "select": "id,title,official_url,details_url,source_url",
+        "select": ("id,title,official_url,details_url,source_url,"
+                   "application_route_status,application_method"),
     })
     print(f"  {len(opportunities)} açık ilan · {len(pending)} bekleyen · {len(active)} yayında")
 
@@ -331,7 +336,60 @@ def sync(dry_run, today=None):
         failures += 0 if ok else 1
         if not ok:
             print(f"    ❌ {detail}")
+    closing = {row["id"] for row, _ in sync_decisions(
+        active, open_by_id, today, ("official_url", "details_url", "source_url"))}
+    for row in active:
+        if row["id"] in closing:
+            continue
+        failures += upgrade_route(row, dry_run, now_iso)
     return 1 if failures else 0
+
+
+def route_patch(route, now_iso):
+    """Doğrulanmış rota → opportunities alanları."""
+    return {
+        "official_url": route.application_url,
+        "details_url": route.details_url,
+        "application_route_status": "verified",
+        "application_method": route.application_method,
+        "application_url_verified_at": now_iso,
+        "application_url_check_status": route.status_code,
+        "application_url_final": route.final_url,
+        "application_url_evidence": route.evidence,
+    }
+
+
+def upgrade_route(row, dry_run, now_iso):
+    """Yayındaki ilanı doğrudan başvuru hedefine bağlar; hata sayısı döner.
+
+    Filtreler iki LLM denetimiyle zaten doğrulanmış; burada yalnız başvuru
+    linki değişiyor ve o da sayfadaki kanıtla (form linki ya da Apply butonu)
+    deterministik doğrulanıyor."""
+    if row.get("application_route_status") == "verified":
+        return 0
+    start = row.get("source_url") or row.get("details_url") or row.get("official_url")
+    route = resolve_application_route(start, max_hops=0)
+    if route.reason == CLOSED_FORM_REASON:
+        # Kurum başvuruyu yalnız bu forma yönlendiriyor ve form kapanmış.
+        print(f"  ⏹ yayından kaldırıldı: {row['title'][:55]} — {route.reason}")
+        if dry_run:
+            return 0
+        ok, detail = _sb_patch("opportunities", row["id"], {
+            "is_active": False, "last_verified_at": now_iso,
+        })
+    elif route.verified and route.application_url:
+        print(f"  🔗 doğrudan başvuru: {row['title'][:50]} → "
+              f"{route.application_method} {route.application_url[:70]}")
+        if dry_run:
+            return 0
+        ok, detail = _sb_patch("opportunities", row["id"], route_patch(route, now_iso))
+    else:
+        print(f"  · rota doğrulanamadı: {row['title'][:55]} — {route.reason}")
+        return 0
+    if not ok:
+        print(f"    ❌ {detail}")
+    time.sleep(CRAWL_DELAY)
+    return 0 if ok else 1
 
 # ─── Çalıştırma ──────────────────────────────────────────────────────────────
 
