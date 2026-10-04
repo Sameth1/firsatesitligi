@@ -38,7 +38,7 @@ def fetch_active(limit=None):
     common = "id,title,official_url,funding_notes,submitted_by_nickname,is_active"
     extended = (
         common + ",details_url,source_url,application_route_status,"
-        "application_method,application_url_verified_at"
+        "application_method,application_url_verified_at,review_flag"
     )
     params = {"is_active": "eq.true", "select": extended, "order": "title.asc"}
     if limit:
@@ -68,6 +68,29 @@ def patch(opp_id, body):
 
 def route_start(row):
     return row.get("source_url") or row.get("details_url") or row.get("official_url") or ""
+
+
+TRANSIENT_STATUSES = {403, 408, 425, 429}
+
+
+def transient_failure(route):
+    """Başlangıç sayfasına geçici bir nedenle ulaşılamadıysa True."""
+    if route.verified:
+        return False
+    status = route.details_status_code
+    return status is None or status in TRANSIENT_STATUSES or status >= 500
+
+
+def restorable_missing(row):
+    """Erişim hatası yüzünden yanlışlıkla 'missing' yazılmış onaylı kayıt mı?
+
+    'missing' yalnız bu betikten gelir ve eski sürüm zaman aşımında da onu
+    yazıyordu. Kayıt ajan onayından resmî bir program sayfasıyla geçmişti;
+    sayfa güvenli bir resmî sayfaysa onaylı durumu 'guided'a döner. Sayfa bir
+    sonraki erişilebilir koşuda yeniden doğrulanır."""
+    return (row.get("application_route_status") == "missing"
+            and row.get("review_flag") == "application_link_missing"
+            and is_safe_guided_url(row.get("details_url") or ""))
 
 
 def result_row(row, route):
@@ -112,6 +135,29 @@ def main():
         route = resolve_application_route(start, max_hops=2)
         item = result_row(row, route)
         report.append(item)
+        if transient_failure(route):
+            # Sayfaya ulaşılamadı (zaman aşımı, güvenlik duvarı, sunucu
+            # hatası). Bu "başvuru linki yok" kanıtı değil: kayıt olduğu gibi
+            # kalır. Eskiden "missing" yazılıyor ve kayıt siteden kayboluyordu
+            # (Ekim 2026: DAAD GitHub sunucularına zaman aşımı veriyordu).
+            restore = restorable_missing(row)
+            counts["restored" if restore else "skipped"] += 1
+            print(f"{index:>3}/{len(rows)} ~ {row['title'][:58]} — geçici erişim hatası, "
+                  + ("onaylı rehberli rotaya döndü" if restore else "kayıt değiştirilmedi")
+                  + f" ({route.reason[:80]})")
+            if restore and args.apply:
+                patch(row["id"], {
+                    "application_route_status": "guided",
+                    "application_method": None,
+                    "application_url_verified_at": None,
+                    "application_url_final": None,
+                    "application_url_evidence": None,
+                    "review_flag": "guided_application_route",
+                    "review_note": ("Sayfaya erişilemediği için yanlışlıkla 'missing' "
+                                    "yazılmıştı; resmî program sayfası üzerinden başvuru."),
+                    "review_flagged_at": verified_at,
+                })
+            continue
         guided = (
             not route.verified
             and route.details_status_code == 200
@@ -168,7 +214,9 @@ def main():
         Path(args.json).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(
         f"\nDoğrudan: {counts['verified']} · Rehberli: {counts['guided']} · "
-        f"Çözülemedi: {counts['unresolved']} · URL yok: {counts['missing']}"
+        f"Çözülemedi: {counts['unresolved']} · URL yok: {counts['missing']} · "
+        f"Erişilemedi (dokunulmadı): {counts['skipped']} · "
+        f"Erişilemedi (rehberliye döndü): {counts['restored']}"
     )
     if not args.apply:
         print("DB değişmedi. Yazmak için migration 113 sonrası --apply gerekir.")
