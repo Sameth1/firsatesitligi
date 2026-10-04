@@ -1099,6 +1099,15 @@ class DeadlineEvidenceTests(unittest.TestCase):
             validator.extract_dates(text), [date(2099, 11, 15), date(2099, 12, 1)])
         self.assertEqual(validator.extract_dates("November 2099"), [])
 
+    def test_extract_dates_reads_european_slash_dates(self):
+        # Avrupa Gençlik Portalı biçimi; belirsizse GG/AA, ikinci sayı >12 ise AA/GG.
+        self.assertEqual(
+            validator.extract_dates("Application deadline: 10/01/2099 12:00"),
+            [date(2099, 1, 10)])
+        self.assertEqual(validator.extract_dates("25/11/2099"), [date(2099, 11, 25)])
+        self.assertEqual(validator.extract_dates("11/25/2099"), [date(2099, 11, 25)])
+        self.assertEqual(validator.extract_dates("1/2/20991"), [])
+
     def test_free_text_scraper_deadline_is_not_trusted_without_llm(self):
         self.assertIsNone(validator.strict_iso_date("15 January 2020; 15 January 2099"))
         self.assertEqual(validator.strict_iso_date(" 2099-01-15 "), date(2099, 1, 15))

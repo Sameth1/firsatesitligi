@@ -1092,6 +1092,8 @@ def parse_deadline(text):
 _DATE_PATTERNS = (
     ("iso", re.compile(r"(\d{4})-(\d{1,2})-(\d{1,2})")),
     ("dot", re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{4})")),
+    # Avrupa Gençlik Portalı: "Application deadline: 10/01/2027 12:00" (GG/AA).
+    ("slash", re.compile(r"(?<!\d)(\d{1,2})/(\d{1,2})/(\d{4})(?!\d)")),
     ("day_month", re.compile(
         r"(\d{1,2})(?:st|nd|rd|th)?\.?\s+(?:of\s+)?([a-zçğıöşü]+),?\s+(\d{4})")),
     ("month_day", re.compile(r"([a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})")),
@@ -1116,6 +1118,11 @@ def extract_dates(text):
                     y, mo, d = (int(g) for g in m.groups())
                 elif kind == "dot":
                     d, mo, y = (int(g) for g in m.groups())
+                elif kind == "slash":
+                    # Avrupa sitelerinde GG/AA/YYYY; yalnız ikinci sayı 12'yi
+                    # aşıyorsa biçim kesin olarak ABD (AA/GG) demektir.
+                    a, b, y = (int(g) for g in m.groups())
+                    d, mo = (b, a) if b > 12 >= a else (a, b)
                 elif kind == "day_month":
                     month = TR_AYLAR.get(m.group(2)) or EN_AYLAR.get(m.group(2))
                     if not month:

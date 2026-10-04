@@ -83,7 +83,8 @@ HTTP_HEADERS = {
     "Accept": "application/json",
 }
 ALLOWED_STRANDS = {"volunteering", "humanitarian"}
-DETAIL_ID_RE = re.compile(r"youth\.europa\.eu/solidarity/placement/(\d+)")
+# Portal ilan sayfasını /placement/ adresinden /opportunity/ adresine yönlendiriyor.
+DETAIL_ID_RE = re.compile(r"youth\.europa\.eu/solidarity/(?:placement|opportunity)/(\d+)")
 # Portal yanıtı kısmi gelirse (bakım, hata) senkronizasyon her şeyi kapsam
 # dışı sanıp yayındaki ilanları silmesin. Ekim 2026'da ~2600 açık ilan var.
 MIN_OPEN_FOR_SYNC = 500
