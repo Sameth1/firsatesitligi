@@ -76,11 +76,13 @@ class SyncTests(unittest.TestCase):
             {"id": "b", "official_url": "https://youth.europa.eu/solidarity/placement/53041_en"},
             {"id": "c", "official_url": "https://youth.europa.eu/solidarity/placement/99999_en"},
             {"id": "d", "official_url": "https://example.org/other"},
+            {"id": "e", "official_url": "https://youth.europa.eu/solidarity/opportunity/53041_en"},
         ]
         decisions = esc.sync_decisions(rows, open_by_id, TODAY,
                                        ("official_url", "details_url", "source_url"))
         self.assertEqual({row["id"]: reason for row, reason in decisions},
-                         {"b": "faaliyet bitmiş", "c": "ilan portalda artık açık değil"})
+                         {"b": "faaliyet bitmiş", "c": "ilan portalda artık açık değil",
+                          "e": "faaliyet bitmiş"})
 
 
 class RecordTests(unittest.TestCase):
