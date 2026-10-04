@@ -52,6 +52,22 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # Son tarihsiz ESC ilanlarının bizde kendiliğinden düşeceği bir tarih yok:
+      # portalda kapanan ya da faaliyeti biten ilanı ajandan ÖNCE reddet,
+      # yayındaysa kaldır. Portal erişilemezse uyarı verip geçer.
+      - name: Sync ESC listings
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          ARGS=()
+          if [ "$INPUT_DRY_RUN" = "true" ]; then
+            ARGS+=(--dry-run)
+          fi
+          python esc_scraper.py --sync "${ARGS[@]}"
+
       - name: Run Agent Triage
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
