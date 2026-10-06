@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import SuggestOpportunityModal from './SuggestOpportunityModal'
 
 interface AppHeaderProps {
@@ -60,11 +61,15 @@ export default function AppHeader({ searchSnapshot, rightSlot }: AppHeaderProps)
         </div>
       </div>
 
-      {showModal && (
+      {/* Portal: başlık, animasyonlu sayfa katmanının (transform) içinde; modal
+          orada kalınca z-index'i o katmanla sınırlanıyor ve "Uygulama olarak
+          ekle" bandı Gönder butonunun üstüne biniyordu. */}
+      {showModal && createPortal(
         <SuggestOpportunityModal
           searchSnapshot={searchSnapshot}
           onClose={() => setShowModal(false)}
-        />
+        />,
+        document.body,
       )}
     </>
   )

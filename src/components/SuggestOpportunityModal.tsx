@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { COUNTRIES } from '@/lib/countries'
+import { COUNTRIES, countryNameTr } from '@/lib/countries'
+import Flag from '@/components/Flag'
 
 const CATEGORIES = [
   { slug: 'scholarship',   label: 'Burs' },
@@ -26,6 +27,19 @@ const STUDY_LEVELS = [
   { value: 'graduate',    label: 'Mezun / Genç Profesyonel' },
 ]
 
+// Sunucu (api/submit-opportunity) en fazla 10 ülke kabul ediyor.
+const MAX_HOST_COUNTRIES = 10
+const GLOBAL_CODE = '*'
+
+/** Aramada seçilen ülkeler öneri formuna aynen taşınır (UX kuralı 5). */
+function initialHostCountries(snapshot?: Record<string, unknown>): string[] {
+  const list = snapshot?.countries
+  if (Array.isArray(list)) {
+    return list.filter((c): c is string => typeof c === 'string').slice(0, MAX_HOST_COUNTRIES)
+  }
+  return typeof snapshot?.country === 'string' && snapshot.country ? [snapshot.country] : []
+}
+
 interface Props {
   searchSnapshot?: Record<string, unknown>
   onClose: () => void
@@ -43,8 +57,8 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
 
   // Expand — opsiyonel detaylar
   const [expanded, setExpanded] = useState(false)
-  const [hostCountry, setHostCountry] = useState(
-    (searchSnapshot?.country as string) ?? ''
+  const [hostCountries, setHostCountries] = useState<string[]>(
+    () => initialHostCountries(searchSnapshot)
   )
   const [deadlineText, setDeadlineText] = useState('')
   const [fundingType, setFundingType] = useState<string | null>(null)
@@ -71,6 +85,22 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  // "Küresel / çevrim içi" ülkelerle birlikte anlamsız: seçilirse tek kalır,
+  // bir ülke eklenirse kalkar.
+  function addHostCountry(code: string) {
+    if (!code) return
+    setHostCountries(prev => {
+      if (code === GLOBAL_CODE) return [GLOBAL_CODE]
+      const countries = prev.filter(c => c !== GLOBAL_CODE)
+      if (countries.includes(code) || countries.length >= MAX_HOST_COUNTRIES) return countries
+      return [...countries, code]
+    })
+  }
+
+  function removeHostCountry(code: string) {
+    setHostCountries(prev => prev.filter(c => c !== code))
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!title.trim() || !url.trim() || !categorySlug) return
@@ -90,7 +120,7 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
           // Takma ad ve e-posta artık sorulmuyor: UX kuralı 3 — işlevsel
           // olarak şart olmayan kişisel veri istenmez. Sunucu tarafı bu
           // alanları hâlâ kabul ediyor, biz göndermiyoruz.
-          host_countries: hostCountry ? [hostCountry] : [],
+          host_countries: hostCountries,
           deadline_text: deadlineText || null,
           funding_type: fundingType,
           age_min: ageMin ? parseInt(ageMin, 10) : null,
@@ -239,23 +269,60 @@ export default function SuggestOpportunityModal({ searchSnapshot, onClose }: Pro
               <div style={{ marginTop: 8 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
                   <div>
-                    <Label text="Ülke" />
+                    <Label text="Ülke(ler)" />
                     {/* Eskiden iki harfli kod isteniyordu ("DE, FR, ES...").
                         Kullanıcı ISO kodu bilmek zorunda değil; yanlış kod
                         girilirse kayıt o ülkeyi seçenlere hiç görünmüyordu.
-                        Artık ad seçiliyor, koda biz çeviriyoruz. */}
+                        Artık ad seçiliyor, koda biz çeviriyoruz. Fırsat
+                        birden çok ülkede olabilir: her seçim listeye eklenir. */}
                     <select
-                      value={hostCountry}
-                      onChange={e => setHostCountry(e.target.value)}
+                      value=""
+                      onChange={e => addHostCountry(e.target.value)}
+                      disabled={hostCountries.length >= MAX_HOST_COUNTRIES}
+                      aria-label="Ülke ekle"
                       style={{ ...inputStyle, appearance: 'none', cursor: 'pointer',
                                colorScheme: 'dark' }}
                     >
-                      <option value="">Ülke seç…</option>
-                      <option value="*">Küresel / çevrim içi</option>
-                      {COUNTRIES.map(c => (
+                      <option value="">
+                        {hostCountries.length === 0 ? 'Ülke seç…'
+                          : hostCountries.length >= MAX_HOST_COUNTRIES ? 'En fazla 10 ülke'
+                          : '+ Başka ülke ekle…'}
+                      </option>
+                      <option value={GLOBAL_CODE}>Küresel / çevrim içi</option>
+                      {COUNTRIES.filter(c => !hostCountries.includes(c.code)).map(c => (
                         <option key={c.code} value={c.code}>{c.nameTr}</option>
                       ))}
                     </select>
+                    {hostCountries.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                        {hostCountries.map(code => {
+                          const name = code === GLOBAL_CODE ? 'Küresel / çevrim içi' : countryNameTr(code)
+                          return (
+                            <span key={code} style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 6,
+                              padding: '3px 4px 3px 8px', borderRadius: 999, fontSize: 12,
+                              color: 'var(--text-hi)', background: 'rgba(124,92,255,0.18)',
+                              border: '1px solid rgba(124,92,255,0.45)',
+                            }}>
+                              {code !== GLOBAL_CODE && <Flag code={code} size={14} />}
+                              {name}
+                              <button
+                                type="button"
+                                onClick={() => removeHostCountry(code)}
+                                aria-label={`${name} ülkesini kaldır`}
+                                style={{
+                                  background: 'none', border: 'none', cursor: 'pointer',
+                                  color: 'var(--text-mid)', fontSize: 14, lineHeight: 1,
+                                  padding: '0 4px',
+                                }}
+                              >
+                                ×
+                              </button>
+                            </span>
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <Label text="Son başvuru tarihi" />
