@@ -2,7 +2,9 @@
 
 /**
  * Seçim kartları — ikonlu, dokunması kolay, hover'da kalkan kartlar.
- * Tek seçim; aynı karta tekrar basmak seçimi kaldırır (alanlar opsiyonel).
+ * Varsayılan tek seçim; aynı karta tekrar basmak seçimi kaldırır (alanlar
+ * opsiyonel). `multiple` verilirse kartlar ayrı ayrı açılıp kapanır ve
+ * değer seçilenlerin listesi olur.
  *
  * İkon iki biçimde gelebilir:
  *  - `icon`      : emoji / metin (ülke bayrakları gibi)
@@ -27,18 +29,49 @@ type Option = {
   accent?: string
 }
 
-export default function ChoiceGrid({
-  options, value, onChange, label, hint, columns = 3, accent = '#7C5CFF',
-}: {
+type BaseProps = {
   options: Option[]
-  value: string | null
-  onChange: (v: string | null) => void
   label: string
   hint?: string
   columns?: number
   accent?: string
-}) {
+}
+
+type SingleProps = BaseProps & {
+  multiple?: false
+  value: string | null
+  onChange: (v: string | null) => void
+}
+
+type MultipleProps = BaseProps & {
+  multiple: true
+  value: string[]
+  onChange: (v: string[]) => void
+}
+
+export default function ChoiceGrid(props: SingleProps | MultipleProps) {
+  const { options, label, hint, columns = 3, accent = '#7C5CFF' } = props
   const minWidth = columns >= 4 ? 104 : 128
+  const selectedValues = props.multiple ? props.value : (props.value ? [props.value] : [])
+  const hasValue = selectedValues.length > 0
+
+  function reset() {
+    if (props.multiple) props.onChange([])
+    else props.onChange(null)
+  }
+
+  /** Karta basıldı; yeni seçildiyse true döner (sahne darbesi için). */
+  function toggle(value: string): boolean {
+    const isSelected = selectedValues.includes(value)
+    if (props.multiple) {
+      props.onChange(isSelected
+        ? props.value.filter(v => v !== value)
+        : [...props.value, value])
+    } else {
+      props.onChange(isSelected ? null : value)
+    }
+    return !isSelected
+  }
 
   return (
     <div>
@@ -52,8 +85,8 @@ export default function ChoiceGrid({
         }}>
           {label}
         </span>
-        {value ? (
-          <ResetButton onClick={() => onChange(null)} label={`${label} seçimini sıfırla`} />
+        {hasValue ? (
+          <ResetButton onClick={reset} label={`${label} seçimini sıfırla`} />
         ) : (
           hint && <span style={{ fontSize: 11, color: 'var(--text-low)', whiteSpace: 'nowrap' }}>{hint}</span>
         )}
@@ -65,17 +98,16 @@ export default function ChoiceGrid({
         gap: 10,
       }}>
         {options.map(o => {
-          const selected = value === o.value
+          const selected = selectedValues.includes(o.value)
           const tint = o.accent ?? accent
           return (
             <button
               key={o.value}
               type="button"
               onClick={() => {
-                const next = selected ? null : o.value
-                onChange(next)
-                if (next) pulseScene({ color: hexToRgb01(tint), strength: 0.85 })
+                if (toggle(o.value)) pulseScene({ color: hexToRgb01(tint), strength: 0.85 })
               }}
+              aria-pressed={selected}
               className="choice-card"
               data-selected={selected ? 'true' : 'false'}
               style={{

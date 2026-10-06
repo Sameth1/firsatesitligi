@@ -121,6 +121,29 @@ function ageBlurb(age: number) {
 
 type Step = 'form' | 'results'
 
+/**
+ * Birden çok ülke seçilince her ülke için ayrı arama yapılır; sonuçlar
+ * tekilleştirilip match_opportunities'in kendi sırasıyla birleştirilir
+ * (öne çıkanlar, sonra son tarihi en yakın olan, son tarihsizler en sonda).
+ * Birden çok ülkede geçen fırsat (ör. iki ülkeli değişim) bir kez görünür.
+ */
+function mergeMatches(lists: Opportunity[][]): Opportunity[] {
+  const byId = new Map<string, Opportunity>()
+  for (const list of lists) {
+    for (const opp of list) {
+      if (!byId.has(opp.id)) byId.set(opp.id, opp)
+    }
+  }
+  return [...byId.values()].sort((a, b) => {
+    if (a.is_featured !== b.is_featured) return a.is_featured ? -1 : 1
+    if (!a.deadline || !b.deadline) {
+      if (a.deadline === b.deadline) return 0
+      return a.deadline ? -1 : 1
+    }
+    return a.deadline.localeCompare(b.deadline)
+  })
+}
+
 export default function Home() {
   const [step, setStep] = useState<Step>('form')
   const [results, setResults] = useState<Opportunity[]>([])
@@ -132,7 +155,7 @@ export default function Home() {
   const [relaxedFilters, setRelaxedFilters] = useState<string[]>([])
 
   // Form state
-  const [country, setCountry] = useState<string | null>(null)
+  const [countries, setCountries] = useState<string[]>([])
   const [category, setCategory] = useState<string | null>(null)
   const [citizenship, setCitizenship] = useState('TR')
   const [age, setAge] = useState('')
@@ -210,7 +233,7 @@ export default function Home() {
 
   // İlerleme göstergesi: kaç anlamlı alan dolduruldu?
   const filledFlags = [
-    category, country, age === '' ? null : age, studyLevel, field, language,
+    category, countries.length ? countries : null, age === '' ? null : age, studyLevel, field, language,
   ]
   const activeFilterCount = filledFlags.filter(Boolean).length
   const progress = Math.round((activeFilterCount / filledFlags.length) * 100)
@@ -221,7 +244,7 @@ export default function Home() {
     pulseScene({ color: hexToRgb01('#2BE0C8'), strength: 1.2 })
 
     const baseParams: MatchParams = {
-      p_host_country:  country || null,
+      p_host_country:  null,             // run() her seçili ülke için doldurur
       p_category_slug: category || null,
       p_citizenship:   citizenship || 'TR',
       p_age:           age ? parseInt(age) : null,
@@ -231,7 +254,7 @@ export default function Home() {
       p_language:      language,
     }
 
-    const run = async (p: MatchParams) => {
+    const fetchOne = async (p: MatchParams) => {
       try {
         const res = await supabase.rpc('match_opportunities', p)
         if (res.error) {
@@ -248,6 +271,20 @@ export default function Home() {
         const message = error instanceof Error ? error.message : 'Beklenmeyen bağlantı hatası.'
         return { ok: false as const, error: message, rows: [] as Opportunity[] }
       }
+    }
+
+    // Ülke seçilmediyse tek arama (bütün ülkeler); seçildiyse her ülke için
+    // bir arama, sonuçlar birleşik. Gevşetme aşağıda ülkeye hiç dokunmaz.
+    const run = async (p: MatchParams) => {
+      if (countries.length <= 1) {
+        return fetchOne({ ...p, p_host_country: countries[0] ?? null })
+      }
+      const parts = await Promise.all(
+        countries.map(code => fetchOne({ ...p, p_host_country: code })),
+      )
+      const failed = parts.find(part => !part.ok)
+      if (failed) return failed
+      return { ok: true as const, rows: mergeMatches(parts.map(part => part.rows)) }
     }
 
     /**
@@ -299,7 +336,10 @@ export default function Home() {
     setResults(res.rows)
     setRelaxedFilters(relaxed)
     setActiveCategory(null)
-    setSearchSnapshot({ country, category, citizenship, studyLevel, field, language })
+    // `country` ilk seçim: öneri formu tek ev sahibi ülkeyi önceden dolduruyor.
+    setSearchSnapshot({
+      country: countries[0] ?? null, countries, category, citizenship, studyLevel, field, language,
+    })
     setStep('results')
     setLoading(false)
   }
@@ -478,16 +518,17 @@ export default function Home() {
             <div style={{ display: 'grid', gap: 30 }}>
               <div>
                 <ChoiceGrid
+                  multiple
                   label="Nereye gitmek istiyorsun?"
-                  hint="opsiyonel"
+                  hint="opsiyonel · birden çok seçebilirsin"
                   options={COUNTRY_OPTIONS}
-                  value={country}
-                  onChange={setCountry}
+                  value={countries}
+                  onChange={setCountries}
                   columns={4}
                   accent="#9B6BFF"
                 />
                 <div style={{ fontSize: 11.5, color: 'var(--text-low)', marginTop: 8, lineHeight: 1.5 }}>
-                  Şu an açık fırsatı bulunan ülkeler listelenmiştir. Seçim yapmazsan tüm yurt içi ve yurt dışı fırsatlar taranır.
+                  Şu an açık fırsatı bulunan ülkeler listelenmiştir. Birden çok ülke seçersen hepsindeki fırsatlar birlikte listelenir; seçim yapmazsan tüm yurt içi ve yurt dışı fırsatlar taranır.
                 </div>
               </div>
 
@@ -619,12 +660,13 @@ export default function Home() {
           display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
           fontSize: 12.5, color: 'var(--text-low)', marginBottom: 20,
         }}>
-          {country && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <Flag code={country} size={16} />
-              {countryNameTr(country)}
+          {countries.map((code, i) => (
+            <span key={code} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              {i > 0 && <span aria-hidden="true">·</span>}
+              <Flag code={code} size={16} />
+              {countryNameTr(code)}
             </span>
-          )}
+          ))}
           {category && <span>· {CATEGORIES.find(c => c.slug === category)?.label}</span>}
         </div>
 
